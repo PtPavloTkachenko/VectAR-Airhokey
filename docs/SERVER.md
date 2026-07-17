@@ -59,8 +59,13 @@ YOLO vision fixes (from the lens) absorb what's left.
 
 ## Web console (`:8780`)
 
+![Dashboard](images/dashboard.png)
+
 - **Dashboard** — robot link/battery/field pose, lens connection, game state,
-  1 Hz refresh.
+  1 Hz refresh. Also shows the exact `ws://<mac-ip>:8777` string to paste into
+  the lens' `GameConfig.WS_URL`, plus a **screen game** you can play with the
+  mouse when no Spectacles are connected (leave "drive the real Vector"
+  unchecked for a pure on-screen match).
 - **Pair robot** — the wizard ([PAIRING.md](PAIRING.md)).
 - JSON API: `GET /api/status`, `POST /api/discover`, `POST /api/pair`,
   `POST /api/test`, `POST /api/connect` — all trivial to script against.
