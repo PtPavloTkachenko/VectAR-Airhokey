@@ -134,7 +134,10 @@
         <h2 style="margin:0">Game
           <span id="playScore" style="color:var(--muted);font-weight:400;
             letter-spacing:1px"></span></h2>
-        <div style="display:flex;align-items:center;gap:10px">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <label class="hint" style="margin:0;display:flex;align-items:center;gap:5px;cursor:pointer">
+            <input type="checkbox" id="driveReal"> drive the real Vector
+          </label>
           <span class="hint" id="playHint" style="margin:0"></span>
           <button id="btnPlay" onclick="playToggle()" style="margin:0">PLAY ON SCREEN</button>
         </div>
@@ -606,7 +609,9 @@ function playStart() {
     score: [0, 0], last: performance.now(), wsSeq: 0,
   };
   $("btnPlay").textContent = "STOP GAME";
-  playWSConnect();
+  play.driveReal = $("driveReal") && $("driveReal").checked;
+  if (play.driveReal) { playWSConnect(); }
+  else { $("playHint").textContent = "screen only (robot not moving)"; }
   serve(1);   // toward player first
   requestAnimationFrame(playLoop);
 }
@@ -703,6 +708,16 @@ function playStep(dt) {
     return;
   }
   if (play.phase === "over") return;
+
+  // screen-only goalie: move the on-screen Vector to track the puck (the real
+  // robot is driven by the server when 'drive the real Vector' is on)
+  if (!play.driveReal) {
+    const gx = PF.L/2 - PF.BODY_R*1.3;
+    const target = (p.vx > 0) ? p.y : 0;
+    play.robot.x = gx;
+    play.robot.y += Math.max(-3.5, Math.min(3.5, (target - play.robot.y)*0.12));
+    play.robot.y = Math.max(-hw + PF.BODY_R, Math.min(hw - PF.BODY_R, play.robot.y));
+  }
 
   // integrate
   p.x += p.vx * dt; p.y += p.vy * dt;

@@ -448,6 +448,15 @@ class Bridge:
                 continue
             if not self.transform.bound:
                 continue
+            # NO LENS = NO GAME: if no client is connected (screen game stopped,
+            # glasses closed), HOLD ZERO every tick and never drive. Without
+            # this the goalie keeps reparking/patrolling on a stale bound
+            # transform after the lens is gone -> runaway (screen-game STOP bug).
+            if self.ws.client is None:
+                if self.commander:
+                    self.commander.set_wheels(0.0, 0.0)
+                self.driving = False
+                continue
             # LENS-SILENCE WATCHDOG: sleeping glasses leave TCP half-open
             # (no disconnect event) — 1.5s of silence in a rally means STOP
             if (self.rally_active and self.ws.last_msg_at > 0
