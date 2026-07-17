@@ -52,11 +52,19 @@ export const GameConfig = {
   TRAIL_STEP_MM: 6,   // ribbon point spacing
   TRAIL_FADE_S: 1.2,  // tread trail life (short — hockey pace)
 
-  // --- Voice agent: talk to Vector during the game (Gemini via RSG THROUGH the
-  // lens — Bring-Alive token, no Mac key; same mechanic as vector-sense-515).
-  // ASR->utter->server->llm_request->(this lens' RSG Gemini)->llm_response->robot TTS.
-  // Needs: RemoteServiceGateway.lspkg installed + server started with VECTAR_CHAT=1. ---
-  VOICE_ENABLED: false,          // talk to Vector during the game (needs server VECTAR_CHAT=1 + your RSG token below)
-  RSG_GOOGLE_TOKEN: "",          // paste YOUR Remote Service Gateway token (Lens Studio -> Remote Service Gateway plugin -> Generate Token); leave empty to play without the voice agent
+  // ===========================================================================
+  //  OPTIONAL — VOICE AGENT (talk to Vector during the game, Gemini replies via
+  //  his TTS). Skip this whole block to play without it.
+  //
+  //  ┌─ PASTE YOUR TOKEN HERE ─────────────────────────────────────────────┐
+  //  │  1. In Lens Studio, open the Asset Library and install               │
+  //  │     "Remote Service Gateway" (RemoteServiceGateway.lspkg).           │
+  //  │  2. Menu bar -> Remote Service Gateway -> Generate Token.            │
+  //  │  3. Copy the token and paste it into RSG_GOOGLE_TOKEN below.         │
+  //  │  4. Set VOICE_ENABLED: true, and start the server with VECTAR_CHAT=1.│
+  //  │  The token is per-developer and must NOT be committed publicly.      │
+  //  └─────────────────────────────────────────────────────────────────────┘
+  VOICE_ENABLED: false,                 // <- flip to true after pasting a token
+  RSG_GOOGLE_TOKEN: "",                 // <- PASTE YOUR RSG TOKEN HERE
   LLM_MODEL: "gemini-3.1-flash-lite",   // one-shot generateContent model
 };
