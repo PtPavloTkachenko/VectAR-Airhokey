@@ -48,6 +48,7 @@ class WebUI:
             web.get("/", self.index),
             web.get("/api/status", self.api_status),
             web.get("/api/game", self.api_game),
+            web.post("/api/find_robot", self.api_find_robot),
             web.post("/api/discover", self.api_discover),
             web.post("/api/pair", self.api_pair),
             web.post("/api/test", self.api_test),
@@ -169,6 +170,53 @@ class WebUI:
             "rally": b.rally_active,
             "lens": b.ws.client is not None,
         })
+
+    async def api_find_robot(self, _req):
+        """Is a Vector already on Wi-Fi? Progressive onboarding uses this to
+        SKIP the Bluetooth/Wi-Fi steps when the robot is already online.
+
+        Returns {on_wifi, ip, gateway} — gateway=True means its SDK port :443
+        is up (ready to authorize + drive); False means it's on Wi-Fi but the
+        gateway hasn't started yet (freshly reset, still checking in)."""
+        import asyncio as _a
+
+        async def port_open(ip: str, port: int = 443, t: float = 2.0) -> bool:
+            try:
+                fut = _a.open_connection(ip, port)
+                r, w = await _a.wait_for(fut, timeout=t)
+                w.close()
+                return True
+            except Exception:
+                return False
+
+        # candidate IPs: mDNS + env override + last-known from sdk_config
+        cands: list[str] = []
+        try:
+            for r in await discovery.discover(4.0):
+                if r.get("ip"):
+                    cands.append(r["ip"])
+        except Exception:
+            pass
+        _s, ips, _n = config.read_robot_identity()
+        for ip in (ips or "").split(","):
+            if ip.strip() and ip.strip() not in cands:
+                cands.append(ip.strip())
+        for ip in cands:
+            if await port_open(ip):
+                return web.json_response(
+                    {"on_wifi": True, "ip": ip, "gateway": True})
+        # reachable but gateway down?
+        for ip in cands:
+            try:
+                proc = await _a.create_subprocess_exec(
+                    "ping", "-c1", "-W1500", ip,
+                    stdout=_a.subprocess.DEVNULL, stderr=_a.subprocess.DEVNULL)
+                if await proc.wait() == 0:
+                    return web.json_response(
+                        {"on_wifi": True, "ip": ip, "gateway": False})
+            except Exception:
+                pass
+        return web.json_response({"on_wifi": False})
 
     async def api_discover(self, req):
         try:
@@ -317,13 +365,25 @@ class WebUI:
         except Exception as e:
             return web.json_response({"ok": False, "error": str(e)})
 
-    async def api_ble_authorize(self, req):
-        """After BLE onboarding, authorize the game server for this robot.
+    def _is_provisioned(self) -> bool:
+        """sdk_config.ini has a section with a real guid (not just an env serial)."""
+        import configparser
+        try:
+            c = configparser.ConfigParser(strict=False)
+            c.read(config.SDK_CONFIG_PATH)
+            return any(c[s].get("guid") for s in c.sections())
+        except Exception:
+            return False
 
-        If a BLE session is live we MINT a fresh SDK token using the ESN + IP
-        we read over Bluetooth (no typing) — this covers a from-scratch or
-        just-reset robot whose old token is gone. If there's no BLE session
-        but sdk_config already has this robot, we just connect."""
+    async def api_ble_authorize(self, req):
+        """One authorize used by the whole progressive flow.
+
+        Gathers the robot's identity from whichever source we have — a live
+        BLE session (fresh onboarding), or the on-Wi-Fi shortcut (found IP), or
+        env/sdk_config — mints a fresh SDK token via the token engine, then
+        connects the game loop. Falls back to just connecting if the robot is
+        already provisioned and the mint can't run."""
+        import os
         b = self.bridge
         try:
             body = await req.json()
@@ -331,55 +391,51 @@ class WebUI:
             body = {}
         pod = body.get("pod") or config.WIREPOD_URL
 
-        # Path A: fresh from BLE onboarding -> mint with the BLE-read identity.
-        # v2 robots don't expose the ESN over BLE status, so fall back to
-        # VECTOR_SERIAL if the caller/env supplies one.
+        cfg_serial, cfg_ips, _n = config.read_robot_identity()
         if self._ble is not None:
-            import os
-            esn = self._ble.esn or body.get("serial") or os.getenv("VECTOR_SERIAL", "")
-            if not esn:
-                return web.json_response(
-                    {"ok": False, "error": "Couldn't read Vector's serial over "
-                     "Bluetooth (older robot). Enter it (bottom of the robot) "
-                     "and retry.", "need_serial": True})
+            esn = self._ble.esn or body.get("serial") or os.getenv("VECTOR_SERIAL", "") or cfg_serial
             ip = self._ble.ip
-            try:
-                if not ip:
+            if not ip:
+                try:
                     ip = await self._ble.wifi_ip()
-            except Exception:
-                pass
+                except Exception:
+                    ip = ""
             name = (self._ble.name or "").replace(" ", "-")
             await self._drop_ble()      # release BLE so the mint's gRPC can run
-            if not ip:
-                return web.json_response(
-                    {"ok": False, "error": "Could not read Vector's IP over "
-                     "Bluetooth — make sure Wi-Fi connected, then retry."})
+        else:
+            esn = body.get("serial") or os.getenv("VECTOR_SERIAL", "") or cfg_serial
+            ip = body.get("ip", "") or (cfg_ips.split(",")[0] if cfg_ips else "")
+            name = body.get("name", "")
+
+        minted = False
+        if esn and ip:
             try:
                 await asyncio.to_thread(pairing.pair, pod, esn, name, ip)
+                minted = True
             except pairing.PairingError as e:
-                return web.json_response(
-                    {"ok": False, "step": e.step, "error": e.message})
+                if not self._is_provisioned():
+                    return web.json_response(
+                        {"ok": False, "step": e.step, "error": e.message})
+                # already provisioned -> mint optional, fall through to connect
             except Exception as e:
-                return web.json_response({"ok": False, "error": str(e)})
-            ok = await b.connect_robot() if b.use_robot else False
-            return web.json_response({"ok": True, "minted": True,
-                                      "connected": ok})
+                if not self._is_provisioned():
+                    return web.json_response({"ok": False, "error": str(e)})
 
-        # Path B: no BLE session, but the robot is already provisioned
-        serial, _ips, _name = config.read_robot_identity()
-        if serial:
-            if b.use_robot:
-                ok = await b.connect_robot()
-                return web.json_response(
-                    {"ok": ok, "connected": ok,
-                     "error": None if ok else "Robot reachable? Same Wi-Fi?"})
+        if not self._is_provisioned() and not minted:
             return web.json_response(
-                {"ok": True, "connected": False,
-                 "note": "Credentials ready. Restart the server without "
+                {"ok": False, "error": "No credentials yet — finish Wi-Fi "
+                 "setup so we can authorize this robot."})
+
+        if not b.use_robot:
+            return web.json_response(
+                {"ok": True, "minted": minted, "connected": False,
+                 "note": "Credentials ready; restart the server without "
                          "--no-robot to drive the robot."})
+        ok = await b.connect_robot()
         return web.json_response(
-            {"ok": False,
-             "error": "No robot to authorize — run the Bluetooth setup first."})
+            {"ok": True, "minted": minted, "connected": ok,
+             "error": None if ok else "Minted, but couldn't reach the robot's "
+                      "control port yet — it may still be finishing activation."})
 
     async def api_ble_disconnect(self, _req):
         await self._drop_ble()

@@ -184,21 +184,36 @@ def write_config(serial: str, cert_file: str, ip: str, name: str,
             os.remove(temp_file)
 
 
+def _cert_common_name(cert: bytes) -> str:
+    from cryptography import x509
+    from cryptography.hazmat.backends import default_backend
+    parsed = x509.load_pem_x509_certificate(cert, default_backend())
+    for field in parsed.subject:
+        if "commonName" in str(field.oid):
+            return field.value
+    return ""
+
+
 def pair(pod: str, serial: str, name: str, ip: str) -> dict:
-    """Full pairing: cert -> validate -> mint -> persist. Returns a summary."""
+    """Full pairing: cert -> validate -> mint -> persist. Returns a summary.
+
+    `name` may be empty — it's then taken from the certificate's CommonName
+    (the robot name), so the on-Wi-Fi shortcut doesn't need a name typed.
+    """
     serial = serial.strip().lower()
     if not serial:
         raise PairingError(STEP_CERT, "Robot serial is required "
                            "(printed on the bottom of the robot, e.g. 00e20145).")
     if not ip.strip():
-        raise PairingError(STEP_TLS, "Robot IP is required (double-press the "
-                           "backpack button on the charger, then raise+lower "
-                           "the arms to see it on his face).")
-    name = standardize_name(name)
+        raise PairingError(STEP_TLS, "Robot IP is required.")
     ip = ip.strip()
 
     cert = fetch_cert(pod, serial)
-    validate_cert_name(cert, name)
+    if name.strip():
+        name = standardize_name(name)
+        validate_cert_name(cert, name)
+    else:
+        name = _cert_common_name(cert) or f"Vector-{serial[-4:].upper()}"
     guid = mint_guid(cert, ip, name)
     try:
         cert_file = save_cert(cert, name, serial)

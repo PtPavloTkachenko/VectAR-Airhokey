@@ -320,37 +320,50 @@ function chooseRoute(route) {
   if (!route) renderRoute();
 }
 
-// State-aware landing: if the robot is already set up, say so and offer the
-// one action that matters — no dead-end onboarding steps.
+// One progressive onboarding. It detects the robot's state and only does the
+// steps that are still needed — already on Wi-Fi skips straight to authorize.
 function renderRoute() {
   const s = window.lastStatus;
   const r = s && s.robot;
   let html = "";
-  if (r && r.paired && r.connected) {
+  if (r && r.connected) {
     html = `<h2>Your Vector is ready ✓</h2>`
       + stat("Robot", r.name || r.serial, "on")
-      + `<div class="hint">Connected and under control. Nothing to set up — `
-      + `open the lens and play.</div>`
+      + `<div class="hint">Connected and under control — open the lens and play.</div>`
       + `<button onclick="showTab('dash')">GO TO DASHBOARD →</button>`
-      + `<button class="secondary" onclick="chooseRoute('ble')">RE-ONBOARD A DIFFERENT ROBOT</button>`;
-  } else if (r && r.paired) {
-    html = `<h2>Vector is set up — just connect</h2>`
-      + stat("Robot", r.name || r.serial, "on")
-      + `<div class="hint">Already authorized. Connect the game loop to it.</div>`
-      + `<button onclick="bleAuthorize()">CONNECT ROBOT →</button>`
-      + `<div class="hint" style="margin-top:14px">Reset your Vector, or does his `
-      + `face show a setup screen? He needs onboarding again:</div>`
-      + `<button class="secondary" onclick="chooseRoute('ble')">SET UP OVER BLUETOOTH</button>`;
+      + `<button class="secondary" onclick="onboardStart()">SET UP A ROBOT</button>`;
   } else {
-    html = `<h2>Set up your Vector</h2>`
-      + `<div class="hint">Which best describes your robot right now?</div>`
-      + `<button onclick="chooseRoute('ble')">SET UP OVER BLUETOOTH →</button>`
-      + `<div class="hint">The easy path: we pair Vector and join Wi-Fi entirely `
-      + `from this Mac — no phone, no other app.</div>`
-      + `<button class="secondary" onclick="chooseRoute('wifi')">ADVANCED: MANUAL / WIRE-POD</button>`
-      + `<div class="hint">For a robot already provisioned with wire-pod.</div>`;
+    html = `<h2>Connect your Vector</h2>`
+      + `<div class="hint">One flow, from any starting point: we find Vector, `
+      + `join him to Wi-Fi over Bluetooth if needed, and authorize — `
+      + `<span class="key">nothing to type.</span></div>`
+      + `<button onclick="onboardStart()">CONNECT VECTOR →</button>`;
   }
   $("routeCard").innerHTML = html;
+}
+
+// The single entry point: find the robot, skip what's already done.
+async function onboardStart() {
+  $("routeCard").innerHTML = `<h2>Finding your Vector…</h2>`
+    + `<div class="hint"><span class="spin">◌</span> checking Wi-Fi and Bluetooth</div>`;
+  let f = {on_wifi: false};
+  try { f = await api("/api/find_robot", {}); } catch (e) {}
+  window.foundIp = f.ip || "";
+  if (f.on_wifi && f.gateway) {
+    // already online + ready — skip straight to authorize
+    chooseRoute("ble"); bleStep(3);
+    $("bleDoneMsg").innerHTML = `Vector is already on Wi-Fi at <b>${f.ip}</b> ✓`;
+    $("bleAuthMsg").innerHTML = "Authorizing…";
+    bleAuthorize();
+  } else if (f.on_wifi) {
+    // on Wi-Fi but its control port isn't up yet (finishing activation)
+    chooseRoute("ble"); bleStep(3);
+    $("bleDoneMsg").innerHTML = `Vector is on Wi-Fi at <b>${f.ip}</b>, finishing activation ✓`;
+    $("bleAuthMsg").innerHTML = "Give it a few seconds, then authorize:";
+  } else {
+    // not on Wi-Fi -> full Bluetooth onboarding
+    chooseRoute("ble"); bleStep(0);
+  }
 }
 
 function gotoStep(n) {
@@ -696,7 +709,8 @@ async function bleAuthorize() {
   if (errEl) errEl.style.display = "none";
   const msg = $("bleAuthMsg");
   if (msg) msg.innerHTML = '<span class="spin">◌</span> authorizing…';
-  const res = await api("/api/ble/authorize", {});
+  const res = await api("/api/ble/authorize",
+                        window.foundIp ? {ip: window.foundIp} : {});
   if (btn) btn.disabled = false;
   if (res.ok && res.connected) {
     showTab("dash");
