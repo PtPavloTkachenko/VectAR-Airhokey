@@ -130,7 +130,8 @@ class WebUI:
                 "time": time.time(),
             },
             "robot": robot,
-            "lens": {"connected": b.ws.client is not None},
+            "lens": {"connected": b.ws.alive, "role": b.ws.client_role,
+                     "on_screen": b.ws.client_role == "screen"},
             "game": {
                 "rally_active": b.rally_active,
                 "transform_bound": b.transform.bound,
@@ -168,7 +169,8 @@ class WebUI:
                      if getattr(b, "latest_puck", None) else None),
             "score": getattr(b, "last_score", [0, 0]),
             "rally": b.rally_active,
-            "lens": b.ws.client is not None,
+            "lens": b.ws.alive,
+            "lens_role": b.ws.client_role,
         })
 
     async def api_find_robot(self, _req):

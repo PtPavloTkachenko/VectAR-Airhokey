@@ -22,7 +22,15 @@ class WSServer:
     def __init__(self):
         self._handlers: dict[str, Handler] = {}
         self.client: ServerConnection | None = None
+        self.client_role: str = ""   # 'lens' (Spectacles) | 'screen' (browser)
         self.on_disconnect: Callable[[], None] | None = None
+
+    @property
+    def alive(self) -> bool:
+        """A lens is truly present only if it's sending (it pings every ~2s).
+        Guards against a half-open socket showing 'connected' forever."""
+        import time as _t
+        return self.client is not None and (_t.monotonic() - self.last_msg_at) < 6.0
 
     def on(self, msg_type: str, handler: Handler):
         self._handlers[msg_type] = handler
@@ -42,6 +50,8 @@ class WSServer:
             except Exception:
                 pass
         self.client = ws
+        self.client_role = ""
+        self.last_msg_at = time.monotonic()
         peer = ws.remote_address
         logger.info(f"Lens connected: {peer}")
         try:
@@ -67,6 +77,7 @@ class WSServer:
         finally:
             if self.client is ws:
                 self.client = None
+                self.client_role = ""
                 logger.info(f"Lens disconnected: {peer}")
                 if self.on_disconnect:
                     self.on_disconnect()
