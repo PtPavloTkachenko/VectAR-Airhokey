@@ -129,6 +129,21 @@
       <div id="dashActions"></div>
     </div>
     <div class="card">
+      <h2>Play on screen <span id="playScore" style="color:var(--muted);
+        font-weight:400;letter-spacing:1px"></span></h2>
+      <div class="hint" style="text-align:center">No Spectacles? Play right here
+        with your <span class="key">mouse</span> — the real Vector defends.</div>
+      <div style="overflow-x:auto;display:flex;justify-content:center">
+        <canvas id="playCanvas" width="320" height="440"
+                style="max-width:100%;display:block;margin:8px auto 0;
+                       border-radius:10px;cursor:none;touch-action:none"></canvas>
+      </div>
+      <div style="text-align:center;margin-top:10px">
+        <button id="btnPlay" onclick="playToggle()">START GAME</button>
+        <span class="hint" id="playHint" style="margin-left:10px"></span>
+      </div>
+    </div>
+    <div class="card">
       <h2>Live field <span id="fieldScore" style="color:var(--muted);
         font-weight:400;letter-spacing:1px"></span></h2>
       <div style="overflow-x:auto">
@@ -505,6 +520,245 @@ async function pollField() {
 }
 setInterval(pollField, 160);
 pollField();
+
+/* ================= PLAY ON SCREEN =================
+   The dashboard becomes a "screen lens": mouse = your mallet, puck physics
+   run here @60fps, and we speak the lens protocol over ws://host:8777 so the
+   SERVER drives the REAL Vector as goalie (exactly like the Spectacles lens).
+   Field frame: origin center, +X toward Vector (top), +Y player-left.
+   Canvas is vertical: Vector's goal at TOP, you at the BOTTOM.            */
+const PF = {   // field constants (mirror GameConfig / config.py)
+  L: 400, W: 300, PUCK_R: 15, PADDLE_R: 25, BODY_R: 55,
+  SERVE: 150, MAX: 300, WIN: 5,
+};
+let play = null;   // active game or null
+
+function pcvt(cv) {
+  // field(x,y) -> canvas px. +X(top) -> up; +Y(left) -> canvas -x
+  const pad = 16, W = cv.width, H = cv.height;
+  const sc = Math.min((W - 2*pad) / PF.W, (H - 2*pad) / PF.L);
+  const cx = W/2, cy = H/2;
+  return {
+    sc, cx, cy,
+    px: (x, y) => [cx - y*sc, cy - x*sc],   // field -> canvas
+    fx: (mx, my) => [(cy - my)/sc, (cx - mx)/sc],  // canvas -> field (x,y)
+  };
+}
+
+function playToggle() {
+  if (play) { playEnd(); return; }
+  playStart();
+}
+
+function playStart() {
+  const cv = $("playCanvas");
+  const t = pcvt(cv);
+  play = {
+    cv, t, phase: "countdown", tPhase: 0,
+    puck: {x: 0, y: 0, vx: 0, vy: 0, live: false},
+    paddle: {x: -140, y: 0},        // player mallet (their half, x<0)
+    robot: {x: PF.L/2*0.7, y: 0, deg: 180},  // rendered from server pose
+    score: [0, 0], last: performance.now(), wsSeq: 0,
+  };
+  $("btnPlay").textContent = "STOP GAME";
+  playWSConnect();
+  serve(1);   // toward player first
+  requestAnimationFrame(playLoop);
+}
+
+function playEnd() {
+  if (!play) return;
+  try { play.ws && play.ws.close(); } catch (e) {}
+  play = null;
+  $("btnPlay").textContent = "START GAME";
+  $("playHint").textContent = "";
+  const cv = $("playCanvas"); cv.getContext("2d").clearRect(0,0,cv.width,cv.height);
+}
+
+// --- WS lens bridge: drive the real robot ---
+function playWSConnect() {
+  const url = "ws://" + location.hostname + ":" + (window.lastStatus
+    ? window.lastStatus.server.ws_port : 8777);
+  let ws;
+  try { ws = new WebSocket(url); } catch (e) { return; }
+  play.ws = ws;
+  ws.onopen = () => {
+    ws.send(JSON.stringify({t: "hello", role: "screen", proto: 1}));
+    ws.send(JSON.stringify({t: "place_confirm", field: {l: PF.L, w: PF.W},
+      robotFieldPose: {x: 140, y: 0, deg: 180}}));
+    ws.send(JSON.stringify({t: "event", name: "rally_start", score: play.score}));
+    $("playHint").textContent = "real Vector armed";
+  };
+  ws.onmessage = (ev) => {
+    if (!play) return;
+    // server may coalesce several JSON objects in one frame
+    for (const part of String(ev.data).split(/(?<=})(?={)/)) {
+      let m; try { m = JSON.parse(part); } catch (e) { continue; }
+      if (m.t === "pose") { play.robot = {x: m.x, y: m.y, deg: m.deg}; }
+    }
+  };
+  ws.onclose = () => { if (play) $("playHint").textContent = "screen-only (no robot)"; };
+  ws.onerror = () => {};
+}
+function wsSend(o) {
+  if (play && play.ws && play.ws.readyState === 1) play.ws.send(JSON.stringify(o));
+}
+
+function serve(dir) {   // dir: +1 toward player(-X), -1 toward Vector(+X)
+  const p = play.puck;
+  p.x = 0; p.y = (Math.random()-0.5)*80;
+  const ang = (Math.random()-0.5)*0.8;
+  p.vx = -dir * PF.SERVE * Math.cos(ang);
+  p.vy = PF.SERVE * Math.sin(ang);
+  p.live = true;
+}
+
+// mouse -> paddle (player half only)
+$("playCanvas").addEventListener("mousemove", (e) => {
+  if (!play) return;
+  const r = play.cv.getBoundingClientRect();
+  const mx = (e.clientX - r.left) * play.cv.width / r.width;
+  const my = (e.clientY - r.top) * play.cv.height / r.height;
+  let [fx, fy] = play.t.fx(mx, my);
+  fx = Math.max(-PF.L/2 + 20, Math.min(-10, fx));   // player half, x in [-180,-10]
+  fy = Math.max(-PF.W/2 + 20, Math.min(PF.W/2 - 20, fy));
+  play.paddle.x = fx; play.paddle.y = fy;
+});
+
+function playLoop(now) {
+  if (!play) return;
+  const dt = Math.min(0.033, (now - play.last) / 1000); play.last = now;
+  playStep(dt);
+  playRender();
+  requestAnimationFrame(playLoop);
+}
+
+let _puckAccum = 0;
+function playStep(dt) {
+  const p = play.puck, hl = PF.L/2, hw = PF.W/2;
+  if (play.phase === "countdown") {
+    play.tPhase += dt;
+    if (play.tPhase > 1.2) { play.phase = "rally"; play.tPhase = 0; }
+    return;
+  }
+  if (play.phase === "goal") {
+    play.tPhase += dt;
+    if (play.tPhase > 1.0) {
+      if (play.score[0] >= PF.WIN || play.score[1] >= PF.WIN) {
+        wsSend({t: "event", name: "game_over", score: play.score});
+        $("playHint").textContent = play.score[1] > play.score[0]
+          ? "Vector wins!" : "You win!";
+        play.phase = "over"; return;
+      }
+      play.phase = "countdown"; play.tPhase = 0;
+      serve(play.lastGoalByVector ? 1 : -1);
+      wsSend({t: "event", name: "rally_start", score: play.score});
+    }
+    return;
+  }
+  if (play.phase === "over") return;
+
+  // integrate
+  p.x += p.vx * dt; p.y += p.vy * dt;
+  // side walls (y)
+  if (p.y < -hw + PF.PUCK_R) { p.y = -hw + PF.PUCK_R; p.vy = Math.abs(p.vy); wsSend({t:"event",name:"puck_wall"}); }
+  if (p.y >  hw - PF.PUCK_R) { p.y =  hw - PF.PUCK_R; p.vy = -Math.abs(p.vy); wsSend({t:"event",name:"puck_wall"}); }
+  // paddle collision (player mallet)
+  collide(p, play.paddle, PF.PADDLE_R, () => wsSend({t:"event",name:"puck_paddle"}));
+  // robot collision (real Vector's field pose from server) — he blocks
+  const hit = collide(p, play.robot, PF.BODY_R, () => wsSend({t:"event",name:"vector_block"}));
+  // goals
+  if (p.x >  hl - PF.PUCK_R) {   // reached Vector's goal line -> player scores
+    if (!hit) { play.score[0]++; goal(false); }
+    else { p.x = hl - PF.PUCK_R; p.vx = -Math.abs(p.vx); }
+  }
+  if (p.x < -hl + PF.PUCK_R) {   // player's goal -> Vector scores
+    play.score[1]++; goal(true);
+  }
+  // speed clamp
+  const sp = Math.hypot(p.vx, p.vy);
+  if (sp > PF.MAX) { p.vx *= PF.MAX/sp; p.vy *= PF.MAX/sp; }
+
+  // stream puck to the server @30Hz -> real Vector chases it
+  _puckAccum += dt;
+  if (_puckAccum >= 1/30) {
+    _puckAccum = 0;
+    wsSend({t: "puck", x: p.x, y: p.y, vx: p.vx, vy: p.vy, ts: now8()});
+  }
+}
+function now8() { return Date.now() / 1000; }
+
+function collide(p, o, R, onHit) {
+  const dx = p.x - o.x, dy = p.y - o.y;
+  const d = Math.hypot(dx, dy), min = R + PF.PUCK_R;
+  if (d < min && d > 0.001) {
+    const nx = dx/d, ny = dy/d;
+    const vn = p.vx*nx + p.vy*ny;
+    if (vn < 0) { p.vx -= 2*vn*nx; p.vy -= 2*vn*ny; }
+    p.x = o.x + nx*min; p.y = o.y + ny*min;
+    p.vx *= 1.04; p.vy *= 1.04;   // slight speed-up on hits
+    onHit && onHit();
+    return true;
+  }
+  return false;
+}
+
+function goal(byVector) {
+  play.phase = "goal"; play.tPhase = 0; play.puck.live = false;
+  play.lastGoalByVector = byVector;
+  wsSend({t: "event", name: byVector ? "goal_vector" : "goal_player",
+          score: play.score});
+  $("playScore").textContent = `you ${play.score[0]} : ${play.score[1]} vector`;
+}
+
+function playRender() {
+  const {cv, t} = play, ctx = cv.getContext("2d");
+  const W = cv.width, H = cv.height, hl = PF.L/2, hw = PF.W/2;
+  ctx.fillStyle = "#07090c"; ctx.fillRect(0,0,W,H);
+  // board
+  const a = t.px(hl, hw), b = t.px(-hl, -hw);
+  ctx.strokeStyle = "#2e7a44"; ctx.lineWidth = 2;
+  ctx.strokeRect(Math.min(a[0],b[0]), Math.min(a[1],b[1]),
+                 Math.abs(b[0]-a[0]), Math.abs(b[1]-a[1]));
+  // center line
+  ctx.strokeStyle = "#1b2430"; ctx.lineWidth = 1;
+  let p=t.px(0,hw), q=t.px(0,-hw);
+  ctx.beginPath(); ctx.moveTo(p[0],p[1]); ctx.lineTo(q[0],q[1]); ctx.stroke();
+  // goals: Vector top (pink), you bottom (green)
+  ctx.lineWidth = 5;
+  ctx.strokeStyle = PINK; p=t.px(hl,hw*0.55); q=t.px(hl,-hw*0.55);
+  ctx.beginPath(); ctx.moveTo(p[0],p[1]); ctx.lineTo(q[0],q[1]); ctx.stroke();
+  ctx.strokeStyle = GREEN; p=t.px(-hl,hw*0.55); q=t.px(-hl,-hw*0.55);
+  ctx.beginPath(); ctx.moveTo(p[0],p[1]); ctx.lineTo(q[0],q[1]); ctx.stroke();
+  // robot (Vector)
+  const R = play.robot, rp = t.px(R.x, R.y);
+  ctx.fillStyle = GREEN; ctx.shadowColor = GREEN; ctx.shadowBlur = 12;
+  ctx.beginPath(); ctx.arc(rp[0], rp[1], PF.BODY_R*t.sc, 0, 7); ctx.fill();
+  ctx.shadowBlur = 0;
+  // paddle (you)
+  const pd = t.px(play.paddle.x, play.paddle.y);
+  ctx.fillStyle = PINK; ctx.shadowColor = PINK; ctx.shadowBlur = 12;
+  ctx.beginPath(); ctx.arc(pd[0], pd[1], PF.PADDLE_R*t.sc, 0, 7); ctx.fill();
+  ctx.shadowBlur = 0;
+  // puck
+  if (play.phase !== "goal" && play.phase !== "over") {
+    const up = t.px(play.puck.x, play.puck.y);
+    ctx.fillStyle = "#fff"; ctx.shadowColor = "#fff"; ctx.shadowBlur = 14;
+    ctx.beginPath(); ctx.arc(up[0], up[1], PF.PUCK_R*t.sc, 0, 7); ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+  // countdown / score overlay
+  ctx.fillStyle = "#cfe3d6"; ctx.font = "bold 22px monospace"; ctx.textAlign="center";
+  ctx.fillText(`${play.score[0]} : ${play.score[1]}`, W/2, 26);
+  if (play.phase === "countdown") {
+    ctx.font = "bold 30px monospace"; ctx.fillStyle = PINK;
+    ctx.fillText(Math.ceil(1.2 - play.tPhase) + "", W/2, H/2);
+  }
+  if (play.phase === "over") {
+    ctx.font = "bold 24px monospace"; ctx.fillStyle = GREEN;
+    ctx.fillText(play.score[1] > play.score[0] ? "VECTOR WINS" : "YOU WIN", W/2, H/2);
+  }
+}
 
 /* ---------- wizard ---------- */
 async function discover() {
