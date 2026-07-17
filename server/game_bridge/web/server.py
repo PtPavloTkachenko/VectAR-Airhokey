@@ -57,6 +57,7 @@ class WebUI:
             web.post("/api/ble/pin", self.api_ble_pin),
             web.post("/api/ble/wifi_scan", self.api_ble_wifi_scan),
             web.post("/api/ble/wifi_connect", self.api_ble_wifi_connect),
+            web.post("/api/ble/authorize", self.api_ble_authorize),
             web.post("/api/ble/disconnect", self.api_ble_disconnect),
         ])
         self.app = app
@@ -270,6 +271,32 @@ class WebUI:
                                       "result": res, "ip": ip})
         except Exception as e:
             return web.json_response({"ok": False, "error": str(e)})
+
+    async def api_ble_authorize(self, _req):
+        """After BLE onboarding, authorize the game server for this robot.
+
+        If the robot already has SDK credentials (sdk_config.ini) we just
+        connect the game loop. Otherwise minting the SDK token for a
+        from-scratch robot is the device-gated leg (see docs) — report that
+        honestly rather than dead-ending."""
+        b = self.bridge
+        serial, _ips, _name = config.read_robot_identity()
+        if serial:
+            await self._drop_ble()      # release BLE so gRPC has the robot
+            if b.use_robot:
+                ok = await b.connect_robot()
+                return web.json_response(
+                    {"ok": ok, "connected": ok,
+                     "error": None if ok else "Robot reachable? Same Wi-Fi?"})
+            return web.json_response(
+                {"ok": True, "connected": False,
+                 "note": "Credentials ready. Restart the server without "
+                         "--no-robot to drive the robot."})
+        return web.json_response(
+            {"ok": False, "needs_mint": True,
+             "error": "This robot has no SDK token yet. Minting one for a "
+                      "from-scratch robot needs the token engine — see "
+                      "docs/PAIRING.md (device-gated)."})
 
     async def api_ble_disconnect(self, _req):
         await self._drop_ble()
