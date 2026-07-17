@@ -16,11 +16,16 @@ Spectacles lens  ── ws://mac:8777 ──  Mac game server  ── gRPC :443 
  score, AR field)                      safety, voice)                    talks, dances)
 ```
 
+The Mac runs a small web console for pairing, monitoring, and a mouse-playable
+fallback game:
+
+![Server console dashboard](docs/images/dashboard.png)
+
 ## What you need
 
 | Thing | Notes |
 |---|---|
-| Anki / DDL **Vector** robot (1.0 or 2.0) | onboarded to [wire-pod](https://github.com/kercre123/wire-pod) once (the community standard since the official cloud shut down) |
+| Anki / DDL **Vector** robot (1.0 or 2.0) | stock is fine — the pairing wizard onboards him for you (built on [wire-pod](https://github.com/kercre123/wire-pod), the community standard since the official cloud shut down) |
 | **Snap Spectacles (2024)** | + [Lens Studio 5.15](https://ar.snap.com/download) on your Mac |
 | A **Mac** | Python 3.12; runs the game server |
 | One **Wi-Fi network** | Mac + robot + Spectacles all on the same LAN |
@@ -37,9 +42,10 @@ export PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
 python -m game_bridge.main
 ```
 
-Open **http://localhost:8780** → the pairing wizard walks you through
-connecting your robot (needs your wire-pod running just once, during
-pairing). Full guide: [docs/PAIRING.md](docs/PAIRING.md).
+Open **http://localhost:8780** → **PAIR ROBOT** → **CONNECT VECTOR**. One
+progressive wizard finds your robot over Bluetooth, joins him to Wi-Fi, and
+authorizes the Mac — nothing to type, and it skips whatever is already done.
+Full guide with screenshots: [docs/PAIRING.md](docs/PAIRING.md).
 
 **2 · Lens**
 
