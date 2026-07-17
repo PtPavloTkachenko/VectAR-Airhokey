@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>Vector Web App</title>
+  <!-- Meta Apple tags for a PWA like experience. -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="theme-color" content="#1e1e1e">
+  <link rel="stylesheet" type="text/css" href="../css/style.css" />
+  <link rel="stylesheet" type="text/css" href="../css/statusbar.css" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <script src="https://kit.fontawesome.com/7508f396ac.js" crossorigin="anonymous"></script>
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="Thu, 01 Jan 1970 00:00:00 GMT">
+  <style>
+    body { font-size: 1.15em; }
+    h1 { font-size: 1.9em; margin: 0.3em 0; }
+    h2 { font-size: 1.2em; margin: 0.4em 0 0.2em; }
+    p { font-size: 0.85em; }
+    small { font-size: 0.72em; }
+    label { font-size: 0.85em; }
+    hr { margin: 0.4em 0; }
+    .small-hr { width: 40%; margin: 0.3em auto; }
+    #content { width: 820px !important; }
+    .main-nav-parent {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(85px, 1fr));
+      gap: 6px; padding: 0.4rem; max-width: 780px;
+    }
+    .main-nav-child {
+      min-width: unset; width: auto;
+      padding: 6px 3px; border-radius: 8px;
+    }
+    .main-nav-child a { font-size: 0.65em; line-height: 1.2; }
+    .main-nav-child a i { font-size: 20px !important; padding-bottom: 2px; }
+    input[type='radio'] { width: 16px; height: 16px; top: 2px; }
+    input[type='radio']:checked:after { width: 16px; height: 16px; }
+    #sdkActions div[style*="text-align: left"] {
+      display: flex !important; flex-wrap: wrap;
+      gap: 3px 14px; align-items: center;
+      padding: 4px 0; justify-content: center;
+    }
+    #sdkActions div[style*="text-align: left"] label {
+      display: inline-flex !important; align-items: center;
+      gap: 5px; white-space: nowrap; margin: 0; cursor: pointer;
+    }
+    #sdkActions label br { display: none; }
+    button, button[type="submit"] {
+      width: auto; min-width: 85px;
+      padding: 5px 12px; font-size: 0.82em;
+      margin: 3px; display: inline-block;
+    }
+    .tinput { width: 240px !important; font-size: 0.85em; }
+  </style>
+</head>
+
+<body onload="updateControlButtons()">
+  <div id="outer">
+    <div id="content">
+      <h1 class="center">Vector control (beta)</h1>
+      <hr />
+      <div class="main-nav-parent">
+        <div class="main-nav-child">
+          <a href="#" onclick="goBackToSettings()"><i class="fa-solid fa-reply"></i><br />Back</a>
+        </div>
+      </div>
+      <hr />
+
+      <div id="sdkActions">
+        <h2 class="center">Camera Feed</h2>
+        <hr class="small-hr">
+        <div class="center" id="camStream"></div>
+        <div style="text-align: left;" class="center">
+          <label>
+            <input type="radio" name="cam" id="cam" onclick="showCamStream()">Begin Camera Stream<br>
+          </label>
+          <label>
+            <input type="radio" name="cam" id="cam" onclick="stopCamStream()" checked>Stop Camera Stream<br>
+          </label>
+        </div>
+        <hr />
+
+        <h2 class="center">Behavior Control</h2>
+        <hr class="small-hr">
+        <small class="center">You must assume behavior control before performing any action</small>
+        <div style="text-align: left;" class="center">
+          <label>
+            <input type="radio" name="control" id="assume_control"
+              onclick="sendForm('/api-sdk/assume_behavior_control?priority=high'); updateControlButtons();">Assume<br>
+          </label>
+          <label>
+            <input type="radio" name="control" id="release_control"
+              onclick="sendForm('/api-sdk/release_behavior_control'); updateControlButtons();" checked>Release<br>
+          </label>
+        </div>
+        <hr />
+
+        <h2 class="center">Move Motors</h2>
+        <hr class="small-hr">
+        <small class="center">Toggle Keyboard Controls (unstable) <br> WASD for wheels, R-lift up, F-lift down, T-head
+          up, G-head down</small>
+        <div style="text-align: left;" class="center">
+          <label>
+            <input type="radio" name="keycontrol" id="key_control_on" onclick="toggleKeyboard()" disabled>On<br>
+          </label>
+          <label>
+            <input type="radio" name="keycontrol" id="key_control_off" onclick="toggleKeyboard()" checked
+              disabled>Off<br>
+          </label>
+        </div>
+        <hr />
+
+        <h2 class="center">Mirror Mode</h2>
+        <hr class="small-hr">
+        <div style="text-align: left;" class="center">
+          <label>
+            <input type="radio" name="mirror" id="mirror_on" onclick="sendForm('/api-sdk/mirror_mode?enable=true')"
+              disabled>On<br>
+          </label>
+          <label>
+            <input type="radio" name="mirror" id="mirror_off" onclick="sendForm('/api-sdk/mirror_mode?enable=false')"
+              checked disabled>Off<br>
+          </label>
+        </div>
+        <hr />
+
+        <h2 class="center">Say Text</h2>
+        <div class="center">
+          <input class="tinput" name="textSay" id="textSay" type="text" placeholder="Put text here" disabled />
+        </div>
+        <button onclick="sayText()" type="submit">Submit</button>
+      <hr />
+      <h2 class="center">Play Audio</h2>
+        <div class="center">
+          <input type="file" id="fileInput" accept=".wav">
+        </div>
+        <button id="uploadButton" style="display: none;" type="submit">Send Audio</button>
+        <div div class="center">
+          <audio id="audioOutput" controls></audio>
+        </div>
+      </div>
+      <hr />
+    </div>
+    </div>
+  </div>
+  <hr>
+  </div>
+  </div>
+
+  <script src="./js/httprequest.js"></script>
+  <script src="./js/iro.min.js"></script>
+  <script src="./js/control.js"></script>
+  <script src="../js/ui.js"></script>
+  <script src="../js/play_audio.js"></script>
+  <script src="../js/statusbar.js"></script>
+
+  <iframe name="hiddenFrame" width="0" height="0" border="0" style="display: none"></iframe>
+</body>
+
+</html>

@@ -1,0 +1,32 @@
+/* Status Bar — ported from WirePod.app Swift wrapper */
+#wpStatusBar {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
+  height: 32px; background: #111; border-bottom: 1px solid #333;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 12px; font-family: monospace; font-size: 11px; color: #aaa;
+  gap: 8px;
+}
+#wpStatusBar .sb-group { display: flex; align-items: center; gap: 8px; }
+#wpStatusBar .sb-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+#wpStatusBar .sb-dot.green { background: #33ed6d; box-shadow: 0 0 4px #33ed6d; }
+#wpStatusBar .sb-dot.red { background: #ff4444; box-shadow: 0 0 4px #ff4444; }
+#wpStatusBar .sb-dot.yellow { background: #ffcc00; box-shadow: 0 0 4px #ffcc00; }
+#wpStatusBar .sb-dot.gray { background: #555; }
+#wpStatusBar .sb-sep { width: 1px; height: 18px; background: #333; margin: 0 4px; }
+#wpStatusBar .sb-label { color: #888; }
+#wpStatusBar .sb-val { color: #ddd; }
+#wpStatusBar .sb-batt { color: #33ed6d; }
+#wpStatusBar .sb-batt.low { color: #ff4444; }
+#wpStatusBar .sb-batt.mid { color: #ffaa00; }
+#wpStatusBar .sb-charging { color: #ffcc00; font-size: 13px; }
+#wpStatusBar .sb-wifi { display: inline-flex; gap: 1px; align-items: flex-end; height: 12px; }
+#wpStatusBar .sb-wifi-bar { width: 3px; background: #555; border-radius: 1px; }
+#wpStatusBar .sb-wifi-bar.active { background: #33ed6d; }
+#wpStatusBar .sb-btn {
+  background: none; border: 1px solid #444; border-radius: 4px;
+  color: #aaa; padding: 2px 8px; font-size: 10px; cursor: pointer;
+  min-width: auto; margin: 0; font-family: monospace;
+}
+#wpStatusBar .sb-btn:hover { border-color: #888; color: #fff; background: #222; }
+#wpStatusBar .sb-btn.danger:hover { border-color: #ff4444; color: #ff4444; }
+body { padding-top: 36px !important; }

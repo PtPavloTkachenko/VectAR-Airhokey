@@ -1,0 +1,774 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>Vector Web App</title>
+  <!-- Meta Apple tags for a PWA like experience. -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="theme-color" content="#1e1e1e">
+  <link rel="stylesheet" type="text/css" href="../css/style.css">
+  <link rel="stylesheet" type="text/css" href="../css/statusbar.css">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://kit.fontawesome.com/7508f396ac.js" crossorigin="anonymous"></script>
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="Thu, 01 Jan 1970 00:00:00 GMT">
+  <style>
+    /* ==============================================
+       Compact Settings Layout — Full Override
+       ============================================== */
+
+    /* --- Base Typography --- */
+    body { font-size: 1.15em; }
+    h1 { font-size: 1.9em; margin: 0.3em 0; }
+    h2 { font-size: 1.2em; margin: 0.4em 0 0.2em; }
+    h3 { font-size: 1.0em; margin: 0.3em 0 0.1em; }
+    h4 { font-size: 0.9em; margin: 0.3em 0 0.1em; color: #aaa; }
+    p { font-size: 0.85em; margin: 0.2em 0; }
+    label { font-size: 0.85em; }
+    small { font-size: 0.72em; }
+    hr { margin: 0.4em 0; }
+    .small-hr { width: 40%; margin: 0.3em auto; }
+    #content { width: 820px !important; }
+    .desc { font-size: 0.75em; }
+
+    /* --- Navigation Grid --- */
+    .main-nav-parent {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(85px, 1fr));
+      gap: 6px; padding: 0.4rem;
+      max-width: 780px;
+    }
+    .main-nav-child {
+      min-width: unset; width: auto;
+      padding: 6px 3px; border-radius: 8px;
+    }
+    .main-nav-child a { font-size: 0.65em; line-height: 1.2; }
+    .main-nav-child a i, .main-nav-child i {
+      font-size: 20px !important;
+      padding-bottom: 2px; margin-bottom: 2px;
+    }
+
+    /* --- Sections --- */
+    .toggleable-section {
+      max-width: 680px; margin: 0 auto;
+      padding: 0 0.8em;
+    }
+
+    /* --- Radio Buttons --- */
+    input[type='radio'] { width: 16px; height: 16px; top: 2px; }
+    input[type='radio']:checked:after { width: 16px; height: 16px; }
+
+    /* --- Radio Groups → Horizontal --- */
+    .toggleable-section div[style*="text-align: left"] {
+      display: flex !important;
+      flex-wrap: wrap;
+      gap: 3px 14px;
+      align-items: center;
+      padding: 4px 0;
+      justify-content: center;
+    }
+    .toggleable-section div[style*="text-align: left"] label {
+      display: inline-flex !important;
+      align-items: center;
+      gap: 5px;
+      white-space: nowrap;
+      margin: 0; cursor: pointer;
+    }
+    .toggleable-section label br,
+    .pref-sub label br { display: none; }
+
+    /* --- Buttons --- */
+    button, button[type="submit"] {
+      width: auto; min-width: 85px;
+      padding: 5px 12px; font-size: 0.82em;
+      margin: 3px; display: inline-block;
+    }
+
+    /* --- Action Grid --- */
+    .action-grid {
+      display: flex; flex-wrap: wrap;
+      gap: 6px; justify-content: center;
+      margin: 6px 0;
+    }
+    .action-grid button {
+      min-width: 95px; font-size: 0.78em;
+      padding: 5px 10px;
+    }
+
+    /* --- Sub Navigation (Preferences) --- */
+    .sub-nav {
+      display: flex; flex-wrap: wrap;
+      gap: 5px; justify-content: center;
+      margin: 8px 0;
+    }
+    .sub-nav-btn {
+      min-width: 75px !important; font-size: 0.72em !important;
+      padding: 5px 8px !important;
+      border-width: 1px !important;
+      opacity: 0.7;
+      transition: opacity 0.2s, border-color 0.2s;
+    }
+    .sub-nav-btn:hover { opacity: 1; }
+    .sub-nav-btn.active {
+      opacity: 1;
+      border-color: var(--fg-color) !important;
+      background-color: rgba(0, 255, 128, 0.08) !important;
+      color: var(--fg-color) !important;
+    }
+    .sub-nav-btn i { margin-right: 3px; font-size: 0.9em; }
+    .pref-sub { padding: 8px 0; }
+    .pref-sub div[style*="text-align: left"] {
+      display: flex !important; flex-wrap: wrap;
+      gap: 3px 14px; align-items: center;
+      padding: 4px 0; justify-content: center;
+    }
+    .pref-sub div[style*="text-align: left"] label {
+      display: inline-flex !important; align-items: center;
+      gap: 5px; white-space: nowrap; margin: 0; cursor: pointer;
+    }
+
+    /* --- Face Manager --- */
+    #section-face .center { margin: 3px 0; }
+    #faceButtons {
+      display: inline-flex !important;
+      gap: 6px; justify-content: center;
+    }
+    .tinput { width: 240px !important; font-size: 0.85em; }
+    select { font-size: 0.85em; }
+
+    /* --- Cube Section --- */
+    #cubeInfoPanel {
+      display: grid !important;
+      grid-template-columns: 1fr 1fr;
+      gap: 0 16px;
+    }
+    #cubeInfoPanel p { margin: 1px 0; font-size: 0.82em; }
+    #cubeRawData {
+      display: grid !important;
+      grid-template-columns: 1fr 1fr;
+      gap: 0 16px;
+    }
+    #cubeRawData p { margin: 1px 0; font-size: 0.82em; }
+    #section-cube label {
+      display: inline-flex !important;
+      align-items: center;
+      gap: 4px; margin: 2px 6px; font-size: 0.82em;
+    }
+    #section-cube .center br { display: none; }
+    #cubeCanvas {
+      max-width: 420px !important;
+      height: 250px !important;
+    }
+    #section-cube div[style*="max-width:400px"] {
+      display: flex; flex-wrap: wrap;
+      justify-content: center; align-items: center;
+      gap: 4px 10px;
+    }
+
+    /* --- Sensor Dashboard --- */
+    .sensor-group { margin-bottom:4px; }
+    .sensor-h { font-size:0.82em; font-weight:bold; margin:2px 0; }
+    .sensor-group p { margin:1px 0; font-size:0.78em; }
+    .sensor-bar-wrap {
+      width:100%; height:7px; background:#333; border-radius:4px; overflow:hidden; margin:2px 0;
+    }
+    .sensor-bar {
+      height:100%; background:#33ed6d; transition: width 0.15s; border-radius:4px;
+    }
+    .status-flag {
+      display:inline-block; padding:1px 6px; border-radius:3px;
+      font-size:0.68em; font-family:monospace;
+    }
+    .status-flag.on  { background:#33ed6d22; color:#33ed6d; border:1px solid #33ed6d; }
+    .status-flag.off { background:#1a1a1a; color:#444; border:1px solid #333; }
+    #eventLogConsole .evt-face   { color:#e237e6; }
+    #eventLogConsole .evt-object { color:#ff8800; }
+    #eventLogConsole .evt-wake   { color:#33ed6d; }
+    #eventLogConsole .evt-intent { color:#3399ff; }
+    #eventLogConsole .evt-status { color:#666; }
+    #section-sensors h4.sensor-h { color:#888; }
+    @media screen and (max-width: 768px) {
+      #section-sensors div[style*="grid-template-columns"] { grid-template-columns:1fr !important; }
+    }
+
+    /* --- Charts --- */
+    canvas:not(#cubeCanvas):not(#navMapCanvas):not(#sensor3DCanvas):not(#faceOverlayCanvas) {
+      width: 100% !important;
+      max-width: 520px !important;
+      height: 240px !important;
+    }
+
+    /* --- Photos --- */
+    #photoSection {
+      display: flex; flex-wrap: wrap;
+      gap: 8px; justify-content: center;
+    }
+
+    /* --- Responsive --- */
+    @media screen and (max-width: 768px) {
+      .main-nav-parent {
+        grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
+        gap: 5px; padding: 0.3rem;
+      }
+      .main-nav-child a i { font-size: 16px !important; }
+      .main-nav-child a { font-size: 0.58em; }
+      .toggleable-section { padding: 0 0.4em; }
+      #cubeInfoPanel, #cubeRawData { grid-template-columns: 1fr; }
+      .action-grid { gap: 4px; }
+      .sub-nav { gap: 4px; }
+    }
+  </style>
+</head>
+
+<body>
+
+  <div id="outer">
+    <div id="content" class="">
+      <h1 class="center">Vector Configuration</h1>
+      <div id="botStats"></div>
+      <hr>
+      <div class="main-nav-parent">
+        <div class="main-nav-child"><a href="/sdkapp"><i class="fa-solid fa-reply"></i><br />Back</a></div>
+        <div class="main-nav-child"><a href="#" onclick="goToControlPage()"><i
+              class="fa-solid fa-gamepad"></i><br />Control</a></div>
+        <div class="main-nav-child"><a href="#" onclick="showSection('section-volume'); return false;"><i
+              class="fa-solid fa-volume-high" id="icon-volume" name="icon"></i><br />Volume</a></div>
+        <div class="main-nav-child"><a href="#" onclick="showSection('section-eyes'); return false;"><i
+              class="fa-solid fa-eye" id="icon-eyes" name="icon"></i><br />Eye Color</a></div>
+        <div class="main-nav-child"><a href="#" onclick="showSection('section-face'); return false;"><i
+              class="fa-solid fa-user" id="icon-face" name="icon"></i><br />Faces</a></div>
+        <div class="main-nav-child"><a href="#" onclick="showSection('section-actions'); return false;"><i
+              class="fa-solid fa-person-running" id="icon-actions" name="icon"></i><br />Actions</a></div>
+        <div class="main-nav-child"><a href="#" onclick="showSection('section-stim'); return false;"><i
+              class="fa-solid fa-face-laugh-beam" id="icon-stim" name="icon"></i><br />Stim</a></div>
+        <div class="main-nav-child"><a href="#" onclick="showSection('section-photos'); getPhotos(); return false;"><i
+              class="fa-solid fa-images" id="icon-photos" name="icon"></i><br />Photos</a></div>
+        <div class="main-nav-child"><a href="#" onclick="showSection('section-cube'); return false;"><i
+              class="fa-solid fa-cube" id="icon-cube" name="icon"></i><br />Cube</a></div>
+        <div class="main-nav-child"><a href="#" onclick="showSection('section-sensors'); return false;"><i
+              class="fa-solid fa-gauge-high" id="icon-sensors" name="icon"></i><br />Sensors</a></div>
+        <div class="main-nav-child"><a href="#" onclick="showSection('section-prefs'); return false;"><i
+              class="fa-solid fa-sliders" id="icon-prefs" name="icon"></i><br />Preferences</a></div>
+        <div class="main-nav-child"><a href="#" onclick="window.open('http://'+location.hostname+':8089','_blank'); return false;"><i
+              class="fa-solid fa-server" id="icon-switch" name="icon"></i><br />Switch</a></div>
+      </div>
+      <hr>
+
+      <div id="section-volume" class="toggleable-section" style="display:none;">
+        <h2 class="center">Volume</h2>
+        <hr class="small-hr">
+        <div id="currentVolume" class="center"></div>
+        <div style="text-align: left;" class="center">
+          <label>
+            <input type="radio" name="vol" id="Mute" value="Mute" onclick="sendForm('/api-sdk/volume?volume=0')">Mute
+          </label>
+          <label>
+            <input type="radio" name="vol" id="Low" value="Low" onclick="sendForm('/api-sdk/volume?volume=1')">Low
+          </label>
+          <label>
+            <input type="radio" name="vol" id="Medium Low" value="Medium Low"
+              onclick="sendForm('/api-sdk/volume?volume=2')">Medium Low
+          </label>
+          <label>
+            <input type="radio" name="vol" id="Medium" value="Medium"
+              onclick="sendForm('/api-sdk/volume?volume=3')">Medium
+          </label>
+          <label>
+            <input type="radio" name="vol" id="Medium High" value="Medium High"
+              onclick="sendForm('/api-sdk/volume?volume=4')">Medium High
+          </label>
+          <label>
+            <input type="radio" name="vol" id="High" value="High" onclick="sendForm('/api-sdk/volume?volume=5')">High
+          </label>
+        </div>
+        <br>
+        <hr>
+      </div>
+
+      <div id="section-eyes" class="toggleable-section" style="display:none;">
+        <h2 style="margin-bottom: 0px;">Eye Color</h2>
+        <hr class="small-hr">
+        <h4 style="margin-bottom: 0px; margin-top:0px;">Preset Eye Colors:</h4>
+        <div style="text-align: left;" class="center">
+          <label>
+            <input type="radio" name="eye" id="Teal" value="Teal"
+              onclick="sendForm('/api-sdk/eye_color?color=0')">Teal<br>
+          </label>
+          <label>
+            <input type="radio" name="eye" id="Orange" value="Orange"
+              onclick="sendForm('/api-sdk/eye_color?color=1')">Orange<br>
+          </label>
+          <label>
+            <input type="radio" name="eye" id="Yellow" value="Yellow"
+              onclick="sendForm('/api-sdk/eye_color?color=2')">Yellow<br>
+          </label>
+          <label>
+            <input type="radio" name="eye" id="Lime Green" value="Lime Green"
+              onclick="sendForm('/api-sdk/eye_color?color=3')">Lime Green<br>
+          </label>
+          <label>
+            <input type="radio" name="eye" id="Azure Blue" value="Azure Blue"
+              onclick="sendForm('/api-sdk/eye_color?color=4')">Azure Blue<br>
+          </label>
+          <label>
+            <input type="radio" name="eye" id="Purple" value="Purple"
+              onclick="sendForm('/api-sdk/eye_color?color=5')">Purple<br>
+          </label>
+          <label>
+            <input type="radio" name="eye" id="Other Green" value="Other Green"
+              onclick="sendForm('/api-sdk/eye_color?color=6')">Other Green<br>
+          </label>
+        </div>
+        <br />
+        <hr class="small-hr">
+        <h4 style="margin-top: 0px;" class="center">Custom Eye Color:</h4>
+        <div class="center" id="picker"></div><br />
+        <div class="center">
+          <button class="settings" onclick="sendCustomColor()">Submit</button>
+        </div>
+        <hr>
+      </div>
+
+      <div id="section-face" class="toggleable-section" style="display:none;">
+        <h2 class="center">Face Manager</h2>
+        <hr class="small-hr">
+        <h3 class="center">Modify existing faces:</h3>
+        <p class="center">Choose the face you would like to modify.</p>
+        <div class="center">
+          <select id="faceList" name="faceList"></select>
+        </div>
+        <div class="center">
+          <button class="center" onclick="refreshFaceList()">Refresh list</button>
+        </div>
+        <div class="center">
+          <div id="faceButtons">
+            <button onclick="deleteFace()">Delete</button>
+            <button onclick="renameFace()">Rename</button>
+          </div>
+        </div>
+        <hr class="small-hr">
+        <h3 class="center">Add a new face:</h3>
+        <p class="center">Enter a name you'd like to add:</p>
+        <div class="center">
+          <input class="tinput" id="faceInput" name="faceInput" type="text" placeholder="Put name here">
+        </div>
+        <div class="center">
+          <button onclick="addFace()">Add Face</button>
+        </div>
+        <hr>
+      </div>
+
+      <div id="section-actions" class="toggleable-section" style="display:none;">
+        <h2 class="center">Quick Actions</h2>
+        <hr class="small-hr">
+
+        <h4 class="center">Movement</h4>
+        <div class="action-grid">
+          <button onclick="sendForm('/api-sdk/cloud_intent?intent=intent_imperative_forward')">Forward</button>
+          <button onclick="sendForm('/api-sdk/cloud_intent?intent=intent_imperative_backup')">Backward</button>
+          <button onclick="sendForm('/api-sdk/cloud_intent?intent=intent_imperative_turnleft')">Turn Left</button>
+          <button onclick="sendForm('/api-sdk/cloud_intent?intent=intent_imperative_turnright')">Turn Right</button>
+          <button onclick="sendForm('/api-sdk/cloud_intent?intent=intent_imperative_turnaround')">Turn Around</button>
+          <button onclick="sendForm('/api-sdk/cloud_intent?intent=intent_imperative_come')">Come Here</button>
+        </div>
+
+        <h4 class="center">Behavior</h4>
+        <div class="action-grid">
+          <button onclick="sendForm('/api-sdk/cloud_intent?intent=explore_start')">Explore</button>
+          <button onclick="sendForm('/api-sdk/cloud_intent?intent=intent_imperative_dance')">Dance</button>
+          <button onclick="sendForm('/api-sdk/cloud_intent?intent=intent_system_sleep')">Sleep</button>
+          <button onclick="sendForm('/api-sdk/cloud_intent?intent=intent_system_charger')">Go Home</button>
+          <button onclick="sendForm('/api-sdk/cloud_intent?intent=intent_imperative_lookatme')">Look At Me</button>
+          <button onclick="sendForm('/api-sdk/cloud_intent?intent=intent_photo_take_extend')">Take Photo</button>
+        </div>
+
+        <h4 class="center">Games & Tricks</h4>
+        <div class="action-grid">
+          <button onclick="sendForm('/api-sdk/cloud_intent?intent=intent_play_fistbump')">Fist Bump</button>
+          <button onclick="sendForm('/api-sdk/cloud_intent?intent=intent_play_popawheelie')">Pop a Wheelie</button>
+          <button onclick="sendForm('/api-sdk/cloud_intent?intent=intent_play_rollcube')">Roll Cube</button>
+          <button onclick="sendForm('/api-sdk/cloud_intent?intent=intent_play_blackjack')">Blackjack</button>
+          <button onclick="sendForm('/api-sdk/cloud_intent?intent=intent_imperative_fetchcube')">Fetch Cube</button>
+          <button onclick="sendForm('/api-sdk/cloud_intent?intent=intent_play_anytrick')">Any Trick</button>
+          <button onclick="sendForm('/api-sdk/cloud_intent?intent=intent_play_keepaway')">Keep Away</button>
+          <button onclick="sendForm('/api-sdk/cloud_intent?intent=intent_play_pickupcube')">Pick Up Cube</button>
+        </div>
+
+        <h4 class="center">Social</h4>
+        <div class="action-grid">
+          <button onclick="sendForm('/api-sdk/cloud_intent?intent=intent_greeting_hello')">Hello</button>
+          <button onclick="sendForm('/api-sdk/cloud_intent?intent=intent_greeting_goodbye')">Goodbye</button>
+          <button onclick="sendForm('/api-sdk/cloud_intent?intent=intent_greeting_goodmorning')">Good Morning</button>
+          <button onclick="sendForm('/api-sdk/cloud_intent?intent=intent_greeting_goodnight')">Good Night</button>
+          <button onclick="sendForm('/api-sdk/cloud_intent?intent=intent_imperative_love')">I Love You</button>
+          <button onclick="sendForm('/api-sdk/cloud_intent?intent=intent_imperative_apologize')">Sorry</button>
+          <button onclick="sendForm('/api-sdk/cloud_intent?intent=intent_names_ask')">Ask My Name</button>
+          <button onclick="sendForm('/api-sdk/cloud_intent?intent=intent_character_age')">How Old?</button>
+        </div>
+
+        <h4 class="center">Audio</h4>
+        <div class="action-grid">
+          <button onclick="sendForm('/api-sdk/cloud_intent?intent=intent_imperative_volumeup')">Volume Up</button>
+          <button onclick="sendForm('/api-sdk/cloud_intent?intent=intent_imperative_volumedown')">Volume Down</button>
+          <button onclick="sendForm('/api-sdk/cloud_intent?intent=intent_imperative_shutup')">Be Quiet</button>
+          <button onclick="sendForm('/api-sdk/cloud_intent?intent=intent_clock_time')">What Time?</button>
+        </div>
+
+        <hr class="small-hr">
+        <h4 class="center">Trigger Hey Vector</h4>
+        <p class="center" style="font-size:0.7em;">(Dev firmware / 2.0.1.6085ep+)</p>
+        <div id="heyVectorStatus" class="center"></div>
+        <div class="center">
+          <button onclick="triggerHeyVector()">Hey Vector</button>
+        </div>
+        <hr>
+      </div>
+
+      <div id="section-stim" class="toggleable-section" style="display:none;">
+        <h2 class="center">Stimulation</h2>
+        <hr class="small-hr">
+        <div class="center">
+          <canvas id="stimChart"></canvas>
+        </div>
+        <hr>
+      </div>
+
+      <div id="section-photos" class="toggleable-section" style="display:none;">
+        <h2 class="center">Photos</h2>
+        <hr class="small-hr">
+        <div class="center">
+          <button onclick="getPhotos()">Refresh List</button>
+        </div>
+        <div class="center">
+          <div id="photoSection"></div>
+        </div>
+        <hr>
+      </div>
+
+      <!-- ===== Preferences (grouped sub-menu) ===== -->
+      <div id="section-prefs" class="toggleable-section" style="display:none;">
+        <h2 class="center">Preferences</h2>
+        <hr class="small-hr">
+        <div class="sub-nav">
+          <button class="sub-nav-btn" onclick="showSubPref('sub-locale')"><i class="fa-solid fa-earth-americas"></i> Locale</button>
+          <button class="sub-nav-btn" onclick="showSubPref('sub-time')"><i class="fa-solid fa-clock"></i> Time</button>
+          <button class="sub-nav-btn" onclick="showSubPref('sub-temp')"><i class="fa-solid fa-temperature-half"></i> Units</button>
+          <button class="sub-nav-btn" onclick="showSubPref('sub-button')"><i class="fa-solid fa-circle-dot"></i> Button</button>
+          <button class="sub-nav-btn" onclick="showSubPref('sub-alexa')"><i class="fa-solid fa-house-signal"></i> Alexa</button>
+          <button class="sub-nav-btn" onclick="showSubPref('sub-location')"><i class="fa-solid fa-location-crosshairs"></i> Location</button>
+          <button class="sub-nav-btn" onclick="showSubPref('sub-timezone')"><i class="fa-solid fa-hourglass"></i> Time Zone</button>
+          <button class="sub-nav-btn" onclick="showSubPref('sub-stats')"><i class="fa-solid fa-chart-simple"></i> Statistics</button>
+        </div>
+        <hr class="small-hr">
+
+        <div id="sub-locale" class="pref-sub" style="display:none;">
+          <h3 class="center">Locale</h3>
+          <div id="currentLocale" class="center"></div>
+          <div style="text-align: left;" class="center">
+            <label><input type="radio" name="locale" id="en-US" value="English (US)" onclick="sendForm('/api-sdk/locale?locale=en-US')">English (US)</label>
+            <label><input type="radio" name="locale" id="en-GB" value="English (GB)" onclick="sendForm('/api-sdk/locale?locale=en-GB')">English (GB)</label>
+            <label><input type="radio" name="locale" id="en-AU" value="English (AU)" onclick="sendForm('/api-sdk/locale?locale=en-AU')">English (AU)</label>
+            <label><input type="radio" name="locale" id="de-DE" value="German" onclick="sendForm('/api-sdk/locale?locale=de-DE')">German</label>
+            <label><input type="radio" name="locale" id="fr-FR" value="French" onclick="sendForm('/api-sdk/locale?locale=fr-FR')">French</label>
+            <label><input type="radio" name="locale" id="ja-FP" value="Japanese" onclick="sendForm('/api-sdk/locale?locale=ja-JP')">Japanese</label>
+          </div>
+        </div>
+
+        <div id="sub-time" class="pref-sub" style="display:none;">
+          <h3 class="center">Time Format</h3>
+          <div id="currentTimeSet" class="center"></div>
+          <div style="text-align: left;" class="center">
+            <label><input type="radio" name="time" id="12 Hour" value="12 Hour" onclick="sendForm('/api-sdk/time_format_12')">12 Hour</label>
+            <label><input type="radio" name="time" id="24 Hour" value="24 Hour" onclick="sendForm('/api-sdk/time_format_24')">24 Hour</label>
+          </div>
+        </div>
+
+        <div id="sub-temp" class="pref-sub" style="display:none;">
+          <h3 class="center">Temperature Units</h3>
+          <div id="currentTempFormat" class="center"></div>
+          <div style="text-align: left;" class="center">
+            <label><input type="radio" name="temp" id="Celsius" value="Celsius" onclick="sendForm('/api-sdk/temp_c')">Celsius</label>
+            <label><input type="radio" name="temp" id="Fahrenheit" value="Fahrenheit" onclick="sendForm('/api-sdk/temp_f')">Fahrenheit</label>
+          </div>
+        </div>
+
+        <div id="sub-button" class="pref-sub" style="display:none;">
+          <h3 class="center">Button Action</h3>
+          <div id="currentButton" class="center"></div>
+          <div style="text-align: left;" class="center">
+            <label><input type="radio" name="but" id="Hey Vector" value="Hey Vector" onclick="sendForm('/api-sdk/button_hey_vector')">Hey Vector</label>
+            <label><input type="radio" name="but" id="Alexa" value="Alexa" onclick="sendForm('/api-sdk/button_alexa')">Alexa</label>
+          </div>
+        </div>
+
+        <div id="sub-alexa" class="pref-sub" style="display:none;">
+          <h3 class="center">Alexa</h3>
+          <div id="alexaStatus" class="center"></div>
+          <p class="center"><a target="_blank" rel="noopener noreferrer" href="https://amazon.com/code">amazon.com/code</a></p>
+          <div class="center" style="display:flex; gap:6px; justify-content:center;">
+            <button onclick="sendForm('/api-sdk/alexa_sign_in')">Sign In</button>
+            <button onclick="sendForm('/api-sdk/alexa_sign_out')">Sign Out</button>
+          </div>
+        </div>
+
+        <div id="sub-location" class="pref-sub" style="display:none;">
+          <h3 class="center">Location</h3>
+          <div id="currentLocation"></div>
+          <small class="desc center">Example: San Francisco, California</small>
+          <div class="center">
+            <input class="tinput" id="locationInput" name="locationInput" type="text" placeholder="Put location here">
+          </div>
+          <div class="center" style="margin-top:4px;">
+            <button onclick="sendLocation()">Submit</button>
+          </div>
+        </div>
+
+        <div id="sub-timezone" class="pref-sub" style="display:none;">
+          <h3 class="center">Time Zone</h3>
+          <div id="currentTimeZone" class="center"></div>
+          <div class="center">
+            <select id="tzInput" value="" class="vec-field">
+              <option value="Pacific/Honolulu">Pacific/Honolulu</option>
+              <option value="America/Juneau">America/Juneau</option>
+              <option value="America/Los_Angeles">America/Los_Angeles</option>
+              <option value="America/Phoenix">America/Phoenix</option>
+              <option value="America/Denver">America/Denver</option>
+              <option value="America/Lima">America/Lima</option>
+              <option value="America/Chicago">America/Chicago</option>
+              <option value="America/Bogota">America/Bogota</option>
+              <option value="America/New_York">America/New_York</option>
+              <option value="America/Argentina/Buenos_Aires">America/Argentina/Buenos_Aires</option>
+              <option value="America/Santiago">America/Santiago</option>
+              <option value="America/Sao_Paulo">America/Sao_Paulo</option>
+              <option value="America/Halifax">America/Halifax</option>
+              <option value="America/St_Johns">America/St_Johns</option>
+              <option value="GMT">GMT</option>
+              <option value="Europe/Lisbon">Europe/Lisbon</option>
+              <option value="Europe/London">Europe/London</option>
+              <option value="Europe/Paris">Europe/Paris</option>
+              <option value="Europe/Athens">Europe/Athens</option>
+              <option value="Europe/Istanbul">Europe/Istanbul</option>
+              <option value="Europe/Moscow">Europe/Moscow</option>
+              <option value="Africa/Lagos">Africa/Lagos</option>
+              <option value="Africa/Harare">Africa/Harare</option>
+              <option value="Africa/Addis_Ababa">Africa/Addis_Ababa</option>
+              <option value="Asia/Dubai">Asia/Dubai</option>
+              <option value="Asia/Tehran">Asia/Tehran</option>
+              <option value="Asia/Karachi">Asia/Karachi</option>
+              <option value="Asia/Kolkata">Asia/Kolkata</option>
+              <option value="Asia/Dhaka">Asia/Dhaka</option>
+              <option value="Asia/Bangkok">Asia/Bangkok</option>
+              <option value="Asia/Jakarta">Asia/Jakarta</option>
+              <option value="Asia/Hong_Kong">Asia/Hong_Kong</option>
+              <option value="Asia/Singapore">Asia/Singapore</option>
+              <option value="Asia/Manila">Asia/Manila</option>
+              <option value="Asia/Seoul">Asia/Seoul</option>
+              <option value="Asia/Tokyo">Asia/Tokyo</option>
+              <option value="Australia/Perth">Australia/Perth</option>
+              <option value="Australia/Darwin">Australia/Darwin</option>
+              <option value="Australia/Adelaide">Australia/Adelaide</option>
+              <option value="Australia/Brisbane">Australia/Brisbane</option>
+              <option value="Australia/Sydney">Australia/Sydney</option>
+              <option value="Australia/Auckland">Australia/Auckland</option>
+            </select>
+          </div>
+          <div class="center" style="margin-top:4px;">
+            <button onclick="sendTimeZone()">Submit</button>
+          </div>
+        </div>
+
+        <div id="sub-stats" class="pref-sub" style="display:none;">
+          <h3 class="center">Statistics</h3>
+          <div class="center"><button onclick="updateStats()">Refresh</button></div>
+          <div id="statsSection" class="center"></div>
+        </div>
+
+        <hr>
+      </div>
+
+      <div id="section-cube" class="toggleable-section" style="display:none;">
+        <h2 class="center">Cube Debug</h2>
+        <hr class="small-hr">
+        <div class="center">
+          <button onclick="cubeConnect()">Connect Cube</button>
+          <button onclick="cubeDisconnect()">Disconnect Cube</button>
+          <button onclick="cubeFlash()">Flash Lights</button>
+        </div>
+        <hr class="small-hr">
+        <h3 class="center">Cube State</h3>
+        <div id="cubeInfoPanel" class="center" style="text-align:left; max-width:400px; margin:0 auto;">
+          <p>Connected: <span id="cubeConnected">-</span></p>
+          <p>Factory ID: <span id="cubeFactoryId">-</span></p>
+          <p>Object ID: <span id="cubeObjectId">-</span></p>
+          <p>Battery: <span id="cubeBattery">-</span></p>
+          <p>Moving: <span id="cubeMoving">-</span></p>
+          <p>Up Axis: <span id="cubeUpAxis">-</span></p>
+          <p>Last Tapped: <span id="cubeLastTapped">-</span></p>
+          <p>Cube Data: <span id="cubeFreshness">-</span></p>
+          <p>Charger Data: <span id="chargerFreshness">-</span></p>
+        </div>
+        <hr class="small-hr">
+        <h3 class="center">3D View</h3>
+        <div class="center">
+          <canvas id="cubeCanvas" width="600" height="400" style="border:1px solid #444; background:#1e1e1e;"></canvas>
+        </div>
+        <hr class="small-hr">
+        <h3 class="center">Raw Data</h3>
+        <div id="cubeRawData" class="center" style="text-align:left; max-width:500px; margin:0 auto; font-family:monospace; font-size:12px;">
+          <p>Cube Pose: <span id="cubePoseRaw">-</span></p>
+          <p>Cube Quat: <span id="cubeQuatRaw">-</span></p>
+          <p>Robot Pose: <span id="robotPoseRaw">-</span></p>
+          <p>Robot Quat: <span id="robotQuatRaw">-</span></p>
+          <p>Robot Heading: <span id="robotHeadingRaw">-</span></p>
+          <p>Charger Pose: <span id="chargerPoseRaw">-</span></p>
+        </div>
+        <hr class="small-hr">
+        <h3 class="center">LED Colors</h3>
+        <div class="center" style="max-width:400px; margin:0 auto;">
+          <label>Corner 1: <input type="color" id="ledColor1" value="#00ff00"></label>
+          <label>Corner 2: <input type="color" id="ledColor2" value="#00ff00"></label><br>
+          <label>Corner 3: <input type="color" id="ledColor3" value="#00ff00"></label>
+          <label>Corner 4: <input type="color" id="ledColor4" value="#00ff00"></label><br><br>
+          <button onclick="setCubeLights()">Set LED Colors</button>
+        </div>
+        <hr>
+      </div>
+
+      <!-- ===== Sensor Dashboard ===== -->
+      <div id="section-sensors" class="toggleable-section" style="display:none;">
+        <h2 class="center">Sensor Dashboard</h2>
+        <hr class="small-hr">
+
+        <!-- Top row: Camera (with ML overlay) + Sensor Gauges -->
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; max-width:900px; margin:0 auto;">
+          <!-- Camera with face detection overlay -->
+          <div>
+            <h3 class="center">Camera <span id="sFaceLabel" style="font-size:0.65em; color:#e237e6;"></span></h3>
+            <div class="center" style="position:relative; width:100%; max-width:420px; margin:0 auto; background:#000; border:1px solid #444; overflow:hidden;">
+              <img id="sensorCamFeed" style="width:100%; display:block;" />
+              <canvas id="faceOverlayCanvas" style="position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none;"></canvas>
+              <div id="sCamStatus" style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); color:#666; font-size:0.7em; font-family:monospace; text-align:center;"></div>
+            </div>
+            <!-- Expression histogram -->
+            <div id="sExprHisto" class="center" style="max-width:420px; margin:4px auto; font-family:monospace; font-size:0.65em;"></div>
+          </div>
+          <!-- Sensors -->
+          <div>
+            <h3 class="center">Sensors</h3>
+            <div style="font-family:monospace; font-size:0.72em; text-align:left; padding:2px;">
+              <div class="sensor-group">
+                <h4 class="sensor-h">Proximity</h4>
+                <p>Dist: <span id="sProxDist">-</span>mm | Obj: <span id="sProxObj">-</span> | Q: <span id="sProxQual">-</span></p>
+                <div class="sensor-bar-wrap"><div id="sProxBar" class="sensor-bar" style="width:0%"></div></div>
+              </div>
+              <div class="sensor-group">
+                <h4 class="sensor-h">Position</h4>
+                <p>X: <span id="sPosX">-</span> Y: <span id="sPosY">-</span> Angle: <span id="sAngle">-</span></p>
+              </div>
+              <div class="sensor-group">
+                <h4 class="sensor-h">Touch</h4>
+                <p>Raw: <span id="sTouchVal">-</span> | Touched: <span id="sTouched">-</span></p>
+              </div>
+              <div class="sensor-group">
+                <h4 class="sensor-h">IMU</h4>
+                <p>Accel: <span id="sAccel">-</span></p>
+                <p>Gyro: <span id="sGyro">-</span></p>
+              </div>
+              <div class="sensor-group">
+                <h4 class="sensor-h">Motors</h4>
+                <p>L: <span id="sLWheel">-</span>mm/s R: <span id="sRWheel">-</span>mm/s</p>
+                <p>Head: <span id="sHead">-</span> Lift: <span id="sLift">-</span></p>
+              </div>
+              <div class="sensor-group">
+                <h4 class="sensor-h">Emotion</h4>
+                <p>Stim: <span id="sStimVal">-</span></p>
+                <div class="sensor-bar-wrap"><div id="sStimBar" class="sensor-bar" style="width:0%; background:#e237e6;"></div></div>
+              </div>
+              <div class="sensor-group">
+                <h4 class="sensor-h">Face</h4>
+                <p>ID:<span id="sFaceId">-</span> <span id="sFaceName">-</span> (<span id="sFaceExpr">-</span>)</p>
+              </div>
+              <div class="sensor-group">
+                <h4 class="sensor-h">Objects</h4>
+                <p>Cube: <span id="sCubePos">-</span></p>
+                <p>Charger: <span id="sChargerPos">-</span></p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <hr class="small-hr">
+
+        <!-- Status Flags -->
+        <h3 class="center">Status</h3>
+        <div id="sStatusFlags" class="center" style="display:flex; flex-wrap:wrap; gap:3px; justify-content:center; max-width:900px; margin:0 auto;"></div>
+
+        <hr class="small-hr">
+
+        <!-- Middle row: Nav Map 2D + 3D View -->
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; max-width:900px; margin:0 auto;">
+          <div>
+            <h3 class="center">Nav Map</h3>
+            <div class="center">
+              <canvas id="navMapCanvas" width="400" height="400" style="width:100%; max-width:420px; border:1px solid #444; background:#111;"></canvas>
+            </div>
+            <div class="center" style="font-size:0.6em; margin-top:3px; color:#888;">
+              <span style="color:#33ed6d;">&#9632; clear</span>
+              <span style="color:#ff4444;">&#9632; obstacle</span>
+              <span style="color:#ffaa00;">&#9632; cliff</span>
+              <span style="color:#3399ff;">&#9632; edge</span>
+            </div>
+          </div>
+          <div>
+            <h3 class="center">3D View</h3>
+            <div class="center">
+              <canvas id="sensor3DCanvas" width="420" height="400" style="width:100%; max-width:420px; border:1px solid #444; background:#111118;"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <hr class="small-hr">
+
+        <!-- Event Log -->
+        <h3 class="center">Event Log</h3>
+        <div id="eventLogConsole" style="max-width:900px; margin:0 auto; height:160px; overflow-y:auto; background:#0a0a0e; border:1px solid #333; padding:4px; font-family:monospace; font-size:0.68em; color:#aaa; border-radius:4px;"></div>
+        <hr>
+      </div>
+
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="./js/settings.js"></script>
+  <script src="./js/httprequest.js"></script>
+  <script src="./js/iro.min.js"></script>
+  <script src="./js/common.js"></script>
+  <script src="../js/battery.js"></script>
+  <script src="./js/main.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="./js/cube.js"></script>
+  <script src="./js/sensors.js"></script>
+  <script src="./js/faces.js"></script>
+  <script src="../js/ui.js"></script>
+  <script src="./js/heyvector.js"></script>
+  <script>
+    function showSubPref(id) {
+      var subs = document.getElementsByClassName('pref-sub');
+      for (var i = 0; i < subs.length; i++) subs[i].style.display = 'none';
+      var btns = document.getElementsByClassName('sub-nav-btn');
+      for (var i = 0; i < btns.length; i++) btns[i].classList.remove('active');
+      document.getElementById(id).style.display = 'block';
+      // Highlight active button
+      var clicked = event.currentTarget || event.target;
+      if (clicked) clicked.classList.add('active');
+    }
+  </script>
+  <iframe name="hiddenFrame" width="0" height="0" border="0" style="display: none;"></iframe>
+
+  <script src="../js/statusbar.js"></script>
+
+</body>
+
+</html>
