@@ -1,0 +1,44 @@
+studioVersion:
+  major: 5
+  minor: 15
+  patch: 4
+  build: 26022322
+  type: Public
+coreVersion: 330
+clientVersion: 13.60
+updateCheckpoint: 76
+sceneId: 0a1ccb1a-fe88-4fbb-9883-e3af3c75fd99
+metaInfo:
+  hints:
+    []
+  tags:
+    []
+  lensName: Robo-Hockey-515
+  lensDescriptors:
+    - AI_MUTATED
+    - EXPERIMENTAL_API
+  lensApplicability:
+    - Front
+    - Back
+  lensClientCompatibilities:
+    - Spectacles
+  platformBundlesEnabled: false
+  iconHash: ""
+  videoPreviewHash: ""
+  fromTemplateName: Specs Base Template
+  fromTemplateUrl: Lens Studio 5.22.0.26061206
+  activationCamera: Front
+  sourceMapEnabled: false
+  usingMinClientVersions: false
+  androidMinClientVersion:
+    major: 0
+    minor: 0
+    patch: 0
+    build: 0
+  iOSMinClientVersion:
+    major: 0
+    minor: 0
+    patch: 0
+    build: 0
+  documentId: 5c903c69-20ed-4dcc-b555-1964a76a11a5
+  originalDocumentId: 4492aa5f-47e4-4abe-9643-7d6f708b0869

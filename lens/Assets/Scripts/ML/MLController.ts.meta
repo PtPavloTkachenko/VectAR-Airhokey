@@ -1,0 +1,56 @@
+- !<AssetImportMetadata/5853a617-bd10-4cbf-b690-e639d7b7327c>
+  ImportedAssetIds:
+    TypeScriptAsset: !<reference> c69823a3-1236-4bbc-95b0-8d6b49a76bdb
+  ImporterName: TypeScriptAssetImporter
+  PrimaryAsset: !<reference> c69823a3-1236-4bbc-95b0-8d6b49a76bdb
+  PackageType: NotAPackage
+  LegacyPackagePolicy: ~
+  ExtraData:
+    {}
+  AssetDataMap:
+    TypeScriptAsset: !<own> d1c6edd1-f469-4f3e-8e8b-bc1147e32afe
+  DependentFiles:
+    []
+  ImporterSettings: !<AssetImporterSettings>
+    {}
+  CompressionSettings: !<own> 00000000-0000-0000-0000-000000000000
+- !<TypeScriptAssetData/d1c6edd1-f469-4f3e-8e8b-bc1147e32afe>
+  SvgIcon: ""
+  SetupScript:
+    code: ""
+  Description: ""
+  VersionMajor: 0
+  VersionMinor: 0
+  VersionPatch: 0
+  ComponentUid: 5ef026e0-5fd1-47d0-afac-560a323cc183
+  ExportUid: 00000000-0000-0000-0000-000000000000
+  PackagePolicy: CanBeUnpacked
+  ScriptInputsHidden:
+    iouThreshold: false
+    mlFrameSkip: false
+    model: false
+    modelInfo: false
+    scoreThreshold: false
+  ScriptTypesHidden:
+    {}
+  ReadMe: !<reference> 00000000-0000-0000-0000-000000000000
+  DeclarationFile: !<reference> 00000000-0000-0000-0000-000000000000
+  Tags:
+    []
+  Attachments:
+    []
+  DefaultScriptInputs:
+    - model: !<reference.MLAsset> 00000000-0000-0000-0000-000000000000
+      modelInfo: false
+      scoreThreshold: 0.600000
+      iouThreshold: 0.400000
+      mlFrameSkip: !<float> 5.000000
+  ScriptTypes:
+    -
+      {}
+  InputLines:
+    - // @input Asset.MLAsset model
+    - '// @input bool modelInfo {"hint":"Print model load + detection diagnostics"}'
+    - '// @input float scoreThreshold = 0.6 {"widget":"slider", "min":0, "max":1, "step":0.01}'
+    - '// @input float iouThreshold = 0.4 {"widget":"slider", "min":0, "max":1, "step":0.01}'
+    - '// @input float mlFrameSkip = 5 {"hint":"Frames to skip between inferences. 5 ≈ 12 ML runs/sec at 60fps."}'

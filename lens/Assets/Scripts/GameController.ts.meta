@@ -1,0 +1,107 @@
+- !<AssetImportMetadata/ba158487-2d39-4372-9c1e-3d21c2a571d0>
+  ImportedAssetIds:
+    TypeScriptAsset: !<reference> 86264023-c2f8-4846-9c66-ec3db59e4053
+  ImporterName: TypeScriptAssetImporter
+  PrimaryAsset: !<reference> 86264023-c2f8-4846-9c66-ec3db59e4053
+  PackageType: NotAPackage
+  LegacyPackagePolicy: ~
+  ExtraData:
+    {}
+  AssetDataMap:
+    TypeScriptAsset: !<own> e4eb6efc-45a8-437b-b0ae-abc294ea5832
+  DependentFiles:
+    []
+  ImporterSettings: !<AssetImporterSettings>
+    {}
+  CompressionSettings: !<own> 00000000-0000-0000-0000-000000000000
+- !<TypeScriptAssetData/e4eb6efc-45a8-437b-b0ae-abc294ea5832>
+  SvgIcon: ""
+  SetupScript:
+    code: ""
+  Description: ""
+  VersionMajor: 0
+  VersionMinor: 0
+  VersionPatch: 0
+  ComponentUid: e5df39e6-c603-483f-9b84-83e97587d98f
+  ExportUid: 00000000-0000-0000-0000-000000000000
+  PackagePolicy: CanBeUnpacked
+  ScriptInputsHidden:
+    axleOffsetMm: false
+    camModule: false
+    editorSkipCalibration: false
+    internetModule: false
+    mainCamera: false
+    matCyan: false
+    matMagenta: false
+    matMetal: false
+    matNeonGreen: false
+    matNeonPink: false
+    matOccluder: false
+    matRim: false
+    mlModel: false
+    scoreFont: false
+    useLeftHand: false
+    visionApplySigmoid: false
+    visionDebugLog: false
+    visionDepthOffsetMm: false
+    visionFrameSkip: false
+    visionIouThreshold: false
+    visionScoreThreshold: false
+    visionShowMarker: false
+  ScriptTypesHidden:
+    {}
+  ReadMe: !<reference> 00000000-0000-0000-0000-000000000000
+  DeclarationFile: !<reference> 00000000-0000-0000-0000-000000000000
+  Tags:
+    []
+  Attachments:
+    []
+  DefaultScriptInputs:
+    - internetModule: !<reference.InternetModule> 00000000-0000-0000-0000-000000000000
+      mainCamera: !<reference.Camera> 00000000-0000-0000-0000-000000000000
+      matCyan: !<reference.Material> 00000000-0000-0000-0000-000000000000
+      matMagenta: !<reference.Material> 00000000-0000-0000-0000-000000000000
+      matOccluder: !<reference.Material> 00000000-0000-0000-0000-000000000000
+      matNeonGreen: !<reference.Material> 00000000-0000-0000-0000-000000000000
+      matNeonPink: !<reference.Material> 00000000-0000-0000-0000-000000000000
+      matMetal: !<reference.Material> 00000000-0000-0000-0000-000000000000
+      scoreFont: !<reference.Font> 00000000-0000-0000-0000-000000000000
+      matRim: !<reference.Material> 00000000-0000-0000-0000-000000000000
+      editorSkipCalibration: false
+      axleOffsetMm: !<float> 15.000000
+      visionDepthOffsetMm: !<float> 35.000000
+      visionScoreThreshold: 0.400000
+      visionIouThreshold: 0.450000
+      visionFrameSkip: !<float> 4.000000
+      visionApplySigmoid: false
+      visionDebugLog: true
+      visionShowMarker: false
+      mlModel: !<reference.MLAsset> 00000000-0000-0000-0000-000000000000
+      camModule: !<reference.CameraModule> 00000000-0000-0000-0000-000000000000
+      useLeftHand: false
+  ScriptTypes:
+    -
+      {}
+  InputLines:
+    - '// @input Asset.InternetModule internetModule {"hint":"InternetModule asset (declares the internet capability)"}'
+    - '// @input Component.Camera mainCamera {"hint":"Main camera (for placing the field in front of the player)"}'
+    - '// @input Asset.Material matCyan {"hint":"Glow base material — green (ImageMaterial, Add blend)"}'
+    - '// @input Asset.Material matMagenta {"hint":"Glow base material — pink (ImageMaterial, Add blend)"}'
+    - '// @input Asset.Material matOccluder {"hint":"Depth-only occluder material (colorMask off)"}'
+    - '// @input Asset.Material matNeonGreen {"hint":"Solid additive neon green (for GLB glass parts)"}'
+    - '// @input Asset.Material matNeonPink {"hint":"Solid additive neon pink (for GLB glass parts)"}'
+    - '// @input Asset.Material matMetal {"hint":"Dark PBR metal (for GLB caps/legs)"}'
+    - '// @input Asset.Font scoreFont {"hint":"VT323 font for the CRT score display"}'
+    - '// @input Asset.Material matRim {"hint":"Fresnel rim shader material for the robot silhouette"}'
+    - '// @input bool editorSkipCalibration {"hint":"EDITOR DEBUG: skip surface detection, take the surface at world 0"}'
+    - '// @input float axleOffsetMm = 15 {"hint":"Model shift (mm) so the REAL rotation axle sits on the pose point", "widget":"slider", "min":-30, "max":30, "step":1}'
+    - '// @input float visionDepthOffsetMm {"hint":"Vision: push along view dir (mm; + away from camera, - toward)", "widget":"slider", "min":-60, "max":60, "step":1}'
+    - '// @input float visionScoreThreshold = 0.4 {"hint":"YOLO: min confidence (objectness*class) to accept a detection", "widget":"slider", "min":0, "max":1, "step":0.01}'
+    - '// @input float visionIouThreshold = 0.45 {"hint":"YOLO: IoU threshold for non-max suppression", "widget":"slider", "min":0, "max":1, "step":0.01}'
+    - '// @input float visionFrameSkip = 6 {"hint":"YOLO: run inference every N frames (4 = ~15/s)", "widget":"slider", "min":1, "max":10, "step":1}'
+    - '// @input bool visionApplySigmoid {"hint":"YOLO: apply sigmoid to raw outputs (ON only if detections never appear)"}'
+    - '// @input bool visionDebugLog {"hint":"YOLO: print [CoffeeML] detections=N best=... every run"}'
+    - '// @input bool visionShowMarker {"hint":"Vision: show the debug marker disc over the detected robot"}'
+    - '// @input Asset.MLAsset mlModel {"hint":"YOLO model (toys-640.onnx) for robot position correction"}'
+    - '// @input Asset.CameraModule camModule {"hint":"CameraModule asset (device camera for vision fixes)"}'
+    - '// @input bool useLeftHand {"hint":"Play with left hand instead of right"}'

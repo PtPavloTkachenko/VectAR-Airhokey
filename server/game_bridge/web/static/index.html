@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VectAR Air-Hockey — Server</title>
+<style>
+  :root {
+    --bg: #07090c;
+    --panel: #0d1218;
+    --line: #1b2430;
+    --green: #59ff80;
+    --green-dim: #2e7a44;
+    --pink: #f266bf;
+    --pink-dim: #7a3560;
+    --text: #cfe3d6;
+    --muted: #6b7f72;
+    --err: #ff5f7a;
+    --mono: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: var(--mono); font-size: 14px; line-height: 1.55;
+    min-height: 100vh;
+    background-image:
+      linear-gradient(rgba(89,255,128,.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(89,255,128,.04) 1px, transparent 1px);
+    background-size: 34px 34px;
+  }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 28px 18px 60px; }
+  header { display: flex; align-items: baseline; gap: 14px; margin-bottom: 26px; }
+  header h1 { font-size: 20px; letter-spacing: 2px; color: var(--green);
+              text-shadow: 0 0 12px rgba(89,255,128,.5); font-weight: 600; }
+  header .sub { color: var(--muted); font-size: 12px; }
+  .tabs { display: flex; gap: 8px; margin-bottom: 20px; }
+  .tab {
+    padding: 8px 18px; border: 1px solid var(--line); border-radius: 6px;
+    background: var(--panel); color: var(--muted); cursor: pointer;
+    letter-spacing: 1px; font-family: var(--mono); font-size: 13px;
+  }
+  .tab.active { color: var(--green); border-color: var(--green-dim);
+                box-shadow: 0 0 14px rgba(89,255,128,.15) inset,
+                            0 0 10px rgba(89,255,128,.12); }
+  .card {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 10px; padding: 22px; margin-bottom: 16px;
+    position: relative; overflow: hidden;
+  }
+  .card::before {   /* solder pads corner accent */
+    content: ""; position: absolute; top: 10px; right: 12px; width: 46px;
+    height: 6px;
+    background: radial-gradient(circle 3px, var(--green-dim) 2.6px, transparent 3px);
+    background-size: 12px 6px; opacity: .8;
+  }
+  .card h2 { font-size: 13px; letter-spacing: 2px; color: var(--pink);
+             margin-bottom: 14px; text-transform: uppercase; }
+  label { display: block; color: var(--muted); font-size: 12px; margin: 12px 0 4px; }
+  input {
+    width: 100%; padding: 9px 12px; border-radius: 6px;
+    border: 1px solid var(--line); background: #090d11; color: var(--text);
+    font-family: var(--mono); font-size: 14px; outline: none;
+  }
+  input:focus { border-color: var(--green-dim); box-shadow: 0 0 8px rgba(89,255,128,.15); }
+  button {
+    margin-top: 16px; padding: 10px 22px; border-radius: 6px; cursor: pointer;
+    border: 1px solid var(--green-dim); background: rgba(89,255,128,.07);
+    color: var(--green); font-family: var(--mono); font-size: 14px;
+    letter-spacing: 1px;
+  }
+  button:hover:not(:disabled) { background: rgba(89,255,128,.16);
+    box-shadow: 0 0 14px rgba(89,255,128,.25); }
+  button:disabled { opacity: .35; cursor: default; }
+  button.secondary { border-color: var(--line); color: var(--muted);
+                     background: transparent; }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; }
+  .row > div { flex: 1 1 180px; }
+  .steps { display: flex; gap: 6px; margin-bottom: 18px; }
+  .step-dot { flex: 1; height: 4px; border-radius: 2px; background: var(--line); }
+  .step-dot.done { background: var(--green); box-shadow: 0 0 8px rgba(89,255,128,.6); }
+  .step-dot.now  { background: var(--pink);  box-shadow: 0 0 8px rgba(242,102,191,.6); }
+  .hint { color: var(--muted); font-size: 12px; margin-top: 8px; }
+  .hint a { color: var(--pink); }
+  .error { color: var(--err); margin-top: 12px; font-size: 13px;
+           border-left: 2px solid var(--err); padding-left: 10px; }
+  .ok { color: var(--green); margin-top: 12px; }
+  .robot-item {
+    display: flex; justify-content: space-between; align-items: center;
+    border: 1px solid var(--line); border-radius: 6px; padding: 10px 14px;
+    margin-top: 8px; cursor: pointer;
+  }
+  .robot-item:hover { border-color: var(--green-dim); }
+  .progress-step { display: flex; gap: 10px; align-items: center; margin: 8px 0; }
+  .progress-step .mark { width: 16px; text-align: center; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+          gap: 12px; }
+  .stat { border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; }
+  .stat .k { color: var(--muted); font-size: 11px; letter-spacing: 1px;
+             text-transform: uppercase; }
+  .stat .v { font-size: 17px; margin-top: 4px; color: var(--text); }
+  .stat .v.on  { color: var(--green); text-shadow: 0 0 8px rgba(89,255,128,.4); }
+  .stat .v.off { color: var(--pink); }
+  .spin { display: inline-block; animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .footer { color: var(--muted); font-size: 11px; margin-top: 30px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>VectAR AIR-HOCKEY</h1>
+    <div class="sub">server console</div>
+  </header>
+
+  <div class="tabs">
+    <div class="tab active" id="tab-dash" onclick="showTab('dash')">DASHBOARD</div>
+    <div class="tab" id="tab-pair" onclick="showTab('pair')">PAIR ROBOT</div>
+  </div>
+
+  <!-- ============ DASHBOARD ============ -->
+  <div id="view-dash">
+    <div class="card">
+      <h2>System status</h2>
+      <div class="grid" id="statusGrid">loading…</div>
+      <div id="dashActions"></div>
+    </div>
+    <div class="card">
+      <h2>How to play</h2>
+      <div class="hint">
+        1 · Pair your Vector (tab above) — needs wire-pod running once.<br>
+        2 · Put Vector on a table with ~1 m of free space, robot connected (green).<br>
+        3 · Open the lens on Spectacles, set <code>WS_URL</code> to this Mac's IP.<br>
+        4 · Calibrate the surface with your hand, place Vector on the glowing mark, press START.
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ PAIRING WIZARD ============ -->
+  <div id="view-pair" style="display:none">
+    <div class="card">
+      <div class="steps">
+        <div class="step-dot" id="dot0"></div>
+        <div class="step-dot" id="dot1"></div>
+        <div class="step-dot" id="dot2"></div>
+        <div class="step-dot" id="dot3"></div>
+      </div>
+
+      <!-- step 1: find -->
+      <div class="wstep" id="wstep0">
+        <h2>1 · Find your robot</h2>
+        <div class="hint">
+          Prerequisite: your Vector must already be set up with
+          <a href="https://github.com/kercre123/wire-pod" target="_blank">wire-pod</a>
+          (one-time community onboarding: robot on charger → double-press the
+          backpack button → follow wire-pod's own web page). wire-pod must be
+          RUNNING right now — it is only needed during pairing, not for games.
+        </div>
+        <button onclick="discover()" id="btnDiscover">SCAN NETWORK</button>
+        <span id="discoverSpin"></span>
+        <div id="robotList"></div>
+        <div class="hint">Nothing found? mDNS often fails on repeater networks —
+          just continue and type the IP manually.</div>
+        <button class="secondary" onclick="gotoStep(1)">ENTER MANUALLY →</button>
+      </div>
+
+      <!-- step 2: confirm -->
+      <div class="wstep" id="wstep1" style="display:none">
+        <h2>2 · Robot details</h2>
+        <div class="row">
+          <div>
+            <label>Robot name (on his screen: double-press backpack on charger)</label>
+            <input id="fName" placeholder="Vector-A1B2">
+          </div>
+          <div>
+            <label>Serial (sticker on the underside, e.g. 00e20145)</label>
+            <input id="fSerial" placeholder="00e20145">
+          </div>
+        </div>
+        <div class="row">
+          <div>
+            <label>Robot IP (double-press backpack, raise+lower arms → shown on face)</label>
+            <input id="fIp" placeholder="192.168.1.42">
+          </div>
+          <div>
+            <label>wire-pod address</label>
+            <input id="fPod" placeholder="escapepod.local:8080">
+          </div>
+        </div>
+        <div class="error" id="confirmErr" style="display:none"></div>
+        <button onclick="startPair()">PAIR →</button>
+        <button class="secondary" onclick="gotoStep(0)">← BACK</button>
+      </div>
+
+      <!-- step 3: pairing progress -->
+      <div class="wstep" id="wstep2" style="display:none">
+        <h2>3 · Pairing</h2>
+        <div class="progress-step"><span class="mark" id="m_cert">·</span>
+          <span>Download certificate from wire-pod</span></div>
+        <div class="progress-step"><span class="mark" id="m_tls">·</span>
+          <span>Secure channel to the robot (:443)</span></div>
+        <div class="progress-step"><span class="mark" id="m_auth">·</span>
+          <span>Mint SDK token (robot ↔ wire-pod)</span></div>
+        <div class="progress-step"><span class="mark" id="m_write">·</span>
+          <span>Write ~/.anki_vector/sdk_config.ini</span></div>
+        <div class="error" id="pairErr" style="display:none"></div>
+        <button id="btnRetry" style="display:none" onclick="gotoStep(1)">← FIX & RETRY</button>
+      </div>
+
+      <!-- step 4: test & done -->
+      <div class="wstep" id="wstep3" style="display:none">
+        <h2>4 · Test &amp; done</h2>
+        <div class="ok">Paired ✓ — credentials written. You can now STOP wire-pod;
+          it is not needed for games.</div>
+        <div id="testResult"></div>
+        <button onclick="runTest()" id="btnTest">TEST CONNECTION</button>
+        <button onclick="connectRobot()" id="btnGo">CONNECT &amp; GO TO DASHBOARD</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">VectAR Air-Hockey · open-source · lens WS :8777 · this console :8780</div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let wizardStep = 0;
+
+function showTab(t) {
+  $("view-dash").style.display = t === "dash" ? "" : "none";
+  $("view-pair").style.display = t === "pair" ? "" : "none";
+  $("tab-dash").classList.toggle("active", t === "dash");
+  $("tab-pair").classList.toggle("active", t === "pair");
+}
+
+function gotoStep(n) {
+  wizardStep = n;
+  for (let i = 0; i < 4; i++) {
+    $("wstep" + i).style.display = i === n ? "" : "none";
+    $("dot" + i).className = "step-dot" + (i < n ? " done" : i === n ? " now" : "");
+  }
+}
+gotoStep(0);
+
+async function api(path, body) {
+  const r = await fetch(path, body === undefined ? {} :
+    { method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(body) });
+  return r.json();
+}
+
+/* ---------- dashboard ---------- */
+function stat(k, v, cls) {
+  return `<div class="stat"><div class="k">${k}</div>` +
+         `<div class="v ${cls||""}">${v}</div></div>`;
+}
+async function refreshStatus() {
+  try {
+    const s = await api("/api/status");
+    const r = s.robot;
+    let html = "";
+    html += stat("Robot paired", r.paired ? (r.name || r.serial) : "NO",
+                 r.paired ? "on" : "off");
+    html += stat("Robot link", r.connected ?
+                 (r.has_control ? "CONNECTED" : "no control") : "OFFLINE",
+                 r.connected && r.has_control ? "on" : "off");
+    html += stat("Battery", r.battery_pct != null ?
+                 r.battery_pct + "% (" + r.batt_v + "V)" : "—");
+    html += stat("Lens (Spectacles)", s.lens.connected ? "CONNECTED" : "waiting",
+                 s.lens.connected ? "on" : "off");
+    html += stat("Game", s.game.rally_active ? "RALLY" :
+                 (s.game.transform_bound ? "placed / idle" : "not placed"));
+    if (r.pose) html += stat("Field pose",
+                 `x ${r.pose.x} · y ${r.pose.y} · ${r.pose.deg}°`);
+    $("statusGrid").innerHTML = html;
+    let act = "";
+    if (!r.paired)
+      act = `<button onclick="showTab('pair')">PAIR YOUR ROBOT →</button>`;
+    else if (!r.connected && s.server.use_robot)
+      act = `<button onclick="connectRobot()">CONNECT ROBOT</button>`;
+    $("dashActions").innerHTML = act;
+    if (!$("fPod").value) $("fPod").value = s.wirepod_default.replace(/^https?:\/\//, "");
+  } catch (e) {
+    $("statusGrid").innerHTML = `<div class="error">server unreachable: ${e}</div>`;
+  }
+}
+setInterval(refreshStatus, 1000);
+refreshStatus();
+
+/* ---------- wizard ---------- */
+async function discover() {
+  $("btnDiscover").disabled = true;
+  $("discoverSpin").innerHTML = ' <span class="spin">◌</span> scanning ~5 s…';
+  try {
+    const res = await api("/api/discover", {timeout: 5});
+    const list = $("robotList");
+    if (!res.robots.length) {
+      list.innerHTML = '<div class="hint">No robots answered mDNS.</div>';
+    } else {
+      list.innerHTML = res.robots.map(r =>
+        `<div class="robot-item" onclick="pick('${r.name}','${r.ip}')">` +
+        `<span>${r.name}</span><span>${r.ip}</span></div>`).join("");
+    }
+  } finally {
+    $("btnDiscover").disabled = false;
+    $("discoverSpin").innerHTML = "";
+  }
+}
+function pick(name, ip) {
+  $("fName").value = name;
+  $("fIp").value = ip;
+  gotoStep(1);
+}
+
+async function startPair() {
+  const name = $("fName").value.trim(), serial = $("fSerial").value.trim(),
+        ip = $("fIp").value.trim(), pod = $("fPod").value.trim();
+  const err = $("confirmErr");
+  if (!name || !serial || !ip) {
+    err.style.display = ""; err.textContent = "Name, serial and IP are all required.";
+    return;
+  }
+  err.style.display = "none";
+  gotoStep(2);
+  ["cert","tls","auth","write"].forEach(s => $("m_"+s).textContent = "·");
+  $("pairErr").style.display = "none";
+  $("btnRetry").style.display = "none";
+  // optimistic progress: mark steps as the backend passes them (single call,
+  // so animate cert/tls/auth optimistically and settle on the reply)
+  $("m_cert").innerHTML = '<span class="spin">◌</span>';
+  const res = await api("/api/pair", {name, serial, ip, pod});
+  const order = ["cert","tls","auth","write"];
+  if (res.ok) {
+    order.forEach(s => $("m_"+s).textContent = "✓");
+    setTimeout(() => gotoStep(3), 400);
+  } else {
+    const failAt = order.indexOf(res.step);
+    order.forEach((s, i) => $("m_"+s).textContent =
+      i < failAt ? "✓" : (i === failAt ? "✗" : "·"));
+    $("pairErr").style.display = "";
+    $("pairErr").textContent = res.error;
+    $("btnRetry").style.display = "";
+  }
+}
+
+async function runTest() {
+  $("btnTest").disabled = true;
+  $("testResult").innerHTML = '<div class="hint"><span class="spin">◌</span> connecting (≤20 s)…</div>';
+  const res = await api("/api/test", {});
+  $("btnTest").disabled = false;
+  if (res.ok) {
+    const b = res.battery || {};
+    $("testResult").innerHTML =
+      `<div class="ok">Robot answered ✓ battery ${b.volts || "?"} V` +
+      (res.firmware ? ` · fw ${res.firmware}` : "") + `</div>`;
+  } else {
+    $("testResult").innerHTML = `<div class="error">${res.error}</div>`;
+  }
+}
+
+async function connectRobot() {
+  const res = await api("/api/connect", {});
+  showTab("dash");
+  if (!res.ok && res.error) {
+    $("dashActions").innerHTML = `<div class="error">${res.error}</div>`;
+  }
+}
+</script>
+</body>
+</html>

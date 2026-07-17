@@ -1,0 +1,47 @@
+- !<AssetImportMetadata/ae0a36d2-d27c-48b9-b85a-0b4f05904396>
+  ImportedAssetIds:
+    TypeScriptAsset: !<reference> ed644f96-97a1-4ff2-9385-d78abfb79b3f
+  ImporterName: TypeScriptAssetImporter
+  PrimaryAsset: !<reference> ed644f96-97a1-4ff2-9385-d78abfb79b3f
+  PackageType: NotAPackage
+  LegacyPackagePolicy: ~
+  ExtraData:
+    {}
+  AssetDataMap:
+    TypeScriptAsset: !<own> c1557f19-9b14-465b-8b91-0c3702e9e2ef
+  DependentFiles:
+    []
+  ImporterSettings: !<AssetImporterSettings>
+    {}
+  CompressionSettings: !<own> 00000000-0000-0000-0000-000000000000
+- !<TypeScriptAssetData/c1557f19-9b14-465b-8b91-0c3702e9e2ef>
+  SvgIcon: ""
+  SetupScript:
+    code: ""
+  Description: ""
+  VersionMajor: 0
+  VersionMinor: 0
+  VersionPatch: 0
+  ComponentUid: 58725fd8-e270-424f-bf34-70026f28123c
+  ExportUid: 00000000-0000-0000-0000-000000000000
+  PackagePolicy: CanBeUnpacked
+  ScriptInputsHidden:
+    camModule: false
+    screenCropTexture: false
+  ScriptTypesHidden:
+    {}
+  ReadMe: !<reference> 00000000-0000-0000-0000-000000000000
+  DeclarationFile: !<reference> 00000000-0000-0000-0000-000000000000
+  Tags:
+    []
+  Attachments:
+    []
+  DefaultScriptInputs:
+    - camModule: !<reference.CameraModule> 00000000-0000-0000-0000-000000000000
+      screenCropTexture: !<reference.Texture> 00000000-0000-0000-0000-000000000000
+  ScriptTypes:
+    -
+      {}
+  InputLines:
+    - '// @input Asset.CameraModule camModule {"hint":"Camera Module asset — inspector binding auto-declares the Camera capability"}'
+    - '// @input Asset.Texture screenCropTexture {"hint":"Square ScreenCropTexture used as MLComponent input — will be wired to the camera at runtime"}'

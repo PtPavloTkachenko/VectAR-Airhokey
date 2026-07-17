@@ -1,0 +1,62 @@
+- !<AssetImportMetadata/c2eda609-ed1b-4524-9f81-52492ea37434>
+  ImportedAssetIds:
+    TypeScriptAsset: !<reference> 06c3f236-2843-4c21-bbfd-b549961c9b97
+  ImporterName: TypeScriptAssetImporter
+  PrimaryAsset: !<reference> 06c3f236-2843-4c21-bbfd-b549961c9b97
+  PackageType: NotAPackage
+  LegacyPackagePolicy: ~
+  ExtraData:
+    {}
+  AssetDataMap:
+    TypeScriptAsset: !<own> f3bc6b5e-94ff-4d7a-b598-d41f642ebc47
+  DependentFiles:
+    []
+  ImporterSettings: !<AssetImporterSettings>
+    {}
+  CompressionSettings: !<own> 00000000-0000-0000-0000-000000000000
+- !<TypeScriptAssetData/f3bc6b5e-94ff-4d7a-b598-d41f642ebc47>
+  SvgIcon: ""
+  SetupScript:
+    code: ""
+  Description: ""
+  VersionMajor: 0
+  VersionMinor: 0
+  VersionPatch: 0
+  ComponentUid: 2d24601e-3591-43da-a8ab-873cce8523a5
+  ExportUid: 00000000-0000-0000-0000-000000000000
+  PackagePolicy: CanBeUnpacked
+  ScriptInputsHidden:
+    applySigmoid: false
+    debugLog: false
+    frameSkip: false
+    iouThreshold: false
+    model: false
+    scoreThreshold: false
+    useRightColorCamera: false
+  ScriptTypesHidden:
+    {}
+  ReadMe: !<reference> 00000000-0000-0000-0000-000000000000
+  DeclarationFile: !<reference> 00000000-0000-0000-0000-000000000000
+  Tags:
+    []
+  Attachments:
+    []
+  DefaultScriptInputs:
+    - model: !<reference.MLAsset> 00000000-0000-0000-0000-000000000000
+      useRightColorCamera: false
+      scoreThreshold: 0.500000
+      iouThreshold: 0.450000
+      frameSkip: !<float> 3.000000
+      applySigmoid: false
+      debugLog: false
+  ScriptTypes:
+    -
+      {}
+  InputLines:
+    - '// @input Asset.MLAsset model {"hint":"The coffee.onnx model asset."}'
+    - "// @input bool useRightColorCamera {\"hint\":\"Device camera to use on-device. OFF = Left color camera (Spectacles 2024 / 'matador'). ON = Right color camera (newer Specs). Editor always uses Default_Color.\"}"
+    - '// @input float scoreThreshold = 0.5 {"hint":"Minimum confidence (objectness * class) to accept a detection.", "widget":"slider", "min":0, "max":1, "step":0.01}'
+    - '// @input float iouThreshold = 0.45 {"hint":"IoU threshold for non-max suppression.", "widget":"slider", "min":0, "max":1, "step":0.01}'
+    - '// @input float frameSkip = 3 {"hint":"Run inference every N frames. Higher = fewer runs = more battery/perf headroom."}'
+    - '// @input bool applySigmoid {"hint":"Apply sigmoid to raw model outputs. Leave OFF for standard SnapML YOLO exports (sigmoid baked in). Turn ON only if no detections ever appear."}'
+    - '// @input bool debugLog {"hint":"Print per-run detection diagnostics to the log."}'

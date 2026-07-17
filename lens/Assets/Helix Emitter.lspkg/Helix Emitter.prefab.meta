@@ -1,0 +1,56 @@
+- !<AssetImportMetadata/54c5faa3-8cf4-97ac-dc52-662d163eda1f>
+  ImportedAssetIds:
+    ObjectPrefab: !<reference> eba2d618-477d-4f49-a9d5-9a9a01651593
+  ImporterName: ObjectPrefabImporter
+  PrimaryAsset: !<reference> eba2d618-477d-4f49-a9d5-9a9a01651593
+  PackageType: NotAPackage
+  LegacyPackagePolicy: ~
+  ExtraData:
+    {}
+  AssetDataMap:
+    ObjectPrefab: !<own> 4bde6d79-be87-4ca6-9347-64f527b01d7c
+  DependentFiles:
+    []
+  ImporterSettings: !<AssetImporterSettings>
+    {}
+  CompressionSettings: !<own> 00000000-0000-0000-0000-000000000000
+- !<ObjectPrefabAssetData/4bde6d79-be87-4ca6-9347-64f527b01d7c>
+  Prototype: !<ObjectOwner/f5b083da-90e9-4bfa-ae5d-b3885cc7e9cb>
+    PackagePath: ""
+    objects:
+      - !<own> 8f6ccbbd-4505-41cb-6050-2473f51e9a85
+- !<SceneObject/8f6ccbbd-4505-41cb-6050-2473f51e9a85>
+  PrefabRemaps:
+    []
+  Name: Helix Emitter
+  Enabled: true
+  Layers: 1
+  LocalTransform: !<TransformEntity>
+    Position: {x: 0.000000, y: 25.000000, z: 0.000000}
+    Rotation: {x: 0.000000, y: 0.000000, z: 0.000000}
+    Scale: {x: 100.000000, y: 100.000000, z: 100.000000}
+    HasSegmentScaleCompensation: false
+  Children:
+    []
+  Components:
+    - !<own> ca6704e0-9522-4454-6e23-c91df9544eca
+- !<RenderMeshVisual/ca6704e0-9522-4454-6e23-c91df9544eca>
+  PrefabRemaps:
+    []
+  Name: Render Mesh Visual
+  Enabled: true
+  RenderOrder: 4
+  StretchMode: Stretch
+  VerticalAlignment: Center
+  HorizontalAlignment: Center
+  MeshShadowMode: None
+  ShadowColor: {x: 1.000000, y: 1.000000, z: 1.000000, w: 1.000000}
+  ShadowDensity: 1.000000
+  Materials:
+    - !<reference> e84f98b7-66b8-4cdd-986d-cd727ce35ae0
+  Mesh: !<reference> 75020b64-17e2-4829-9253-4a8fc6f6cc39
+  Skin: !<reference> 00000000-0000-0000-0000-000000000000
+  BlendShapesEnabled: true
+  BlendNormals: false
+  BlendShapes:
+    {}

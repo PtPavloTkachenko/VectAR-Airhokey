@@ -1,0 +1,12 @@
+# Use a Python 3.12 venv. Before running set:
+#   export PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
+# wirepod-vector-sdk = anki_vector fork with py3.12 fixes built in
+# (events.py loop arg, annotate.py collections.abc). Pulls grpcio, requests,
+# cryptography, zeroconf as its own dependencies.
+wirepod-vector-sdk
+websockets>=12
+protobuf==4.25.8
+aiohttp>=3.9
+zeroconf
+requests
+pytest>=8

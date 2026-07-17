@@ -1,0 +1,203 @@
+- !<AssetImportMetadata/f74898d5-9323-4e32-9282-0db8a00952ff>
+  ImportedAssetIds:
+    147d35b0d0fe5d10: !<reference> 2df4ca74-a227-4428-b72c-8f3d931cbada
+    1febd6d887ee24ed: !<reference> 736d19fa-1eaa-40a3-b3e4-0f2f9d792a1e
+    34c2645bd69d259e: !<reference> 11af3dac-9cb8-4898-b549-eb14199839bf
+    4a3e924fad0e2f27: !<reference> dec706a6-2831-4a84-8c52-5efec250b186
+    66780cf3a4dcb2b8: !<reference> 877d2028-75c1-4769-af73-95940ba518ce
+    96f664b015fcd573: !<reference> 84d71b0e-06ec-4602-a2d0-de8a4f57073f
+    Meshes/Cylinder: !<reference> 2656abaf-4288-4408-9715-a777d36b3922
+    Meshes/Cylinder.001: !<reference> 427b8e69-4efe-46eb-9291-e95a9989e785
+    Meshes/Torus: !<reference> 7faac8d0-97da-41e6-a1f7-0b93b7118cf8
+    Scene: !<reference> c2506cf5-e1b7-4436-a2ec-f8f2da9c4b44
+    be0be2efb915d7f1: !<reference> 96650cdd-2228-4536-81ba-9d9cbaa768b3
+    e92633c521562173: !<reference> 303d24d5-f70f-4762-9ed9-bc57aeea1f50
+    fa3bdc768e58ba7d: !<reference> 09db2ff4-de0e-496c-9ef8-8a29118fa9fe
+  ImporterName: GltfImporter
+  PrimaryAsset: !<reference> c2506cf5-e1b7-4436-a2ec-f8f2da9c4b44
+  PackageType: LegacyPackage
+  LegacyPackagePolicy: CanBeUnpackedTransparent
+  ExtraData:
+    {}
+  AssetDataMap:
+    Scene: !<own> 9cc64c3f-7a6a-41bf-b915-988d7cc2526d
+  DependentFiles:
+    []
+  ImporterSettings: !<GltfImporterSettings>
+    UseLegacyImporter: false
+    WithMaterials: true
+    NamingConvention: ByCategorySanitizeV2
+    PersistentIdGenerationAlgorithm: DescriptorBased
+    AnimationCurveOptimization: true
+    CustomAnimationSamplingRate: 30.000000
+    ImportVertexColor: true
+    ImportTangents: true
+    ImportMorphTargetAnimation: true
+    ConvertMetersToCentimeters: true
+    RegenerateTangents: false
+  CompressionSettings: !<ComplexCompressionSettings>
+    Presets:
+      None Compression: !<SingleCompressionSettings>
+        CompressorName: None
+        CompressionSettings: !<own> 00000000-0000-0000-0000-000000000000
+    ExtensionMappings:
+      mesh: None Compression
+    Overrides:
+      {}
+- !<SceneObject/09db2ff4-de0e-496c-6107-75d6ee705601>
+  PrefabRemaps:
+    []
+  Name: glow_joined
+  Enabled: true
+  Layers: 1
+  LocalTransform: !<TransformEntity>
+    Position: {x: -0.800000, y: 1.100000, z: 0.000000}
+    Rotation: {x: 0.000000, y: 0.000000, z: -90.000000}
+    Scale: {x: 1.000000, y: 1.000000, z: 1.000000}
+    HasSegmentScaleCompensation: false
+  Children:
+    []
+  Components:
+    - !<own> 11af3dac-9cb8-4898-4ab6-14ebe667c640
+- !<RenderMeshVisual/11af3dac-9cb8-4898-4ab6-14ebe667c640>
+  PrefabRemaps:
+    []
+  Name: Torus
+  Enabled: true
+  RenderOrder: 0
+  StretchMode: Stretch
+  VerticalAlignment: Center
+  HorizontalAlignment: Center
+  MeshShadowMode: None
+  ShadowColor: {x: 1.000000, y: 1.000000, z: 1.000000, w: 1.000000}
+  ShadowDensity: 1.000000
+  Materials:
+    []
+  Mesh: !<reference> 7faac8d0-97da-41e6-a1f7-0b93b7118cf8
+  Skin: !<reference> 00000000-0000-0000-0000-000000000000
+  BlendShapesEnabled: true
+  BlendNormals: false
+  BlendShapes:
+    {}
+- !<RenderMeshVisual/2df4ca74-a227-4428-48d3-70c26ce34525>
+  PrefabRemaps:
+    []
+  Name: Cylinder.001
+  Enabled: true
+  RenderOrder: 0
+  StretchMode: Stretch
+  VerticalAlignment: Center
+  HorizontalAlignment: Center
+  MeshShadowMode: None
+  ShadowColor: {x: 1.000000, y: 1.000000, z: 1.000000, w: 1.000000}
+  ShadowDensity: 1.000000
+  Materials:
+    []
+  Mesh: !<reference> 427b8e69-4efe-46eb-9291-e95a9989e785
+  Skin: !<reference> 00000000-0000-0000-0000-000000000000
+  BlendShapesEnabled: true
+  BlendNormals: false
+  BlendShapes:
+    {}
+- !<SceneObject/303d24d5-f70f-4762-6126-43a85115e0af>
+  PrefabRemaps:
+    []
+  Name: solid_joined
+  Enabled: true
+  Layers: 1
+  LocalTransform: !<TransformEntity>
+    Position: {x: 0.000000, y: 1.100000, z: 0.000000}
+    Rotation: {x: 0.000000, y: 0.000000, z: -90.000000}
+    Scale: {x: 1.000000, y: 1.000000, z: 1.000000}
+    HasSegmentScaleCompensation: false
+  Children:
+    []
+  Components:
+    - !<own> 736d19fa-1eaa-40a3-4c1b-f0d06286d5e1
+- !<RenderMeshVisual/736d19fa-1eaa-40a3-4c1b-f0d06286d5e1>
+  PrefabRemaps:
+    []
+  Name: Cylinder
+  Enabled: true
+  RenderOrder: 0
+  StretchMode: Stretch
+  VerticalAlignment: Center
+  HorizontalAlignment: Center
+  MeshShadowMode: None
+  ShadowColor: {x: 1.000000, y: 1.000000, z: 1.000000, w: 1.000000}
+  ShadowDensity: 1.000000
+  Materials:
+    []
+  Mesh: !<reference> 2656abaf-4288-4408-9715-a777d36b3922
+  Skin: !<reference> 00000000-0000-0000-0000-000000000000
+  BlendShapesEnabled: true
+  BlendNormals: false
+  BlendShapes:
+    {}
+- !<SceneObject/84d71b0e-06ec-4602-5d2f-2175b0a8f8c0>
+  PrefabRemaps:
+    []
+  Name: Scene
+  Enabled: true
+  Layers: 1
+  LocalTransform: !<TransformEntity>
+    Position: {x: 0.000000, y: 0.000000, z: 0.000000}
+    Rotation: {x: 0.000000, y: 0.000000, z: 0.000000}
+    Scale: {x: 1.000000, y: 1.000000, z: 1.000000}
+    HasSegmentScaleCompensation: false
+  Children:
+    - !<own> 303d24d5-f70f-4762-6126-43a85115e0af
+    - !<own> 09db2ff4-de0e-496c-6107-75d6ee705601
+    - !<own> 96650cdd-2228-4536-7e45-62634558974c
+  Components:
+    []
+- !<SceneObject/877d2028-75c1-4769-508c-6a6bf45ae731>
+  PrefabRemaps:
+    []
+  Name: resistor
+  Enabled: true
+  Layers: 1
+  LocalTransform: !<TransformEntity>
+    Position: {x: 0.000000, y: 0.000000, z: 0.000000}
+    Rotation: {x: 0.000000, y: 0.000000, z: 0.000000}
+    Scale: {x: 100.000000, y: 100.000000, z: 100.000000}
+    HasSegmentScaleCompensation: false
+  Children:
+    - !<own> dec706a6-2831-4a84-73ad-a1013daf4e79
+  Components:
+    []
+- !<SceneObject/96650cdd-2228-4536-7e45-62634558974c>
+  PrefabRemaps:
+    []
+  Name: metal_joined
+  Enabled: true
+  Layers: 1
+  LocalTransform: !<TransformEntity>
+    Position: {x: -1.900000, y: 1.100000, z: 0.000000}
+    Rotation: {x: 0.000000, y: 0.000000, z: -90.000000}
+    Scale: {x: 1.000000, y: 1.000000, z: 1.000000}
+    HasSegmentScaleCompensation: false
+  Children:
+    []
+  Components:
+    - !<own> 2df4ca74-a227-4428-48d3-70c26ce34525
+- !<ObjectPrefabAssetData/9cc64c3f-7a6a-41bf-b915-988d7cc2526d>
+  Prototype: !<ObjectOwner/a9118718-8949-4680-8174-b540df89c8d3>
+    PackagePath: ""
+    objects:
+      - !<own> 877d2028-75c1-4769-508c-6a6bf45ae731
+- !<SceneObject/dec706a6-2831-4a84-73ad-a1013daf4e79>
+  PrefabRemaps:
+    []
+  Name: Scenes
+  Enabled: true
+  Layers: 1
+  LocalTransform: !<TransformEntity>
+    Position: {x: 0.000000, y: 0.000000, z: 0.000000}
+    Rotation: {x: 0.000000, y: 0.000000, z: 0.000000}
+    Scale: {x: 1.000000, y: 1.000000, z: 1.000000}
+    HasSegmentScaleCompensation: false
+  Children:
+    - !<own> 84d71b0e-06ec-4602-5d2f-2175b0a8f8c0
+  Components:
+    []
