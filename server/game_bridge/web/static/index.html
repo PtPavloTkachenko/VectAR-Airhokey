@@ -129,7 +129,8 @@
       <div class="hint">
         1 · Pair your Vector (tab above) — needs wire-pod running once.<br>
         2 · Put Vector on a table with ~1 m of free space, robot connected (green).<br>
-        3 · Open the lens on Spectacles, set <code>WS_URL</code> to this Mac's IP.<br>
+        3 · In Lens Studio set <code>GameConfig.WS_URL</code> to the address shown
+            in the "Lens WS_URL" card above, then send the lens to Spectacles.<br>
         4 · Calibrate the surface with your hand, place Vector on the glowing mark, press START.
       </div>
     </div>
@@ -264,7 +265,9 @@ async function refreshStatus() {
                  (r.has_control ? "CONNECTED" : "no control") : "OFFLINE",
                  r.connected && r.has_control ? "on" : "off");
     html += stat("Battery", r.battery_pct != null ?
-                 r.battery_pct + "% (" + r.batt_v + "V)" : "—");
+                 r.battery_pct + "% (" + r.batt_v + "V)" +
+                 (r.charging ? " ⚡" : "") : "—");
+    html += stat("Lens WS_URL", s.server.ws_url || "—", "on");
     html += stat("Lens (Spectacles)", s.lens.connected ? "CONNECTED" : "waiting",
                  s.lens.connected ? "on" : "off");
     html += stat("Game", s.game.rally_active ? "RALLY" :

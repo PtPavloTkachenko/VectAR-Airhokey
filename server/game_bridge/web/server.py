@@ -21,6 +21,20 @@ logger = logging.getLogger("game-bridge.web")
 STATIC_DIR = Path(__file__).parent / "static"
 
 
+def _lan_ip() -> str:
+    """This machine's LAN address (no traffic is sent — UDP connect only
+    selects the outbound interface)."""
+    import socket
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("8.8.8.8", 80))
+        return s.getsockname()[0]
+    except Exception:
+        return ""
+    finally:
+        s.close()
+
+
 class WebUI:
     def __init__(self, bridge):
         self.bridge = bridge
@@ -56,7 +70,7 @@ class WebUI:
     async def index(self, _req):
         return web.FileResponse(STATIC_DIR / "index.html")
 
-    async def api_status(self, _req):
+    async def api_status(self, req):
         b = self.bridge
         serial, ips, name = config.read_robot_identity()
         robot = {
@@ -71,19 +85,23 @@ class WebUI:
             "pose": None,
             "busy": b.commander.busy if b.commander else "idle",
         }
+        v = getattr(b, "batt_v", None)
         if b.pump:
             snap = dict(b.pump.snapshot)
-            if snap.get("batt_v"):
-                v = snap["batt_v"]
-                robot["batt_v"] = round(v, 2)
-                robot["battery_pct"] = int(
-                    max(0.0, min(1.0, (v - 3.6) / 0.5)) * 100)
+            v = snap.get("batt_v") or v
             if b.transform.bound:
                 fx, fy, fdeg = b.transform.robot_to_field(
                     snap.get("x", 0.0), snap.get("y", 0.0), snap.get("deg", 0.0))
                 robot["pose"] = {"x": round(fx), "y": round(fy),
                                  "deg": round(fdeg)}
             robot["pose_fresh"] = bool(getattr(b.pump, "fresh", False))
+        if v:
+            robot["batt_v"] = round(v, 2)
+            robot["battery_pct"] = int(
+                max(0.0, min(1.0, (v - 3.6) / 0.5)) * 100)
+            robot["charging"] = getattr(b, "batt_charging", False)
+        # the exact string the player pastes into the lens' GameConfig.WS_URL
+        lan_ip = _lan_ip() or req.host.split(":")[0]
         return web.json_response({
             "server": {
                 "ws_port": config.WS_PORT,
@@ -91,6 +109,7 @@ class WebUI:
                 "mock_pose": b.mock_pose,
                 "use_robot": b.use_robot,
                 "chat": config.VECTAR_CHAT,
+                "ws_url": f"ws://{lan_ip}:{config.WS_PORT}",
                 "time": time.time(),
             },
             "robot": robot,
