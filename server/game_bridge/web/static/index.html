@@ -138,7 +138,75 @@
 
   <!-- ============ PAIRING WIZARD ============ -->
   <div id="view-pair" style="display:none">
-    <div class="card">
+    <!-- route chooser -->
+    <div class="card" id="routeCard">
+      <h2>Set up your Vector</h2>
+      <div class="hint">Which best describes your robot right now?</div>
+      <button onclick="chooseRoute('ble')">BRAND-NEW / STOCK ROBOT →</button>
+      <div class="hint">Not on Wi-Fi yet. We set it up entirely over Bluetooth
+        from this Mac — no phone, no other app.</div>
+      <button class="secondary" onclick="chooseRoute('wifi')">ALREADY ON WI-FI →</button>
+      <div class="hint">Already connected (or set up with wire-pod once) — skip
+        to authorizing the game server.</div>
+    </div>
+
+    <!-- ============ BLE onboarding (stock robot) ============ -->
+    <div class="card" id="bleCard" style="display:none">
+      <div class="steps">
+        <div class="step-dot" id="bdot0"></div>
+        <div class="step-dot" id="bdot1"></div>
+        <div class="step-dot" id="bdot2"></div>
+        <div class="step-dot" id="bdot3"></div>
+      </div>
+
+      <!-- b0: find over BLE -->
+      <div class="bstep" id="bstep0">
+        <h2>1 · Find Vector over Bluetooth</h2>
+        <div class="hint">Put Vector on the charger and <b>double-press the
+          backpack button</b> — his face shows <code>######</code>. Then scan.
+          The advertising window is short; if nothing is found, double-press
+          again — scanning keeps retrying.</div>
+        <button onclick="bleScan()" id="btnBleScan">SCAN BLUETOOTH</button>
+        <span id="bleScanSpin"></span>
+        <div id="bleList"></div>
+      </div>
+
+      <!-- b1: pair / PIN -->
+      <div class="bstep" id="bstep1" style="display:none">
+        <h2>2 · Pair</h2>
+        <div id="blePairMsg" class="hint">Connecting… once connected, Vector's
+          face replaces <code>######</code> with a 6-digit PIN.</div>
+        <label>Enter the 6-digit PIN from Vector's face</label>
+        <input id="blePin" placeholder="000000" inputmode="numeric" maxlength="6">
+        <div class="error" id="blePinErr" style="display:none"></div>
+        <button onclick="blePin()" id="btnBlePin" disabled>CONFIRM PIN</button>
+        <button class="secondary" onclick="bleRestart()">← START OVER</button>
+      </div>
+
+      <!-- b2: wifi -->
+      <div class="bstep" id="bstep2" style="display:none">
+        <h2>3 · Connect Vector to Wi-Fi</h2>
+        <div id="bleWifiList" class="hint">Scanning the networks Vector can
+          see…</div>
+        <label>Password</label>
+        <input id="bleWifiPw" type="password" placeholder="Wi-Fi password">
+        <input type="hidden" id="bleWifiSsid"><input type="hidden" id="bleWifiAuth">
+        <div class="error" id="bleWifiErr" style="display:none"></div>
+        <div class="ok" id="bleWifiOk" style="display:none"></div>
+        <button onclick="bleWifiConnect()" id="btnBleWifi" disabled>CONNECT</button>
+      </div>
+
+      <!-- b3: done -> hand off to authorize -->
+      <div class="bstep" id="bstep3" style="display:none">
+        <h2>4 · Vector is online</h2>
+        <div class="ok" id="bleDoneMsg">Vector is on Wi-Fi.</div>
+        <div class="hint">Now authorize the game server to control it (mints the
+          SDK token). This uses the bundled wire-pod engine.</div>
+        <button onclick="chooseRoute('wifi')">AUTHORIZE GAME SERVER →</button>
+      </div>
+    </div>
+
+    <div class="card" id="wifiCard" style="display:none">
       <div class="steps">
         <div class="step-dot" id="dot0"></div>
         <div class="step-dot" id="dot1"></div>
@@ -231,6 +299,14 @@ function showTab(t) {
   $("view-pair").style.display = t === "pair" ? "" : "none";
   $("tab-dash").classList.toggle("active", t === "dash");
   $("tab-pair").classList.toggle("active", t === "pair");
+  if (t === "pair") chooseRoute(null);
+}
+
+function chooseRoute(route) {
+  $("routeCard").style.display = route ? "none" : "";
+  $("bleCard").style.display = route === "ble" ? "" : "none";
+  $("wifiCard").style.display = route === "wifi" ? "" : "none";
+  if (route === "ble") bleStep(0);
 }
 
 function gotoStep(n) {
@@ -366,6 +442,107 @@ async function connectRobot() {
   if (!res.ok && res.error) {
     $("dashActions").innerHTML = `<div class="error">${res.error}</div>`;
   }
+}
+
+/* ---------- BLE onboarding (stock robot) ---------- */
+const AUTH_NAMES = {0:"open",1:"WEP",3:"802.1X",4:"WPA",6:"WPA2",7:"WPA2-EAP"};
+function bleStep(n) {
+  for (let i = 0; i < 4; i++) {
+    $("bstep" + i).style.display = i === n ? "" : "none";
+    $("bdot" + i).className = "step-dot" + (i < n ? " done" : i === n ? " now" : "");
+  }
+}
+function bleRestart() { api("/api/ble/disconnect", {}); bleStep(0); $("bleList").innerHTML=""; }
+
+async function bleScan() {
+  $("btnBleScan").disabled = true;
+  $("bleScanSpin").innerHTML = ' <span class="spin">◌</span> scanning…';
+  try {
+    const res = await api("/api/ble/scan", {timeout: 6});
+    if (!res.ok) { $("bleList").innerHTML = `<div class="error">${res.error}</div>`; return; }
+    if (!res.robots.length) {
+      $("bleList").innerHTML = '<div class="hint">None found. Double-press the '
+        + 'backpack button again and re-scan.</div>';
+    } else {
+      $("bleList").innerHTML = res.robots.map(r =>
+        `<div class="robot-item" onclick="blePair('${r.address}','${r.name}')">` +
+        `<span>${r.name}</span><span>rssi ${r.rssi}${r.pairing?" · pairing":""}</span></div>`).join("");
+    }
+  } finally {
+    $("btnBleScan").disabled = false; $("bleScanSpin").innerHTML = "";
+  }
+}
+
+async function blePair(address, name) {
+  bleStep(1);
+  $("blePairMsg").innerHTML = '<span class="spin">◌</span> connecting to '
+    + name + ' — watch his face for the PIN…';
+  $("btnBlePin").disabled = true;
+  const res = await api("/api/ble/pair", {address, name});
+  if (!res.ok) {
+    $("blePairMsg").innerHTML = `<span class="error">${res.error}</span> — `
+      + `double-press again and <a href="#" onclick="bleRestart();return false">start over</a>.`;
+    return;
+  }
+  $("blePairMsg").innerHTML = 'Connected. Vector now shows a 6-digit PIN — type it below.';
+  $("btnBlePin").disabled = false;
+  $("blePin").focus();
+}
+
+async function blePin() {
+  const pin = $("blePin").value.trim();
+  $("blePinErr").style.display = "none";
+  if (!/^\d{6}$/.test(pin)) {
+    $("blePinErr").style.display = ""; $("blePinErr").textContent = "Enter the 6 digits shown on Vector.";
+    return;
+  }
+  $("btnBlePin").disabled = true;
+  const res = await api("/api/ble/pin", {pin});
+  $("btnBlePin").disabled = false;
+  if (!res.ok) {
+    $("blePinErr").style.display = ""; $("blePinErr").textContent = res.error;
+    return;
+  }
+  bleStep(2);
+  bleWifiScan();
+}
+
+async function bleWifiScan() {
+  $("bleWifiList").innerHTML = '<span class="spin">◌</span> scanning Wi-Fi…';
+  const res = await api("/api/ble/wifi_scan", {});
+  if (!res.ok) { $("bleWifiList").innerHTML = `<div class="error">${res.error}</div>`; return; }
+  $("bleWifiList").innerHTML = res.networks.map(n =>
+    `<div class="robot-item" onclick="blePickWifi('${encodeURIComponent(n.ssid)}',${n.auth})">` +
+    `<span>${n.ssid || "(hidden)"}</span>` +
+    `<span>${n.signal}% · ${AUTH_NAMES[n.auth]||n.auth}</span></div>`).join("");
+}
+function blePickWifi(ssidEnc, auth) {
+  const ssid = decodeURIComponent(ssidEnc);
+  $("bleWifiSsid").value = ssid; $("bleWifiAuth").value = auth;
+  $("btnBleWifi").disabled = false;
+  $("bleWifiList").innerHTML = `<div class="hint">Selected <b>${ssid}</b>`
+    + (auth==0?" (open)":"") + `</div>`;
+  if (auth==0) $("bleWifiPw").style.display = "none";
+  $("bleWifiPw").focus();
+}
+
+async function bleWifiConnect() {
+  $("bleWifiErr").style.display = "none"; $("bleWifiOk").style.display = "none";
+  $("btnBleWifi").disabled = true;
+  $("bleWifiOk").style.display = ""; $("bleWifiOk").innerHTML = '<span class="spin">◌</span> connecting Vector to Wi-Fi…';
+  const res = await api("/api/ble/wifi_connect", {
+    ssid: $("bleWifiSsid").value, password: $("bleWifiPw").value,
+    auth: parseInt($("bleWifiAuth").value)});
+  $("btnBleWifi").disabled = false;
+  if (!res.ok) {
+    $("bleWifiOk").style.display = "none";
+    $("bleWifiErr").style.display = "";
+    $("bleWifiErr").textContent = res.error ||
+      ("Wi-Fi connect failed (result " + (res.result && res.result.result) + ") — check the password.");
+    return;
+  }
+  $("bleDoneMsg").innerHTML = "Vector is on Wi-Fi" + (res.ip ? " at <b>"+res.ip+"</b>" : "") + " ✓";
+  bleStep(3);
 }
 </script>
 </body>
