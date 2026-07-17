@@ -406,6 +406,7 @@ async function refreshStatus() {
   try {
     const s = await api("/api/status");
     window.lastStatus = s;
+    updatePlayAvailability(s);
     // keep the (idle) route chooser fresh so "ready" appears the moment the
     // robot connects — but never yank a wizard the user is mid-way through
     if ($("view-pair").style.display !== "none"
@@ -543,6 +544,24 @@ function pcvt(cv) {
     px: (x, y) => [cx - y*sc, cy - x*sc],   // field -> canvas
     fx: (mx, my) => [(cy - my)/sc, (cx - mx)/sc],  // canvas -> field (x,y)
   };
+}
+
+// Screen play and the real Spectacles lens share ONE server slot — so when the
+// glasses are connected, disable screen play (starting it would kick them off).
+function updatePlayAvailability(s) {
+  const btn = $("btnPlay"), hint = $("playHint");
+  if (!btn) return;
+  if (play) { btn.disabled = false; return; }   // active game owns the button
+  const lens = s && s.lens;
+  if (lens && lens.connected && lens.role !== "screen") {
+    btn.disabled = true;
+    btn.textContent = "PLAYING ON SPECTACLES";
+    hint.textContent = "disconnect the glasses to play on screen";
+  } else {
+    btn.disabled = false;
+    btn.textContent = "START GAME";
+    if (!hint.textContent.startsWith("real")) hint.textContent = "";
+  }
 }
 
 function playToggle() {

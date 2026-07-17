@@ -105,6 +105,7 @@ class Bridge:
     # --- WS handlers ---
 
     async def _on_hello(self, msg: dict):
+        self.ws.client_role = msg.get("role", "lens")
         state = "disconnected"
         if self.mock_pose:
             state = "connected"
