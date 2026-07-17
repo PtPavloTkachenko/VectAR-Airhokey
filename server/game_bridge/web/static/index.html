@@ -127,7 +127,7 @@
     <div class="card">
       <h2>How to play</h2>
       <div class="hint">
-        1 · Pair your Vector (tab above) — needs wire-pod running once.<br>
+        1 · Pair your Vector (tab above) — the Bluetooth path sets it up, no typing.<br>
         2 · Put Vector on a table with ~1 m of free space, robot connected (green).<br>
         3 · In Lens Studio set <code>GameConfig.WS_URL</code> to the address shown
             in the "Lens WS_URL" card above, then send the lens to Spectacles.<br>
@@ -138,17 +138,8 @@
 
   <!-- ============ PAIRING WIZARD ============ -->
   <div id="view-pair" style="display:none">
-    <!-- route chooser -->
-    <div class="card" id="routeCard">
-      <h2>Set up your Vector</h2>
-      <div class="hint">Which best describes your robot right now?</div>
-      <button onclick="chooseRoute('ble')">BRAND-NEW / STOCK ROBOT →</button>
-      <div class="hint">Not on Wi-Fi yet. We set it up entirely over Bluetooth
-        from this Mac — no phone, no other app.</div>
-      <button class="secondary" onclick="chooseRoute('wifi')">ALREADY ON WI-FI →</button>
-      <div class="hint">Already connected (or set up with wire-pod once) — skip
-        to authorizing the game server.</div>
-    </div>
+    <!-- route chooser (rendered by chooseRoute from live status) -->
+    <div class="card" id="routeCard"></div>
 
     <!-- ============ BLE onboarding (stock robot) ============ -->
     <div class="card" id="bleCard" style="display:none">
@@ -169,6 +160,7 @@
         <button onclick="bleScan()" id="btnBleScan">SCAN BLUETOOTH</button>
         <span id="bleScanSpin"></span>
         <div id="bleList"></div>
+        <button class="secondary" onclick="chooseRoute(null)">← BACK</button>
       </div>
 
       <!-- b1: pair / PIN -->
@@ -194,15 +186,18 @@
         <div class="error" id="bleWifiErr" style="display:none"></div>
         <div class="ok" id="bleWifiOk" style="display:none"></div>
         <button onclick="bleWifiConnect()" id="btnBleWifi" disabled>CONNECT</button>
+        <button class="secondary" onclick="bleWifiScan()">RESCAN NETWORKS</button>
+        <button class="secondary" onclick="bleRestart()">← START OVER</button>
       </div>
 
-      <!-- b3: done -> hand off to authorize -->
+      <!-- b3: done -> authorize (automatic) -->
       <div class="bstep" id="bstep3" style="display:none">
         <h2>4 · Vector is online</h2>
         <div class="ok" id="bleDoneMsg">Vector is on Wi-Fi.</div>
-        <div class="hint">Now authorize the game server to control it (mints the
-          SDK token). This uses the bundled wire-pod engine.</div>
-        <button onclick="chooseRoute('wifi')">AUTHORIZE GAME SERVER →</button>
+        <div id="bleAuthMsg" class="hint">Last step: authorize this Mac to
+          control Vector. No serial to type — we read it over Bluetooth.</div>
+        <div class="error" id="bleAuthErr" style="display:none"></div>
+        <button onclick="bleAuthorize()" id="btnBleAuth">AUTHORIZE &amp; FINISH →</button>
       </div>
     </div>
 
@@ -307,6 +302,38 @@ function chooseRoute(route) {
   $("bleCard").style.display = route === "ble" ? "" : "none";
   $("wifiCard").style.display = route === "wifi" ? "" : "none";
   if (route === "ble") bleStep(0);
+  if (!route) renderRoute();
+}
+
+// State-aware landing: if the robot is already set up, say so and offer the
+// one action that matters — no dead-end onboarding steps.
+function renderRoute() {
+  const s = window.lastStatus;
+  const r = s && s.robot;
+  let html = "";
+  if (r && r.paired && r.connected) {
+    html = `<h2>Your Vector is ready ✓</h2>`
+      + stat("Robot", r.name || r.serial, "on")
+      + `<div class="hint">Connected and under control. Nothing to set up — `
+      + `open the lens and play.</div>`
+      + `<button onclick="showTab('dash')">GO TO DASHBOARD →</button>`
+      + `<button class="secondary" onclick="chooseRoute('ble')">RE-ONBOARD A DIFFERENT ROBOT</button>`;
+  } else if (r && r.paired) {
+    html = `<h2>Vector is set up — just connect</h2>`
+      + stat("Robot", r.name || r.serial, "on")
+      + `<div class="hint">Already authorized. Connect the game loop to it.</div>`
+      + `<button onclick="bleAuthorize()">CONNECT ROBOT →</button>`
+      + `<button class="secondary" onclick="chooseRoute('ble')">SET UP A NEW ROBOT INSTEAD</button>`;
+  } else {
+    html = `<h2>Set up your Vector</h2>`
+      + `<div class="hint">Which best describes your robot right now?</div>`
+      + `<button onclick="chooseRoute('ble')">SET UP OVER BLUETOOTH →</button>`
+      + `<div class="hint">The easy path: we pair Vector and join Wi-Fi entirely `
+      + `from this Mac — no phone, no other app.</div>`
+      + `<button class="secondary" onclick="chooseRoute('wifi')">ADVANCED: MANUAL / WIRE-POD</button>`
+      + `<div class="hint">For a robot already provisioned with wire-pod.</div>`;
+  }
+  $("routeCard").innerHTML = html;
 }
 
 function gotoStep(n) {
@@ -333,6 +360,11 @@ function stat(k, v, cls) {
 async function refreshStatus() {
   try {
     const s = await api("/api/status");
+    window.lastStatus = s;
+    // keep the (idle) route chooser fresh so "ready" appears the moment the
+    // robot connects — but never yank a wizard the user is mid-way through
+    if ($("view-pair").style.display !== "none"
+        && $("routeCard").style.display !== "none") renderRoute();
     const r = s.robot;
     let html = "";
     html += stat("Robot paired", r.paired ? (r.name || r.serial) : "NO",
@@ -503,15 +535,30 @@ async function blePin() {
     $("blePinErr").style.display = ""; $("blePinErr").textContent = res.error;
     return;
   }
+  // Progressive: if Vector is already online, skip the Wi-Fi step entirely
+  // (wifi_state 1 = connected) — no needless reconnect, no result-255 trap.
+  if (res.status && res.status.wifi_state === 1) {
+    $("bleDoneMsg").innerHTML = "Vector is already on Wi-Fi ✓";
+    bleStep(3);
+    return;
+  }
   bleStep(2);
   bleWifiScan();
 }
 
 async function bleWifiScan() {
+  $("bleWifiErr").style.display = "none"; $("bleWifiOk").style.display = "none";
+  $("btnBleWifi").disabled = true;
   $("bleWifiList").innerHTML = '<span class="spin">◌</span> scanning Wi-Fi…';
   const res = await api("/api/ble/wifi_scan", {});
-  if (!res.ok) { $("bleWifiList").innerHTML = `<div class="error">${res.error}</div>`; return; }
-  $("bleWifiList").innerHTML = res.networks.map(n =>
+  if (!res.ok) {
+    $("bleWifiList").innerHTML = `<div class="error">${res.error}</div>`
+      + `<button class="secondary" onclick="bleWifiScan()">RESCAN</button>`;
+    return;
+  }
+  $("bleWifiList").innerHTML = `<div class="hint">Pick Vector's network `
+    + `<a href="#" onclick="bleWifiScan();return false">(rescan)</a>:</div>`
+    + res.networks.map(n =>
     `<div class="robot-item" onclick="blePickWifi('${encodeURIComponent(n.ssid)}',${n.auth})">` +
     `<span>${n.ssid || "(hidden)"}</span>` +
     `<span>${n.signal}% · ${AUTH_NAMES[n.auth]||n.auth}</span></div>`).join("");
@@ -543,6 +590,27 @@ async function bleWifiConnect() {
   }
   $("bleDoneMsg").innerHTML = "Vector is on Wi-Fi" + (res.ip ? " at <b>"+res.ip+"</b>" : "") + " ✓";
   bleStep(3);
+}
+
+async function bleAuthorize() {
+  const btn = $("btnBleAuth");
+  if (btn) btn.disabled = true;
+  const errEl = $("bleAuthErr");
+  if (errEl) errEl.style.display = "none";
+  const msg = $("bleAuthMsg");
+  if (msg) msg.innerHTML = '<span class="spin">◌</span> authorizing…';
+  const res = await api("/api/ble/authorize", {});
+  if (btn) btn.disabled = false;
+  if (res.ok && res.connected) {
+    showTab("dash");
+    return;
+  }
+  if (res.ok && !res.connected) {
+    if (msg) msg.innerHTML = res.note || "Credentials ready.";
+    return;
+  }
+  if (errEl) { errEl.style.display = ""; errEl.textContent = res.error; }
+  else alert(res.error);
 }
 </script>
 </body>
