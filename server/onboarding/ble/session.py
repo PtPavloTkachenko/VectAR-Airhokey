@@ -18,6 +18,7 @@ channel once `self._chan` exists.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from . import messages as m
@@ -36,6 +37,26 @@ class HandshakeError(Exception):
 
 class FirstFrameTimeout(HandshakeError):
     """Robot's first frame missed (subscribe race) — reconnect and retry."""
+
+
+async def pair_begin(address: str, name: str | None = None,
+                     tries: int = 6) -> "RtsSession":
+    """Connect + run the handshake up to the Nonce (PIN now shows on the
+    robot's face), retrying the CoreBluetooth subscribe/first-frame race.
+    Returns a live session awaiting finish_handshake(pin)."""
+    last = None
+    for attempt in range(1, tries + 1):
+        sess = RtsSession()
+        try:
+            await sess.connect(address, name)
+            await sess.begin_handshake(first_timeout=5.0)
+            return sess
+        except FirstFrameTimeout as e:
+            last = e
+            logger.info(f"first-frame race (attempt {attempt}); reconnecting")
+            await sess.disconnect()
+            await asyncio.sleep(1.0)
+    raise HandshakeError(f"handshake did not start after {tries} tries ({last})")
 
 
 class RtsSession:

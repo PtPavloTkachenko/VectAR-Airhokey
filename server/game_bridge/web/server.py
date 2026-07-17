@@ -40,6 +40,8 @@ class WebUI:
         self.bridge = bridge
         self._runner: web.AppRunner | None = None
         self._pair_lock = asyncio.Lock()
+        self._ble_lock = asyncio.Lock()
+        self._ble = None          # live RtsSession during onboarding
 
         app = web.Application()
         app.add_routes([
@@ -49,6 +51,13 @@ class WebUI:
             web.post("/api/pair", self.api_pair),
             web.post("/api/test", self.api_test),
             web.post("/api/connect", self.api_connect),
+            # BLE onboarding (Mac-native, Python) — a stock robot from scratch
+            web.post("/api/ble/scan", self.api_ble_scan),
+            web.post("/api/ble/pair", self.api_ble_pair),
+            web.post("/api/ble/pin", self.api_ble_pin),
+            web.post("/api/ble/wifi_scan", self.api_ble_wifi_scan),
+            web.post("/api/ble/wifi_connect", self.api_ble_wifi_connect),
+            web.post("/api/ble/disconnect", self.api_ble_disconnect),
         ])
         self.app = app
 
@@ -186,3 +195,90 @@ class WebUI:
                  "error": "Server started with --no-robot / --mock-pose."})
         ok = await b.connect_robot()
         return web.json_response({"ok": ok})
+
+    # --- BLE onboarding (a stock robot, from scratch) ---
+
+    async def api_ble_scan(self, req):
+        from onboarding.ble.session import RtsSession
+        try:
+            body = await req.json()
+        except Exception:
+            body = {}
+        timeout = float(body.get("timeout", 5.0))
+        try:
+            robots = await RtsSession.scan(min(timeout, 12.0))
+        except Exception as e:
+            return web.json_response({"ok": False, "error": str(e)})
+        return web.json_response({"ok": True, "robots": robots})
+
+    async def api_ble_pair(self, req):
+        """Connect + handshake up to the PIN. Robot then shows a 6-digit PIN."""
+        from onboarding.ble import session as bse
+        body = await req.json()
+        addr = body.get("address")
+        name = body.get("name")
+        if not addr:
+            return web.json_response({"ok": False, "error": "address required"})
+        if self._ble_lock.locked():
+            return web.json_response(
+                {"ok": False, "error": "onboarding already in progress"}, status=409)
+        async with self._ble_lock:
+            await self._drop_ble()
+            try:
+                self._ble = await bse.pair_begin(addr, name)
+                return web.json_response({"ok": True, "needs_pin": True})
+            except Exception as e:
+                await self._drop_ble()
+                return web.json_response({"ok": False, "error": str(e)})
+
+    async def api_ble_pin(self, req):
+        body = await req.json()
+        pin = (body.get("pin") or "").strip()
+        if self._ble is None:
+            return web.json_response({"ok": False, "error": "not paired yet"})
+        try:
+            await self._ble.finish_handshake(pin)
+            st = await self._ble.status()
+            return web.json_response({"ok": True, "status": st})
+        except Exception as e:
+            return web.json_response({"ok": False, "error": str(e)})
+
+    async def api_ble_wifi_scan(self, _req):
+        if self._ble is None:
+            return web.json_response({"ok": False, "error": "not paired"})
+        try:
+            nets = await self._ble.wifi_scan()
+            return web.json_response({"ok": True, "networks": nets})
+        except Exception as e:
+            return web.json_response({"ok": False, "error": str(e)})
+
+    async def api_ble_wifi_connect(self, req):
+        body = await req.json()
+        if self._ble is None:
+            return web.json_response({"ok": False, "error": "not paired"})
+        try:
+            res = await self._ble.wifi_connect(
+                body["ssid"], body.get("password", ""),
+                int(body.get("auth", 6)), bool(body.get("hidden", False)))
+            ip = ""
+            if res.get("result") == 0:
+                try:
+                    ip = await self._ble.wifi_ip()
+                except Exception:
+                    pass
+            return web.json_response({"ok": res.get("result") == 0,
+                                      "result": res, "ip": ip})
+        except Exception as e:
+            return web.json_response({"ok": False, "error": str(e)})
+
+    async def api_ble_disconnect(self, _req):
+        await self._drop_ble()
+        return web.json_response({"ok": True})
+
+    async def _drop_ble(self):
+        if self._ble is not None:
+            try:
+                await self._ble.disconnect()
+            except Exception:
+                pass
+            self._ble = None
