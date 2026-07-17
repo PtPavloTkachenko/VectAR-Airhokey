@@ -127,6 +127,15 @@
       <div id="dashActions"></div>
     </div>
     <div class="card">
+      <h2>Live field <span id="fieldScore" style="color:var(--muted);
+        font-weight:400;letter-spacing:1px"></span></h2>
+      <div style="overflow-x:auto">
+        <canvas id="fieldCanvas" width="440" height="340"
+                style="max-width:100%;display:block;margin:6px auto 0"></canvas>
+      </div>
+      <div class="hint" id="fieldHint" style="text-align:center"></div>
+    </div>
+    <div class="card">
       <h2>How to play</h2>
       <div class="hint">
         1 · Pair your Vector (tab above) — the Bluetooth path sets it up, no typing.<br>
@@ -401,6 +410,85 @@ async function refreshStatus() {
 }
 setInterval(refreshStatus, 1000);
 refreshStatus();
+
+/* ---------- live top-down field ---------- */
+// field frame: origin center, +X toward Vector's goal, +Y player's left.
+// Canvas: Vector's goal on the RIGHT, player's goal on the LEFT.
+const GREEN = "#59ff80", PINK = "#f266bf", DIM = "#1b2430";
+function drawField(g) {
+  const cv = $("fieldCanvas"), ctx = cv.getContext("2d");
+  const W = cv.width, H = cv.height, pad = 22;
+  ctx.clearRect(0, 0, W, H);
+  if (!g || !g.field) return;
+  const f = g.field;
+  const sx = (W - 2*pad) / f.l, sy = (H - 2*pad) / f.w;
+  const sc = Math.min(sx, sy);
+  const cx = W/2, cy = H/2;
+  // field-mm -> canvas px. +X(field) -> +x(canvas right); +Y(field,left) -> -y(canvas up)
+  const px = (x, y) => [cx + x*sc, cy - y*sc];
+  const hl = f.l/2, hw = f.w/2;
+  // board
+  ctx.strokeStyle = "#2e7a44"; ctx.lineWidth = 2;
+  const [x0,y0] = px(-hl,hw), [x1,y1] = px(hl,-hw);
+  ctx.strokeRect(x0, y0, x1-x0, y1-y0);
+  // center line + circle
+  ctx.strokeStyle = DIM; ctx.lineWidth = 1;
+  ctx.beginPath(); let p=px(0,hw), q=px(0,-hw);
+  ctx.moveTo(p[0],p[1]); ctx.lineTo(q[0],q[1]); ctx.stroke();
+  ctx.beginPath(); ctx.arc(cx,cy,28*sc/1,0,7); ctx.stroke();
+  // goals: Vector's at +X (right, pink), player's at -X (left, green)
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = PINK; p=px(hl,hw*0.6); q=px(hl,-hw*0.6);
+  ctx.beginPath(); ctx.moveTo(p[0],p[1]); ctx.lineTo(q[0],q[1]); ctx.stroke();
+  ctx.strokeStyle = GREEN; p=px(-hl,hw*0.6); q=px(-hl,-hw*0.6);
+  ctx.beginPath(); ctx.moveTo(p[0],p[1]); ctx.lineTo(q[0],q[1]); ctx.stroke();
+  // goalie patrol line
+  ctx.strokeStyle = "rgba(89,255,128,.25)"; ctx.lineWidth = 1;
+  ctx.setLineDash([4,4]);
+  p=px(f.goalie_x,hw); q=px(f.goalie_x,-hw);
+  ctx.beginPath(); ctx.moveTo(p[0],p[1]); ctx.lineTo(q[0],q[1]); ctx.stroke();
+  ctx.setLineDash([]);
+  // puck
+  if (g.puck) {
+    const [ux,uy] = px(g.puck.x, g.puck.y);
+    ctx.fillStyle = PINK; ctx.shadowColor = PINK; ctx.shadowBlur = 10;
+    ctx.beginPath(); ctx.arc(ux,uy, Math.max(4,f.puck_r*sc), 0, 7); ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+  // robot (oriented): body circle + nose in heading dir
+  if (g.robot) {
+    const [rx,ry] = px(g.robot.x, g.robot.y);
+    const rad = g.robot.deg * Math.PI/180;
+    ctx.fillStyle = g.robot.drv ? GREEN : "rgba(89,255,128,.8)";
+    ctx.shadowColor = GREEN; ctx.shadowBlur = 12;
+    ctx.beginPath(); ctx.arc(rx,ry, Math.max(6,f.body_r*sc), 0, 7); ctx.fill();
+    ctx.shadowBlur = 0;
+    // nose: +X(field) at deg 0 -> canvas +x; +Y-left maps to -y
+    const nx = rx + Math.cos(rad)*f.body_r*sc*1.4;
+    const ny = ry - Math.sin(rad)*f.body_r*sc*1.4;
+    ctx.strokeStyle = "#07090c"; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(rx,ry); ctx.lineTo(nx,ny); ctx.stroke();
+  }
+  // labels
+  ctx.fillStyle = "#6b7f72"; ctx.font = "11px monospace"; ctx.textAlign="center";
+  ctx.fillText("YOU", px(-hl,0)[0]+16, cy);
+  ctx.fillText("VECTOR", px(hl,0)[0]-30, cy);
+}
+
+async function pollField() {
+  if ($("view-dash").style.display === "none") return;
+  try {
+    const g = await api("/api/game");
+    drawField(g);
+    $("fieldScore").textContent =
+      (g.score ? `you ${g.score[0]} : ${g.score[1]} vector` : "");
+    $("fieldHint").textContent = !g.lens ? "lens not connected"
+      : (!g.robot ? "waiting for robot placement"
+         : (g.rally ? "rally in progress" : "placed · idle"));
+  } catch (e) {}
+}
+setInterval(pollField, 160);
+pollField();
 
 /* ---------- wizard ---------- */
 async function discover() {
