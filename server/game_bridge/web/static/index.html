@@ -487,9 +487,10 @@ function drawIdle(g) {
 }
 
 async function pollField() {
-  if ($("view-dash").style.display === "none" || play) return;
+  if ($("view-dash").style.display === "none" || play || window.playSetup) return;
   try {
     const g = await api("/api/game");
+    window.lastGame = g;
     drawIdle(g);
     $("playScore").textContent =
       (g.score && (g.score[0] || g.score[1]) ? `you ${g.score[0]} : ${g.score[1]} vector` : "");
@@ -527,7 +528,7 @@ function pcvt(cv) {
 function updatePlayAvailability(s) {
   const btn = $("btnPlay"), hint = $("playHint");
   if (!btn) return;
-  if (play) { btn.disabled = false; return; }   // active game owns the button
+  if (play || window.playSetup) { btn.disabled = false; return; }  // owns its own label
   const lens = s && s.lens;
   if (lens && lens.connected && lens.role !== "screen") {
     btn.disabled = true;
@@ -542,7 +543,56 @@ function updatePlayAvailability(s) {
 
 function playToggle() {
   if (play) { playEnd(); return; }
-  playStart();
+  if (window.playSetup) {          // second press -> actually start
+    window.playSetup = false;
+    playStart();
+    return;
+  }
+  // first press -> show the physical setup instruction
+  window.playSetup = true;
+  drawSetup();
+  $("btnPlay").textContent = "START ▶";
+  $("playHint").textContent = "place Vector, then press START";
+}
+
+// Instruction shown before the game: the screen drives the REAL robot, so he
+// has to be physically placed first — with a tiny top-down diagram so the
+// orientation is obvious (Vector across the table, facing you).
+function drawSetup() {
+  const cv = $("playCanvas"), ctx = cv.getContext("2d");
+  const W = cv.width, H = cv.height;
+  ctx.fillStyle = "#07090c"; ctx.fillRect(0, 0, W, H);
+  ctx.textAlign = "center";
+  ctx.fillStyle = PINK; ctx.font = "bold 14px monospace";
+  ctx.fillText("PLACE VECTOR", W/2, 30);
+
+  // --- tiny top-down diagram ---
+  const tw = W*0.52, th = H*0.36, tx = (W-tw)/2, ty = 46;
+  ctx.strokeStyle = "#2e7a44"; ctx.lineWidth = 2;
+  ctx.strokeRect(tx, ty, tw, th);                 // the table
+  const vx = W/2, vy = ty + th*0.26;              // Vector: top-center
+  ctx.fillStyle = GREEN; ctx.shadowColor = GREEN; ctx.shadowBlur = 12;
+  ctx.beginPath(); ctx.arc(vx, vy, 17, 0, 7); ctx.fill(); ctx.shadowBlur = 0;
+  ctx.fillStyle = "#07090c";                       // eyes pointing DOWN (at you)
+  ctx.fillRect(vx-7, vy+3, 4, 7); ctx.fillRect(vx+3, vy+3, 4, 7);
+  ctx.strokeStyle = "#fff"; ctx.lineWidth = 2;     // "faces you" arrow
+  ctx.beginPath(); ctx.moveTo(vx, vy+22); ctx.lineTo(vx, vy+50); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(vx-5, vy+43); ctx.lineTo(vx, vy+50);
+  ctx.lineTo(vx+5, vy+43); ctx.stroke();
+  const px2 = W/2, py2 = ty + th*0.82;             // you: bottom-center
+  ctx.fillStyle = PINK; ctx.shadowColor = PINK; ctx.shadowBlur = 10;
+  ctx.beginPath(); ctx.arc(px2, py2, 11, 0, 7); ctx.fill(); ctx.shadowBlur = 0;
+  ctx.fillStyle = "#6b7f72"; ctx.font = "10px monospace";
+  ctx.fillText("VECTOR", vx, ty - 5);
+  ctx.fillText("YOU", px2, ty + th + 14);
+
+  // --- text ---
+  ctx.fillStyle = "#fff"; ctx.font = "13px monospace";
+  ctx.fillText("Center of the table, facing you.", W/2, ty + th + 40);
+  ctx.fillStyle = "#6b7f72"; ctx.font = "12px monospace";
+  ctx.fillText("Give him ~1 m clear — he really drives.", W/2, ty + th + 60);
+  ctx.fillStyle = GREEN; ctx.font = "bold 14px monospace";
+  ctx.fillText("then press  START ▶", W/2, H - 22);
 }
 
 function playStart() {
@@ -562,6 +612,7 @@ function playStart() {
 }
 
 function playEnd() {
+  window.playSetup = false;
   if (!play) return;
   try { play.ws && play.ws.close(); } catch (e) {}
   play = null;

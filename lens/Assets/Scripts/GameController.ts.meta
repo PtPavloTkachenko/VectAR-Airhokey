@@ -97,7 +97,6 @@
     - '// @input Asset.Material matMetal {"hint":"Dark PBR metal (for GLB caps/legs)"}'
     - '// @input Asset.Font scoreFont {"hint":"VT323 font for the CRT score display"}'
     - '// @input Asset.Material matRim {"hint":"Fresnel rim shader material for the robot silhouette"}'
-    - '// @ui {"widget":"separator"}'
     - '// @input bool voiceEnabled {"hint":"OPTIONAL voice agent — talk to Vector, Gemini answers in his TTS"}'
     - '// @input string rsgToken {"hint":"Paste your Remote Service Gateway token here (Lens Studio menu -> Remote Service Gateway -> Generate Token). Leave blank to use GameConfig.", "showIf":"voiceEnabled"}'
     - '// @input bool editorSkipCalibration {"hint":"EDITOR DEBUG: skip surface detection, take the surface at world 0"}'
