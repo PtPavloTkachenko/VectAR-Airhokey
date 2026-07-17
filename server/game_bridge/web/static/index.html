@@ -326,7 +326,9 @@ function renderRoute() {
       + stat("Robot", r.name || r.serial, "on")
       + `<div class="hint">Already authorized. Connect the game loop to it.</div>`
       + `<button onclick="bleAuthorize()">CONNECT ROBOT →</button>`
-      + `<button class="secondary" onclick="chooseRoute('ble')">SET UP A NEW ROBOT INSTEAD</button>`;
+      + `<div class="hint" style="margin-top:14px">Reset your Vector, or does his `
+      + `face show a setup screen? He needs onboarding again:</div>`
+      + `<button class="secondary" onclick="chooseRoute('ble')">SET UP OVER BLUETOOTH</button>`;
   } else {
     html = `<h2>Set up your Vector</h2>`
       + `<div class="hint">Which best describes your robot right now?</div>`
@@ -370,7 +372,7 @@ async function refreshStatus() {
         && $("routeCard").style.display !== "none") renderRoute();
     const r = s.robot;
     let html = "";
-    html += stat("Robot paired", r.paired ? (r.name || r.serial) : "NO",
+    html += stat("Saved robot", r.paired ? (r.name || r.serial) : "none",
                  r.paired ? "on" : "off");
     html += stat("Robot link", r.connected ?
                  (r.has_control ? "CONNECTED" : "no control") : "OFFLINE",
@@ -571,9 +573,10 @@ function blePickWifi(ssidEnc, auth) {
   $("bleWifiSsid").value = ssid; $("bleWifiAuth").value = auth;
   $("btnBleWifi").disabled = false;
   $("bleWifiList").innerHTML = `<div class="hint">Selected <b>${ssid}</b>`
-    + (auth==0?" (open)":"") + `</div>`;
-  if (auth==0) $("bleWifiPw").style.display = "none";
-  $("bleWifiPw").focus();
+    + (auth==0?" (open — no password)":"") + `</div>`;
+  // show/hide the password field to match the chosen network every time
+  $("bleWifiPw").style.display = (auth==0) ? "none" : "";
+  if (auth!=0) $("bleWifiPw").focus();
 }
 
 async function bleWifiConnect() {

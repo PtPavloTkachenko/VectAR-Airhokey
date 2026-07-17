@@ -70,6 +70,8 @@ class RtsSession:
         self._chan: SecureChannel | None = None
         self.guid = ""
         self.name: str | None = None
+        self.esn = ""          # robot serial, read over BLE (status)
+        self.ip = ""           # robot LAN IP, read over BLE (wifi_ip)
 
     # --- discovery / link ---
 
@@ -163,7 +165,9 @@ class RtsSession:
         mtype, payload = await self._recv()
         if mtype != m.STATUS_RESPONSE:
             raise HandshakeError(f"expected StatusResponse, got 0x{mtype:02x}")
-        return m.parse_status_response(payload)
+        st = m.parse_status_response(payload)
+        self.esn = st.get("esn", "") or self.esn
+        return st
 
     async def wifi_scan(self) -> list[dict]:
         await self._send(m.wifi_scan_request())
@@ -187,7 +191,8 @@ class RtsSession:
         mtype, payload = await self._recv()
         if mtype != m.WIFI_IP_RESPONSE:
             raise HandshakeError(f"expected WifiIpResponse, got 0x{mtype:02x}")
-        return m.parse_wifi_ip_response(payload)["ipv4"]
+        self.ip = m.parse_wifi_ip_response(payload)["ipv4"] or self.ip
+        return self.ip
 
     async def cloud_auth(self) -> str:
         """Mint the SDK GUID over BLE (RtsCloudSessionRequest_5)."""
