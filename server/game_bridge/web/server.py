@@ -47,6 +47,7 @@ class WebUI:
         app.add_routes([
             web.get("/", self.index),
             web.get("/api/status", self.api_status),
+            web.get("/api/game", self.api_game),
             web.post("/api/discover", self.api_discover),
             web.post("/api/pair", self.api_pair),
             web.post("/api/test", self.api_test),
@@ -132,8 +133,41 @@ class WebUI:
             "game": {
                 "rally_active": b.rally_active,
                 "transform_bound": b.transform.bound,
+                "score": getattr(b, "last_score", [0, 0]),
+                "puck": ({"x": round(b.latest_puck.x), "y": round(b.latest_puck.y)}
+                         if getattr(b, "latest_puck", None) else None),
+                "robot": robot.get("pose"),
+                "field": {
+                    "l": config.FIELD_L, "w": config.FIELD_W,
+                    "goalie_x": config.GOALIE_X, "puck_r": config.PUCK_R,
+                    "body_r": config.VECTOR_BODY_R,
+                },
             },
             "wirepod_default": config.WIREPOD_URL,
+        })
+
+    async def api_game(self, _req):
+        """Lightweight top-down game state for the dashboard mini-field —
+        polled fast so the puck + robot move smoothly."""
+        b = self.bridge
+        pose = None
+        if b.pump and getattr(b.pump, "fresh", False) and b.transform.bound:
+            snap = dict(b.pump.snapshot)
+            fx, fy, fdeg = b.transform.robot_to_field(
+                snap.get("x", 0.0), snap.get("y", 0.0), snap.get("deg", 0.0))
+            pose = {"x": round(fx), "y": round(fy), "deg": round(fdeg),
+                    "drv": 1 if b.driving else 0}
+        return web.json_response({
+            "field": {"l": config.FIELD_L, "w": config.FIELD_W,
+                      "goalie_x": config.GOALIE_X, "puck_r": config.PUCK_R,
+                      "body_r": config.VECTOR_BODY_R,
+                      "y_range": config.GOALIE_Y_RANGE},
+            "robot": pose,
+            "puck": ({"x": round(b.latest_puck.x), "y": round(b.latest_puck.y)}
+                     if getattr(b, "latest_puck", None) else None),
+            "score": getattr(b, "last_score", [0, 0]),
+            "rally": b.rally_active,
+            "lens": b.ws.client is not None,
         })
 
     async def api_discover(self, req):

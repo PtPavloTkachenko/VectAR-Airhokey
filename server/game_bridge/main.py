@@ -76,6 +76,7 @@ class Bridge:
         self.pump = None
         self.commander = None
         self.rally_active = False
+        self.last_score = [0, 0]   # [player, vector] — last reported by the lens
         self.batt_v: float | None = None
         self.batt_charging = False
         self.latest_puck: PuckState | None = None
@@ -174,6 +175,8 @@ class Bridge:
     async def _on_event(self, msg: dict):
         name = msg["name"]
         score = msg.get("score")   # [player, vector] — fed to the proactive Gemini agent
+        if isinstance(score, (list, tuple)) and len(score) == 2:
+            self.last_score = [int(score[0]), int(score[1])]
         logger.info(f"Game event: {name} score={score}")
         if name == "rally_start":
             self.rally_active = True
