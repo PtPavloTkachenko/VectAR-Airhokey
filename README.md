@@ -81,6 +81,17 @@ AI agents: start at [CLAUDE.md](CLAUDE.md) / [AGENTS.md](AGENTS.md).
   through the robot's own TTS. Needs your own (free) Remote Service Gateway
   token; see [docs/LENS.md](docs/LENS.md#voice-agent).
 
+## Credits
+
+- **[Pavlo Tkachenko](https://github.com/PtPavloTkachenko)** — creator, design,
+  direction, hardware/RE, and everything on real Spectacles + a real robot.
+- **[Claude Code](https://claude.com/claude-code)** (Anthropic, Opus 4.8) —
+  pair-programmed the engine, the pairing wizard, and these docs. Commit history
+  carries the `Co-Authored-By` trail.
+- **[wire-pod](https://github.com/kercre123/wire-pod)** by **Kerigan Creighton**
+  — the community "cloud" this whole thing stands on. Please go star it.
+- **Snap Spectacles** + the Spectacles Interaction Kit — the AR platform.
+
 ## License
 
 MIT for everything authored in this repo — see [LICENSE](LICENSE).
