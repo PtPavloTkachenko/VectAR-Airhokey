@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+
+# Secrets — never commit credentials
+.env
+*.pem
+*.key
+*.cert
+*.jwt
+sdk_config.ini
+
+# Lens Studio machine-local / regenerable
+lens/Cache/
+lens/Workspaces/
+lens/Support/
+lens/PluginsUserPreferences/
+lens/*.lock
+lens/BackUp/
+**/.mcp.json
+.cursor/
+.vscode/
+
+# OS
+.DS_Store
+
+# Logs
+*.log

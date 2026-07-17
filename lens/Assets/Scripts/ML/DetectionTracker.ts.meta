@@ -1,0 +1,53 @@
+- !<AssetImportMetadata/019c1f77-1528-4ce6-a7b7-9e7eb11f6419>
+  ImportedAssetIds:
+    TypeScriptAsset: !<reference> 44f0662e-3cc3-4916-8db6-723e8c130815
+  ImporterName: TypeScriptAssetImporter
+  PrimaryAsset: !<reference> 44f0662e-3cc3-4916-8db6-723e8c130815
+  PackageType: NotAPackage
+  LegacyPackagePolicy: ~
+  ExtraData:
+    {}
+  AssetDataMap:
+    TypeScriptAsset: !<own> c4df01fc-6e79-4f83-a9ae-9692f32c01c1
+  DependentFiles:
+    []
+  ImporterSettings: !<AssetImporterSettings>
+    {}
+  CompressionSettings: !<own> 00000000-0000-0000-0000-000000000000
+- !<TypeScriptAssetData/c4df01fc-6e79-4f83-a9ae-9692f32c01c1>
+  SvgIcon: ""
+  SetupScript:
+    code: ""
+  Description: ""
+  VersionMajor: 0
+  VersionMinor: 0
+  VersionPatch: 0
+  ComponentUid: 401a4ea3-2600-4432-aa2e-e0c386d2e8ff
+  ExportUid: 00000000-0000-0000-0000-000000000000
+  PackagePolicy: CanBeUnpacked
+  ScriptInputsHidden:
+    debug: false
+    maxAgeFrames: false
+    minIou: false
+    mlController: false
+  ScriptTypesHidden:
+    {}
+  ReadMe: !<reference> 00000000-0000-0000-0000-000000000000
+  DeclarationFile: !<reference> 00000000-0000-0000-0000-000000000000
+  Tags:
+    []
+  Attachments:
+    []
+  DefaultScriptInputs:
+    - mlController: !<MappingBased.AssignableType> 00000000-0000-0000-0000-000000000000
+      minIou: 0.200000
+      maxAgeFrames: !<float> 10.000000
+      debug: false
+  ScriptTypes:
+    -
+      {}
+  InputLines:
+    - // @input AssignableType mlController
+    - "// @input float minIou = 0.2 {\"hint\":\"Minimum IoU between this frame's detection and a live track to count as the same toy. Lower = more tolerant of motion between frames; higher = stricter identity. 0.2 is a good starting point.\", \"widget\":\"slider\", \"min\":0, \"max\":1, \"step\":0.01}"
+    - '// @input float maxAgeFrames = 10 {"hint":"Frames a track survives without a matched detection before being dropped. At ~12 inferences/sec, 10 frames ≈ 0.8s of tolerance for occlusion/dropouts. Higher = more forgiving, but stale tracks may capture a different toy if one wanders into the old bbox."}'
+    - '// @input bool debug {"hint":"Print per-frame track lifecycle diagnostics"}'
