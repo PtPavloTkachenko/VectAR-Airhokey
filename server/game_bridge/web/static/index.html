@@ -81,6 +81,8 @@
   .step-dot.now  { background: var(--pink);  box-shadow: 0 0 8px rgba(242,102,191,.6); }
   .hint { color: var(--muted); font-size: 12px; margin-top: 8px; }
   .hint a { color: var(--pink); }
+  /* highlight load-bearing instructions so they stand out from prose */
+  .key { color: #fff; font-weight: 600; }
   .error { color: var(--err); margin-top: 12px; font-size: 13px;
            border-left: 2px solid var(--err); padding-left: 10px; }
   .ok { color: var(--green); margin-top: 12px; }
@@ -164,10 +166,11 @@
       <!-- b0: find over BLE -->
       <div class="bstep" id="bstep0">
         <h2>1 · Find Vector over Bluetooth</h2>
-        <div class="hint">Put Vector on the charger and <b>double-press the
-          backpack button</b> — his face shows <code>######</code>. Then scan.
-          The advertising window is short; if nothing is found, double-press
-          again — scanning keeps retrying.</div>
+        <div class="hint"><span class="key">Put Vector on the charger.</span>
+          If his face isn't already showing a setup screen,
+          <span class="key">double-press the button on his back.</span>
+          Then scan. If nothing is found, <span class="key">double-press
+          again</span> and scan once more.</div>
         <button onclick="bleScan()" id="btnBleScan">SCAN BLUETOOTH</button>
         <span id="bleScanSpin"></span>
         <div id="bleList"></div>
