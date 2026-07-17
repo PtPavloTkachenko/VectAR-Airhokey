@@ -95,6 +95,15 @@ export class GameController extends BaseScriptComponent {
   matRim: Material;
 
   @input
+  @hint("OPTIONAL voice agent — talk to Vector, Gemini answers in his TTS")
+  voiceEnabled: boolean = false;
+
+  @input
+  @showIf("voiceEnabled")
+  @hint("Paste your Remote Service Gateway token here (Lens Studio menu -> Remote Service Gateway -> Generate Token). Leave blank to use GameConfig.")
+  rsgToken: string = "";
+
+  @input
   @hint("EDITOR DEBUG: skip surface detection, take the surface at world 0")
   editorSkipCalibration: boolean = false;
 
@@ -372,8 +381,12 @@ export class GameController extends BaseScriptComponent {
     // WS link
     this.ws = new WSClient(this.internetModule);
     // In-game Gemini voice agent (through the lens RSG, no Mac key): talk to Vector,
-    // he answers in his own voice. OFF unless GameConfig.VOICE_ENABLED (+ server VECTAR_CHAT=1).
-    if (GameConfig.VOICE_ENABLED) {
+    // he answers in his own voice. Enabled by the Inspector's "voiceEnabled" +
+    // "rsgToken" (or GameConfig.VOICE_ENABLED / RSG_GOOGLE_TOKEN); needs server VECTAR_CHAT=1.
+    if (this.rsgToken) GameConfig.RSG_GOOGLE_TOKEN = this.rsgToken;
+    const voiceOn = (this.voiceEnabled || GameConfig.VOICE_ENABLED)
+                    && !!GameConfig.RSG_GOOGLE_TOKEN;
+    if (voiceOn) {
       this.llm = new LLMProxy(this.ws);
       this.ws.onLlmRequest = (m) => this.llm.onLlmRequest(m);
       this.voice = new VoiceTalk(this.ws);
