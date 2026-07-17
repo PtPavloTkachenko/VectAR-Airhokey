@@ -40,23 +40,32 @@ class FirstFrameTimeout(HandshakeError):
 
 
 async def pair_begin(address: str, name: str | None = None,
-                     tries: int = 6) -> "RtsSession":
+                     tries: int = 3) -> "RtsSession":
     """Connect + run the handshake up to the Nonce (PIN now shows on the
-    robot's face), retrying the CoreBluetooth subscribe/first-frame race.
-    Returns a live session awaiting finish_handshake(pin)."""
+    robot's face), retrying if the robot's first frame doesn't arrive.
+
+    A just-provisioned re-pair sends the first frame immediately; a
+    FACTORY-RESET (first-time-pair) robot can take several seconds to start
+    the handshake (it generates keys + shows the PIN for the first time), so
+    each attempt holds the connection open a long time before giving up —
+    tearing down too fast is itself what stalls it."""
     last = None
     for attempt in range(1, tries + 1):
         sess = RtsSession()
         try:
             await sess.connect(address, name)
-            await sess.begin_handshake(first_timeout=5.0)
+            await sess.begin_handshake(first_timeout=18.0)
             return sess
         except FirstFrameTimeout as e:
             last = e
-            logger.info(f"first-frame race (attempt {attempt}); reconnecting")
+            logger.info(f"first frame didn't arrive in 18s (attempt "
+                        f"{attempt}/{tries}); reconnecting")
             await sess.disconnect()
-            await asyncio.sleep(1.0)
-    raise HandshakeError(f"handshake did not start after {tries} tries ({last})")
+            await asyncio.sleep(2.0)
+    raise HandshakeError(
+        f"Vector connected but never started pairing after {tries} tries. "
+        "Make sure his face shows the pairing screen (double-press the "
+        "backpack button on the charger), then try again.")
 
 
 class RtsSession:
@@ -72,6 +81,7 @@ class RtsSession:
         self.name: str | None = None
         self.esn = ""          # robot serial, read over BLE (status)
         self.ip = ""           # robot LAN IP, read over BLE (wifi_ip)
+        self.version = m.V5_TAG  # RTS version the robot chose (echoed on replies)
 
     # --- discovery / link ---
 
@@ -97,7 +107,9 @@ class RtsSession:
         raw = await self.ble.recv(timeout)
         if self._chan is not None:
             raw = self._chan.decrypt(raw)
-        return m.parse_envelope(raw)
+        version, mtype, payload = m.parse_envelope(raw)
+        self.version = version   # echo the robot's chosen RTS version on replies
+        return mtype, payload
 
     # --- handshake (§C) ---
 
@@ -118,7 +130,7 @@ class RtsSession:
             raise HandshakeError(f"expected ConnRequest, got 0x{mtype:02x}")
         self._robot_pk = m.parse_conn_request(payload)
 
-        await self._send(m.conn_response(self._app_pk))
+        await self._send(m.conn_response(self._app_pk, version=self.version))
 
         mtype, payload = await self._recv()
         if mtype != m.NONCE:
@@ -136,7 +148,7 @@ class RtsSession:
         dec_key, enc_key = derive_channel_keys(rx, tx, pin)
 
         # Ack is the LAST plaintext message; encryption turns on right after.
-        await self._send(m.ack())
+        await self._send(m.ack(self.version))
         self._chan = SecureChannel(dec_key, enc_key,
                                    self._to_robot_nonce, self._to_device_nonce)
 
@@ -150,7 +162,7 @@ class RtsSession:
             raise HandshakeError(f"expected Challenge, got 0x{mtype:02x}")
         number = m.parse_challenge(payload)
 
-        await self._send(m.challenge_reply(number))
+        await self._send(m.challenge_reply(number, self.version))
 
         mtype, _ = await self._recv()
         if mtype != m.CHALLENGE_SUCCESS:
@@ -161,33 +173,33 @@ class RtsSession:
     # --- provisioning (§E-G) ---
 
     async def status(self) -> dict:
-        await self._send(m.status_request())
+        await self._send(m.status_request(self.version))
         mtype, payload = await self._recv()
         if mtype != m.STATUS_RESPONSE:
             raise HandshakeError(f"expected StatusResponse, got 0x{mtype:02x}")
-        st = m.parse_status_response(payload)
+        st = m.parse_status_response(payload, self.version)
         self.esn = st.get("esn", "") or self.esn
         return st
 
     async def wifi_scan(self) -> list[dict]:
-        await self._send(m.wifi_scan_request())
+        await self._send(m.wifi_scan_request(self.version))
         mtype, payload = await self._recv(timeout=25.0)
         if mtype != m.WIFI_SCAN_RESPONSE:
             raise HandshakeError(f"expected WifiScanResponse, got 0x{mtype:02x}")
-        return m.parse_wifi_scan_response(payload)["networks"]
+        return m.parse_wifi_scan_response(payload, self.version)["networks"]
 
     async def wifi_connect(self, ssid: str, password: str,
                            auth_type: int, hidden: bool = False) -> dict:
         await self._send(m.wifi_connect_request(ssid, password, auth_type,
-                                                hidden))
+                                                hidden, version=self.version))
         mtype, payload = await self._recv(timeout=30.0)
         if mtype != m.WIFI_CONNECT_RESPONSE:
             raise HandshakeError(
                 f"expected WifiConnectResponse, got 0x{mtype:02x}")
-        return m.parse_wifi_connect_response(payload)
+        return m.parse_wifi_connect_response(payload, self.version)
 
     async def wifi_ip(self) -> str:
-        await self._send(m.wifi_ip_request())
+        await self._send(m.wifi_ip_request(self.version))
         mtype, payload = await self._recv()
         if mtype != m.WIFI_IP_RESPONSE:
             raise HandshakeError(f"expected WifiIpResponse, got 0x{mtype:02x}")
@@ -196,7 +208,7 @@ class RtsSession:
 
     async def cloud_auth(self) -> str:
         """Mint the SDK GUID over BLE (RtsCloudSessionRequest_5)."""
-        await self._send(m.cloud_session_request(SESSION_TOKEN))
+        await self._send(m.cloud_session_request(SESSION_TOKEN, self.version))
         mtype, payload = await self._recv(timeout=30.0)
         if mtype != m.CLOUD_SESSION_RESPONSE:
             raise HandshakeError(
@@ -211,7 +223,7 @@ class RtsSession:
         return self.guid
 
     async def _sdk_proxy(self, url_path: str, json_body: str) -> dict:
-        await self._send(m.sdk_proxy_request(self.guid, url_path, json_body))
+        await self._send(m.sdk_proxy_request(self.guid, url_path, json_body, version=self.version))
         mtype, payload = await self._recv(timeout=25.0)
         if mtype != m.SDK_PROXY_RESPONSE:
             raise HandshakeError(f"expected SdkProxyResponse, got 0x{mtype:02x}")

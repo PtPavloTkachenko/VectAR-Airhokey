@@ -15,10 +15,19 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 
 from bleak import BleakClient, BleakScanner
 
 logger = logging.getLogger("vectar.ble.transport")
+if os.getenv("BLE_DEBUG"):
+    # emit raw RX/TX hex regardless of the app's root log level
+    _h = logging.StreamHandler()
+    _h.setLevel(logging.DEBUG)
+    _h.setFormatter(logging.Formatter("%(name)s %(message)s"))
+    logger.addHandler(_h)
+    logger.setLevel(logging.DEBUG)
+    logger.propagate = False
 
 RTS_SERVICE = "0000fee3-0000-1000-8000-00805f9b34fb"
 WRITE_CHAR = "7d2a4bda-d29b-4152-b725-2491478c5cd7"

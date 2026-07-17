@@ -24,7 +24,9 @@ PROTO_VERSION = 1
 # Env vars VECTOR_SERIAL / VECTOR_IP / VECTOR_NAME override (VECTOR_IP may be a
 # comma-separated candidate list if your robot bounces between DHCP leases).
 SDK_CONFIG_PATH = Path.home() / ".anki_vector" / "sdk_config.ini"
-WIREPOD_URL = os.getenv("WIREPOD_URL", "http://escapepod.local:8080")
+# The token engine runs locally (bundled wire-pod); localhost is the default.
+# Override WIREPOD_URL only if you run wire-pod on another machine.
+WIREPOD_URL = os.getenv("WIREPOD_URL", "http://localhost:8080")
 
 
 def read_robot_identity() -> tuple[str, str, str]:

@@ -278,10 +278,16 @@ class WebUI:
             return web.json_response({"ok": False, "error": "not paired yet"})
         try:
             await self._ble.finish_handshake(pin)
-            st = await self._ble.status()
-            return web.json_response({"ok": True, "status": st})
         except Exception as e:
             return web.json_response({"ok": False, "error": str(e)})
+        # PIN is confirmed once the encrypted channel is up. Reading status is
+        # best-effort — a hiccup here must not fail the whole pairing.
+        st = None
+        try:
+            st = await self._ble.status()
+        except Exception:
+            pass
+        return web.json_response({"ok": True, "status": st})
 
     async def api_ble_wifi_scan(self, _req):
         if self._ble is None:
@@ -325,9 +331,17 @@ class WebUI:
             body = {}
         pod = body.get("pod") or config.WIREPOD_URL
 
-        # Path A: fresh from BLE onboarding -> mint with the BLE-read identity
-        if self._ble is not None and getattr(self._ble, "esn", ""):
-            esn = self._ble.esn
+        # Path A: fresh from BLE onboarding -> mint with the BLE-read identity.
+        # v2 robots don't expose the ESN over BLE status, so fall back to
+        # VECTOR_SERIAL if the caller/env supplies one.
+        if self._ble is not None:
+            import os
+            esn = self._ble.esn or body.get("serial") or os.getenv("VECTOR_SERIAL", "")
+            if not esn:
+                return web.json_response(
+                    {"ok": False, "error": "Couldn't read Vector's serial over "
+                     "Bluetooth (older robot). Enter it (bottom of the robot) "
+                     "and retry.", "need_serial": True})
             ip = self._ble.ip
             try:
                 if not ip:
