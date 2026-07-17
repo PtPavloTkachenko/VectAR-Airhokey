@@ -94,10 +94,12 @@
   .progress-step .mark { width: 16px; text-align: center; }
   .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
           gap: 12px; }
-  .stat { border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; }
+  .stat { border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px;
+          min-width: 0; }
   .stat .k { color: var(--muted); font-size: 11px; letter-spacing: 1px;
              text-transform: uppercase; }
-  .stat .v { font-size: 17px; margin-top: 4px; color: var(--text); }
+  .stat .v { font-size: 17px; margin-top: 4px; color: var(--text);
+             word-break: break-all; overflow-wrap: anywhere; }
   .stat .v.on  { color: var(--green); text-shadow: 0 0 8px rgba(89,255,128,.4); }
   .stat .v.off { color: var(--pink); }
   .spin { display: inline-block; animation: spin 1s linear infinite; }
@@ -225,6 +227,7 @@
         <div class="hint">Nothing found? mDNS often fails on repeater networks —
           just continue and type the IP manually.</div>
         <button class="secondary" onclick="gotoStep(1)">ENTER MANUALLY →</button>
+        <button class="secondary" onclick="chooseRoute(null)">← BACK TO SETUP OPTIONS</button>
       </div>
 
       <!-- step 2: confirm -->
