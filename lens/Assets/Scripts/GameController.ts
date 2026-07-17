@@ -95,12 +95,7 @@ export class GameController extends BaseScriptComponent {
   matRim: Material;
 
   @input
-  @hint("OPTIONAL voice agent — talk to Vector, Gemini answers in his TTS")
-  voiceEnabled: boolean = false;
-
-  @input
-  @showIf("voiceEnabled")
-  @hint("Paste your Remote Service Gateway token here (Lens Studio menu -> Remote Service Gateway -> Generate Token). Leave blank to use GameConfig.")
+  @hint("OPTIONAL — talk to Vector with your voice, Gemini replies in his TTS. Paste your Remote Service Gateway token here to enable it (Lens Studio top menu -> Remote Service Gateway -> Generate Token). Leave blank to play without voice.")
   rsgToken: string = "";
 
   @input
@@ -381,11 +376,10 @@ export class GameController extends BaseScriptComponent {
     // WS link
     this.ws = new WSClient(this.internetModule);
     // In-game Gemini voice agent (through the lens RSG, no Mac key): talk to Vector,
-    // he answers in his own voice. Enabled by the Inspector's "voiceEnabled" +
-    // "rsgToken" (or GameConfig.VOICE_ENABLED / RSG_GOOGLE_TOKEN); needs server VECTAR_CHAT=1.
+    // he answers in his own voice. Enabled simply by pasting an RSG token into the
+    // Inspector's "rsgToken" field (or GameConfig.RSG_GOOGLE_TOKEN); needs server VECTAR_CHAT=1.
     if (this.rsgToken) GameConfig.RSG_GOOGLE_TOKEN = this.rsgToken;
-    const voiceOn = (this.voiceEnabled || GameConfig.VOICE_ENABLED)
-                    && !!GameConfig.RSG_GOOGLE_TOKEN;
+    const voiceOn = !!GameConfig.RSG_GOOGLE_TOKEN;
     if (voiceOn) {
       this.llm = new LLMProxy(this.ws);
       this.ws.onLlmRequest = (m) => this.llm.onLlmRequest(m);
@@ -633,6 +627,11 @@ export class GameController extends BaseScriptComponent {
           // button lights only when the robot is DOWN (bridge held flag)
           this.scoreUI.setButtonLit(this.startBtn, false);
           this.scoreUI.setStatus("Place Vector on the mark");
+          // Clear one-time instruction so first-timers orient the robot right:
+          // center of the table, nose pointed at the player. Hidden on
+          // ROBOT_TO_POST / COUNTDOWN.
+          this.showBigText("PLACE VECTOR", "green",
+                           "Center of the table, facing you");
         }
         break;
       case "COUNTDOWN":

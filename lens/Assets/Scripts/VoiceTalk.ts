@@ -42,7 +42,8 @@ export class VoiceTalk {
 
   /** Call every frame. Keeps the ASR session alive; each finalized phrase -> utter. */
   tick(dt: number) {
-    if (!GameConfig.VOICE_ENABLED) {
+    // Voice is active only when an RSG token is present (the single switch).
+    if (!GameConfig.RSG_GOOGLE_TOKEN) {
       return;
     }
     if (this.isEditor) {

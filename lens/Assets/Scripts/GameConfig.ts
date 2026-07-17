@@ -54,17 +54,20 @@ export const GameConfig = {
 
   // ===========================================================================
   //  OPTIONAL — VOICE AGENT (talk to Vector during the game, Gemini replies via
-  //  his TTS). Skip this whole block to play without it.
+  //  his TTS). Skip it entirely to play without voice.
   //
-  //  ┌─ PASTE YOUR TOKEN HERE ─────────────────────────────────────────────┐
+  //  ┌─ HOW TO ENABLE ─────────────────────────────────────────────────────┐
+  //  │  EASIEST: paste your token into the GameController's "Rsg Token"      │
+  //  │  field in the Inspector — voice turns on automatically. No code.      │
+  //  │                                                                       │
+  //  │  Getting a token:                                                     │
   //  │  1. In Lens Studio, open the Asset Library and install               │
   //  │     "Remote Service Gateway" (RemoteServiceGateway.lspkg).           │
   //  │  2. Menu bar -> Remote Service Gateway -> Generate Token.            │
-  //  │  3. Copy the token and paste it into RSG_GOOGLE_TOKEN below.         │
-  //  │  4. Set VOICE_ENABLED: true, and start the server with VECTAR_CHAT=1.│
+  //  │  3. Paste it into the Inspector field (or RSG_GOOGLE_TOKEN below).   │
+  //  │  4. Start the Mac server with VECTAR_CHAT=1.                         │
   //  │  The token is per-developer and must NOT be committed publicly.      │
   //  └─────────────────────────────────────────────────────────────────────┘
-  VOICE_ENABLED: false,                 // <- flip to true after pasting a token
-  RSG_GOOGLE_TOKEN: "",                 // <- PASTE YOUR RSG TOKEN HERE
+  RSG_GOOGLE_TOKEN: "",                 // code alternative to the Inspector field
   LLM_MODEL: "gemini-3.1-flash-lite",   // one-shot generateContent model
 };

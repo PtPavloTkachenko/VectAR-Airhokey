@@ -1632,7 +1632,6 @@
   Enabled: true
   ScriptAsset: !<reference> 86264023-c2f8-4846-9c66-ec3db59e4053
   ScriptInputsDefault:
-    voiceEnabled: true
     rsgToken: true
     editorSkipCalibration: true
     visionIouThreshold: true
@@ -1653,7 +1652,6 @@
       matMetal: !<reference.Material> 91b28da7-0298-4591-98ad-08aec7f89ffb
       scoreFont: !<reference.Font> cdff68a2-df53-4293-9455-c0b2ac749713
       matRim: !<reference.Material> edcea9ba-7d41-4ba7-81fe-e978b3820a1c
-      voiceEnabled: false
       rsgToken: ""
       editorSkipCalibration: false
       axleOffsetMm: !<float> 8.000000

@@ -66,14 +66,18 @@ The AI call goes **through the lens** via Snap's Remote Service Gateway — the
 Mac server holds no API key; it only builds prompts.
 
 1. Lens Studio → install the **Remote Service Gateway** plugin/token
-   generator (Asset Library) → generate YOUR token.
-2. `GameConfig.ts` → `RSG_GOOGLE_TOKEN = "<your token>"`,
-   `VOICE_ENABLED: true`.
+   generator (Asset Library) → menu bar → **Remote Service Gateway →
+   Generate Token** → copy YOUR token.
+2. Select the **GameController** in the Scene Hierarchy → in the Inspector,
+   paste the token into the **Rsg Token** field. That's it — voice turns on
+   automatically when a token is present. (Code alternative: set
+   `GameConfig.RSG_GOOGLE_TOKEN`.)
 3. Start the server with `VECTAR_CHAT=1`.
 4. In-game: just speak — on-device ASR transcribes, Vector answers out loud
    (English only — his TTS voice is English).
 
-Without a token, leave `VOICE_ENABLED: false` — everything else works.
+Leave the **Rsg Token** field empty to play without voice — everything else
+works. The token is per-developer and must **not** be committed publicly.
 
 ## Project layout
 

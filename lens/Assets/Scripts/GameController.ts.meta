@@ -49,7 +49,6 @@
     visionIouThreshold: false
     visionScoreThreshold: false
     visionShowMarker: false
-    voiceEnabled: false
   ScriptTypesHidden:
     {}
   ReadMe: !<reference> 00000000-0000-0000-0000-000000000000
@@ -69,7 +68,6 @@
       matMetal: !<reference.Material> 00000000-0000-0000-0000-000000000000
       scoreFont: !<reference.Font> 00000000-0000-0000-0000-000000000000
       matRim: !<reference.Material> 00000000-0000-0000-0000-000000000000
-      voiceEnabled: false
       rsgToken: ""
       editorSkipCalibration: false
       axleOffsetMm: !<float> 15.000000
@@ -97,8 +95,7 @@
     - '// @input Asset.Material matMetal {"hint":"Dark PBR metal (for GLB caps/legs)"}'
     - '// @input Asset.Font scoreFont {"hint":"VT323 font for the CRT score display"}'
     - '// @input Asset.Material matRim {"hint":"Fresnel rim shader material for the robot silhouette"}'
-    - '// @input bool voiceEnabled {"hint":"OPTIONAL voice agent — talk to Vector, Gemini answers in his TTS"}'
-    - '// @input string rsgToken {"hint":"Paste your Remote Service Gateway token here (Lens Studio menu -> Remote Service Gateway -> Generate Token). Leave blank to use GameConfig.", "showIf":"voiceEnabled"}'
+    - '// @input string rsgToken {"hint":"OPTIONAL — talk to Vector with your voice, Gemini replies in his TTS. Paste your Remote Service Gateway token here to enable it (Lens Studio top menu -> Remote Service Gateway -> Generate Token). Leave blank to play without voice."}'
     - '// @input bool editorSkipCalibration {"hint":"EDITOR DEBUG: skip surface detection, take the surface at world 0"}'
     - '// @input float axleOffsetMm = 15 {"hint":"Model shift (mm) so the REAL rotation axle sits on the pose point", "widget":"slider", "min":-30, "max":30, "step":1}'
     - '// @input float visionDepthOffsetMm {"hint":"Vision: push along view dir (mm; + away from camera, - toward)", "widget":"slider", "min":-60, "max":60, "step":1}'

@@ -26,13 +26,23 @@ physical robot. Vector® and related marks belong to their respective owner
 (Digital Dream Labs); this project is unaffiliated and requires you to own a
 real robot.
 
+## Vendored in `server/onboarding/wire-pod/` — wire-pod (MIT)
+
+A trimmed copy of [wire-pod](https://github.com/kercre123/wire-pod) (STT models,
+voice, and unrelated backends removed) is bundled so the pairing wizard can
+onboard a stock robot without a separate install.
+
+> MIT License — **Copyright (c) 2022 Kerigan Creighton** (`kercre123`).
+> Full text at [`server/onboarding/wire-pod/LICENSE`](server/onboarding/wire-pod/LICENSE).
+
+This project is built on and deeply grateful to wire-pod. If you can, star the
+upstream project.
+
 ## `server` dependency: `wirepod-vector-sdk` (PyPI)
 
 Community-maintained fork of the official `anki_vector` SDK.
 © Anki, Inc. + wire-pod contributors — Apache License 2.0.
 Installed from PyPI, not vendored.
-The pairing flow is interoperable with (and grateful to)
-[wire-pod](https://github.com/kercre123/wire-pod), which is not bundled.
 
 ## `lens/Assets/Fonts/VT323.ttf`
 
