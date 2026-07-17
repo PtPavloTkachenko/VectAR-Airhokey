@@ -83,20 +83,25 @@ class WebUI:
     async def api_status(self, req):
         b = self.bridge
         serial, ips, name = config.read_robot_identity()
+        # A live link means we're actually receiving telemetry — not just that
+        # a (possibly half-open) gRPC object exists. Otherwise the dashboard
+        # would keep saying CONNECTED after the robot drops off Wi-Fi / resets.
+        alive = bool(b.link and b.link.robot and b.pump
+                     and getattr(b.pump, "fresh", False))
         robot = {
             "paired": bool(serial),
             "serial": serial,
             "name": name,
             "ip": ips.split(",")[0] if ips else "",
-            "connected": bool(b.link and b.link.robot),
-            "has_control": bool(b.link and b.link.has_control),
+            "connected": alive,
+            "has_control": alive and bool(b.link and b.link.has_control),
             "battery_pct": None,
             "batt_v": None,
             "pose": None,
             "busy": b.commander.busy if b.commander else "idle",
         }
-        v = getattr(b, "batt_v", None)
-        if b.pump:
+        v = getattr(b, "batt_v", None) if alive else None
+        if b.pump and alive:
             snap = dict(b.pump.snapshot)
             v = snap.get("batt_v") or v
             if b.transform.bound:
@@ -272,17 +277,49 @@ class WebUI:
         except Exception as e:
             return web.json_response({"ok": False, "error": str(e)})
 
-    async def api_ble_authorize(self, _req):
+    async def api_ble_authorize(self, req):
         """After BLE onboarding, authorize the game server for this robot.
 
-        If the robot already has SDK credentials (sdk_config.ini) we just
-        connect the game loop. Otherwise minting the SDK token for a
-        from-scratch robot is the device-gated leg (see docs) — report that
-        honestly rather than dead-ending."""
+        If a BLE session is live we MINT a fresh SDK token using the ESN + IP
+        we read over Bluetooth (no typing) — this covers a from-scratch or
+        just-reset robot whose old token is gone. If there's no BLE session
+        but sdk_config already has this robot, we just connect."""
         b = self.bridge
+        try:
+            body = await req.json()
+        except Exception:
+            body = {}
+        pod = body.get("pod") or config.WIREPOD_URL
+
+        # Path A: fresh from BLE onboarding -> mint with the BLE-read identity
+        if self._ble is not None and getattr(self._ble, "esn", ""):
+            esn = self._ble.esn
+            ip = self._ble.ip
+            try:
+                if not ip:
+                    ip = await self._ble.wifi_ip()
+            except Exception:
+                pass
+            name = (self._ble.name or "").replace(" ", "-")
+            await self._drop_ble()      # release BLE so the mint's gRPC can run
+            if not ip:
+                return web.json_response(
+                    {"ok": False, "error": "Could not read Vector's IP over "
+                     "Bluetooth — make sure Wi-Fi connected, then retry."})
+            try:
+                await asyncio.to_thread(pairing.pair, pod, esn, name, ip)
+            except pairing.PairingError as e:
+                return web.json_response(
+                    {"ok": False, "step": e.step, "error": e.message})
+            except Exception as e:
+                return web.json_response({"ok": False, "error": str(e)})
+            ok = await b.connect_robot() if b.use_robot else False
+            return web.json_response({"ok": True, "minted": True,
+                                      "connected": ok})
+
+        # Path B: no BLE session, but the robot is already provisioned
         serial, _ips, _name = config.read_robot_identity()
         if serial:
-            await self._drop_ble()      # release BLE so gRPC has the robot
             if b.use_robot:
                 ok = await b.connect_robot()
                 return web.json_response(
@@ -293,10 +330,8 @@ class WebUI:
                  "note": "Credentials ready. Restart the server without "
                          "--no-robot to drive the robot."})
         return web.json_response(
-            {"ok": False, "needs_mint": True,
-             "error": "This robot has no SDK token yet. Minting one for a "
-                      "from-scratch robot needs the token engine — see "
-                      "docs/PAIRING.md (device-gated)."})
+            {"ok": False,
+             "error": "No robot to authorize — run the Bluetooth setup first."})
 
     async def api_ble_disconnect(self, _req):
         await self._drop_ble()
