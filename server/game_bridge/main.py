@@ -76,6 +76,8 @@ class Bridge:
         self.pump = None
         self.commander = None
         self.rally_active = False
+        self.batt_v: float | None = None
+        self.batt_charging = False
         self.latest_puck: PuckState | None = None
         self._pose_seq = 0
         self._prev_field_pose: tuple[float, float, float] | None = None  # (ts, fx, fy)
@@ -592,16 +594,32 @@ class Bridge:
                 continue
             snap = dict(self.pump.snapshot) if self.pump else {}
             counter += 1
-            if self.use_robot and snap.get("batt_v"):
-                # batt_v streams in every telemetry frame — map the usable
-                # window (syscon: 3.62 V = low latch, ~4.1 V = full) to %
-                v = snap["batt_v"]
+            # robot_state telemetry has no voltage on the SDK transport —
+            # battery_task polls it into self.batt_v
+            v = snap.get("batt_v") or self.batt_v
+            if self.use_robot and v:
+                # map the usable window (3.62 V = low latch, ~4.1 V = full) to %
                 battery = int(max(0.0, min(1.0, (v - 3.6) / 0.5)) * 100)
             busy = self.commander.busy if self.commander else "idle"
             await self.ws.send(protocol.robot_status(
                 battery=battery,
                 cliff=bool(snap.get("cliff")), held=bool(snap.get("held")),
                 busy=busy, origin_id=int(snap.get("origin_id", 0))))
+
+    async def battery_task(self):
+        """Poll battery over the SDK (~20 s) for the dashboard + lens HUD."""
+        while True:
+            await asyncio.sleep(5.0 if self.batt_v is None else 20.0)
+            if not (self.link and self.link.robot):
+                continue
+            try:
+                fut = self.link.robot.get_battery_state()
+                b = await asyncio.wait_for(
+                    asyncio.to_thread(fut.result, 10), timeout=15)
+                self.batt_v = float(getattr(b, "battery_volts", 0.0)) or None
+                self.batt_charging = bool(getattr(b, "is_charging", False))
+            except Exception as e:
+                logger.debug(f"battery poll: {e}")
 
     async def connect_robot(self) -> bool:
         """Connect + acquire control over the SDK (gRPC). NON-FATAL: returns
@@ -677,7 +695,7 @@ class Bridge:
                 logger.warning(f"Web UI failed to start (continuing): {e}")
         tasks = [self.pose_task(), self.goalie_task(), self.status_task(),
                  self.health_task(), self.control_watchdog(),
-                 self.cube_anchor_task()]
+                 self.battery_task(), self.cube_anchor_task()]
         try:
             await asyncio.gather(*tasks)
         finally:
