@@ -29,3 +29,8 @@ lens/BackUp/
 
 # Logs
 *.log
+
+# certs (ep.crt stays — public escape-pod CA, already tracked)
+*.crt
+*.p12
+*.pfx
