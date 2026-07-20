@@ -20,19 +20,45 @@ DDL production firmware 2.x (ours = 2.0.1.6091) has **escape-pod support**:
 
 No new BLE "set-server-config" message is needed — escape-pod IS the repoint.
 
-## PROVEN 2026-07-21 (second clean test, escapepod.local always-published)
+## CORRECTED root cause (2026-07-21) — the missing PROVISIONING step
 
-BLE connect → handshake → PIN → **Wi-Fi all succeeded** on a bit-stock robot
-(`Vector-X1W8`, on Wi-Fi at 172.20.10.2). The wall is **cloud authorize only**:
-`/session-certs/<esn>` stayed empty and **wire-pod logged ZERO robot traffic**
-(no `:80` connCheck, no `:443` jdocs/token). So the robot never contacted
-wire-pod — it talks to its `server_config` cloud (`ddl.io`) and does **not**
-auto-fall-back to `escapepod.local` just because it resolves. Publishing
-escapepod.local is necessary but **not sufficient**: the robot must be *directed*
-to wire-pod. On pure BLE there is no server_config message to do that (RTS has
-only wifi / cloud_session / sdk_proxy / status). → The repoint must happen at the
-**DNS layer** (resolve `*.api.ddl.io` → Mac on a network we control) or via OSKR.
-A phone hotspot can't override DNS, which is why tonight's test can't finish.
+Earlier this doc guessed "DNS interception or OSKR". **Wrong — retracted.**
+Reading upstream wire-pod (`chipper/pkg/wirepod/setup/ble.go`, `ssh.go`,
+`certs.go`) shows how it actually points a robot's cloud at wire-pod, and it is a
+**one-time provisioning step our onboarding skips entirely**:
+
+- **Stock (non-dev) robot** → put it in **recovery** (hold backpack ~15 s →
+  `anki.com/v`), then wire-pod **flashes the escape-pod firmware over BLE**:
+  `BleClient.OTAStart(".../api/get_ota/vicos-2.0.1.6076ep.ota")` (ble.go:343).
+  The `ep` firmware has `server_config` baked to `escapepod.local:443` and trusts
+  wire-pod's cert.
+- **Dev / OSKR robot** (`ankidev`, = our unit `in_firmware_dev`) → wire-pod uses
+  the **SSH path** (`ssh.go`): SCP `server_config → escapepod.local` +
+  `wirepod-cert.crt` to `/data/data/`, run `pod-bot-install.sh`. No EP flash.
+- `RobotStatus()` (ble.go:203) branches on exactly this: `in_recovery_prod` /
+  `in_firmware_nonep` (stock) vs `in_recovery_dev` / `in_firmware_dev` (OSKR).
+
+Our Python `ble/session.py` does status → wifi → `cloud_auth` and **neither**
+provisioning step, so `server_config` stays `ddl.io`, the robot never contacts
+wire-pod (`/session-certs/<esn>` empty; wire-pod logged ZERO robot traffic in the
+2026-07-21 test on `Vector-X1W8`), and authorize hangs at "No credentials yet".
+
+**After provisioning it is network-agnostic** — `escapepod.local` resolves via
+mDNS on any LAN the Mac/wire-pod is on (already required for gameplay). **No DNS
+override needed.** That earlier claim was the mistake.
+
+## What to add to our onboarding (the real fix)
+
+1. **Detect robot state** over BLE (`GetStatus` → firmware string): stock vs
+   OSKR/dev, in-recovery vs in-firmware, already-`ep`.
+2. **Stock path**: guide the user to recovery mode, then implement `OTAStart`
+   over BLE pointing at wire-pod's `get_ota/…ep.ota` and poll OTA progress
+   (mirror ble.go:340-377). One-time; then normal wifi+cloud_auth pairs.
+3. **OSKR path** (our unit): SSH `server_config`+cert install (mirror ssh.go) —
+   simpler, no flash. Our unit lost its SSH key to Clear User Data; re-add via
+   the OSKR setup to use this path.
+4. Serve `get_ota/vicos-2.0.1.6076ep.ota` from `vectar-onboard` (confirm the
+   route exists in the trimmed build; add if missing).
 
 ## Why it's fragile tonight (root causes)
 
