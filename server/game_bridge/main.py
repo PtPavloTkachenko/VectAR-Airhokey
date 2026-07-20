@@ -73,6 +73,10 @@ class Bridge:
         self._busy_stopped = False
         self.battery = None  # (x, y) power cell the goalie should hunt
         self.link = None
+        # Last link failure reason — survives link teardown so the dashboard can
+        # explain a down link (cert rotated / robot moved / unreachable).
+        self.last_link_hint = ""
+        self.last_link_hint_kind = ""
         self.pump = None
         self.commander = None
         self.rally_active = False
@@ -647,11 +651,15 @@ class Bridge:
         self.link = RobotLink()
         ok = await self.link.connect()
         if not ok or not self.link.has_control:
+            self.last_link_hint = self.link.last_error_msg
+            self.last_link_hint_kind = self.link.last_error_kind
             logger.warning(
                 "Robot not connected — server stays up; pair/retry from the "
                 f"web UI (http://localhost:{config.WEB_PORT})")
             self.link = None
             return False
+        self.last_link_hint = ""
+        self.last_link_hint_kind = ""
         self.pump = PosePump(self.link.robot)
         self.pump.start()
         self.commander = RobotCommander(self.link, self.pump, self.transform)

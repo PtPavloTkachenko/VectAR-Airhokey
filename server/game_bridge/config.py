@@ -56,6 +56,36 @@ def read_robot_identity() -> tuple[str, str, str]:
         pass
     return serial, ips, name
 
+
+def persist_robot_ip(serial: str, ip: str) -> bool:
+    """Rewrite the `ip` of the [serial] section in sdk_config.ini in place.
+
+    Called after mDNS rediscovery finds the robot at a new address (DHCP lease
+    change, hopping between a home LAN and a phone hotspot). Keeps cert/guid/name
+    untouched so the credential stays valid. Returns True if the file changed.
+    """
+    import configparser
+    serial = (serial or "").strip().lower()
+    ip = (ip or "").strip()
+    if not serial or not ip:
+        return False
+    try:
+        cfg = configparser.ConfigParser(strict=False)
+        cfg.read(SDK_CONFIG_PATH)
+        sect = serial if serial in cfg.sections() else (
+            cfg.sections()[0] if cfg.sections() else None)
+        if not sect or cfg[sect].get("ip", "") == ip:
+            return False
+        cfg[sect]["ip"] = ip
+        tmp = str(SDK_CONFIG_PATH) + "-temp"
+        with open(tmp, "w") as f:
+            cfg.write(f)
+        os.replace(tmp, SDK_CONFIG_PATH)
+        return True
+    except Exception:
+        return False
+
+
 # --- In-game Gemini voice agent (talk to Vector; through the lens RSG, no Mac key) ---
 # OFF by default -> zero change to the game. Lens must run LLMProxy (RSG) + ASR->utter.
 VECTAR_CHAT = os.getenv("VECTAR_CHAT", "0") == "1"

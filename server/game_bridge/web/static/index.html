@@ -425,9 +425,18 @@ async function refreshStatus() {
     if (r.pose) html += stat("Field pose",
                  `x ${r.pose.x} · y ${r.pose.y} · ${r.pose.deg}°`);
     $("statusGrid").innerHTML = html;
+    // Actionable reason when the link is down (cert rotated / moved / unreachable).
+    if (r.link_hint) {
+      const rePair = r.link_hint_kind === "cert_rotated";
+      $("statusGrid").innerHTML +=
+        `<div class="hint" style="grid-column:1/-1;color:${rePair ? "#f7b955" : "#9aa"}">`
+        + (rePair ? "⚠ " : "") + r.link_hint + "</div>";
+    }
     let act = "";
     if (!r.paired)
       act = `<button onclick="showTab('pair')">PAIR YOUR ROBOT →</button>`;
+    else if (!r.connected && r.link_hint_kind === "cert_rotated")
+      act = `<button onclick="showTab('pair')">RE-PAIR ROBOT →</button>`;
     else if (!r.connected && s.server.use_robot)
       act = `<button onclick="connectRobot()">CONNECT ROBOT</button>`;
     $("dashActions").innerHTML = act;

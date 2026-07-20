@@ -101,6 +101,13 @@ class WebUI:
             "batt_v": None,
             "pose": None,
             "busy": b.commander.busy if b.commander else "idle",
+            # Why the link is down, if it is — so the dashboard can show an
+            # actionable reason ("cert rotated -> re-pair") instead of OFFLINE.
+            # Held on the bridge because a failed connect tears self.link down.
+            "link_hint": (getattr(b, "last_link_hint", "") or "")
+            if not alive else "",
+            "link_hint_kind": (getattr(b, "last_link_hint_kind", "") or "")
+            if not alive else "",
         }
         v = getattr(b, "batt_v", None) if alive else None
         if b.pump and alive:
