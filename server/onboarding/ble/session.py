@@ -222,6 +222,67 @@ class RtsSession:
         self.guid = resp["guid"]
         return self.guid
 
+    async def robot_state(self) -> dict:
+        """{state, firmware, esn} — which provisioning path this robot needs.
+
+        `state` is one of messages.STATE_* (see classify_robot). The wizard uses
+        it to branch: stock -> escape-pod flash, OSKR/dev -> SSH provisioning,
+        ep -> already provisioned.
+        """
+        st = await self.status()
+        fw = st.get("firmware", "")
+        return {"state": m.classify_robot(fw), "firmware": fw,
+                "esn": st.get("esn", ""), "wifi_state": st.get("wifi_state")}
+
+    async def ota_flash(self, url: str, progress_cb=None,
+                        timeout: float = 900.0) -> dict:
+        """Flash an OTA (the escape-pod firmware) over BLE and follow progress.
+
+        This is the missing provisioning step for a plain STOCK robot: the ep
+        firmware ships `server_config -> escapepod.local` and trusts wire-pod's
+        cert, so afterwards the robot reaches wire-pod on ANY Wi-Fi (no OSKR, no
+        DNS override). Mirrors wire-pod `BleClient.OTAStart` + its status loop.
+
+        The robot streams RtsOtaUpdateResponse frames as it downloads/writes;
+        it reboots into the new firmware when current == expected (the BLE link
+        drops at that point, which is success, not an error).
+        """
+        await self._send(m.ota_start_request(url, self.version))
+        loop = asyncio.get_event_loop()
+        deadline = loop.time() + timeout
+        last = {"status": 0, "current": 0, "expected": 0, "percent": 0.0,
+                "done": False}
+        while loop.time() < deadline:
+            try:
+                mtype, payload = await self._recv(timeout=60.0)
+            except Exception as e:
+                # The robot reboots into the new image mid-stream -> the link
+                # drops. If we had real progress, treat it as a completed flash.
+                if last["current"] > 0:
+                    logger.info("OTA link closed after %.1f%% — robot is "
+                                "rebooting into the new firmware", last["percent"])
+                    last["done"] = True
+                    return last
+                raise HandshakeError(f"OTA failed before any progress: {e}")
+            if mtype != m.OTA_UPDATE_RESPONSE:
+                continue
+            last = m.parse_ota_update_response(payload)
+            if callable(progress_cb):
+                progress_cb(last)
+            if last["status"] not in (0, 1):
+                raise HandshakeError(
+                    f"OTA rejected by the robot (status {last['status']}). "
+                    "A stock robot may need to be in recovery mode "
+                    "(hold the backpack button ~15 s until anki.com/v).")
+            if last["done"]:
+                logger.info("OTA complete (%d bytes) — robot is rebooting",
+                            last["current"])
+                return last
+        raise HandshakeError(f"OTA timed out after {timeout:.0f}s")
+
+    async def ota_cancel(self) -> None:
+        await self._send(m.ota_cancel_request(self.version))
+
     async def _sdk_proxy(self, url_path: str, json_body: str) -> dict:
         await self._send(m.sdk_proxy_request(self.guid, url_path, json_body, version=self.version))
         mtype, payload = await self._recv(timeout=25.0)
