@@ -200,6 +200,19 @@
         <button class="secondary" onclick="bleRestart()">← START OVER</button>
       </div>
 
+      <!-- bP: provisioning — make the robot's cloud point at wire-pod.
+           A stock robot talks to ddl.io and can never reach wire-pod; the
+           escape-pod firmware fixes that permanently. OSKR robots use SSH
+           instead (no flash). Detected from the robot's firmware string. -->
+      <div class="bstep" id="bstepProv" style="display:none">
+        <h2>Set up Vector's connection</h2>
+        <div id="provDetect" class="hint"><span class="spin">◌</span>
+          checking what this Vector needs…</div>
+        <div id="provBody"></div>
+        <div class="error" id="provErr" style="display:none"></div>
+        <button class="secondary" onclick="bleRestart()">← START OVER</button>
+      </div>
+
       <!-- b2: wifi -->
       <div class="bstep" id="bstep2" style="display:none">
         <h2>3 · Connect Vector to Wi-Fi</h2>
@@ -916,8 +929,114 @@ function bleStep(n) {
     $("bstep" + i).style.display = i === n ? "" : "none";
     $("bdot" + i).className = "step-dot" + (i < n ? " done" : i === n ? " now" : "");
   }
+  $("bstepProv").style.display = "none";
+}
+// The provisioning step sits between PIN (1) and Wi-Fi (2); it isn't one of the
+// four dots, so show it on its own with the dots parked on step 1.
+function bleStepShow(name) {
+  for (let i = 0; i < 4; i++) {
+    $("bstep" + i).style.display = "none";
+    $("bdot" + i).className = "step-dot" + (i < 2 ? " done" : "");
+  }
+  $("bstep" + name).style.display = "";
 }
 function bleRestart() { api("/api/ble/disconnect", {}); bleStep(0); $("bleList").innerHTML=""; }
+
+// ---- provisioning: make the robot's cloud point at wire-pod ---------------
+// Runs right after the BLE PIN, when we can read the firmware string. A stock
+// robot needs the escape-pod firmware flashed (one time, then any Wi-Fi works);
+// an OSKR robot is provisioned over SSH instead; an already-ep robot skips it.
+async function bleProvision() {
+  bleStepShow("Prov");
+  $("provErr").style.display = "none";
+  $("provBody").innerHTML = "";
+  let st;
+  try {
+    st = await api("/api/ble/state", {});
+  } catch (e) {
+    $("provDetect").innerHTML = "";
+    $("provErr").style.display = "";
+    $("provErr").textContent = "Could not read the robot's state: " + e;
+    return;
+  }
+  window.robotState = st.state;
+  const fw = st.firmware || "";
+  const shortFw = fw.length > 46 ? fw.slice(0, 46) + "…" : fw;
+  $("provDetect").innerHTML =
+    `Detected: <span class="key">${st.state}</span>`
+    + `<div class="hint" style="opacity:.7">${shortFw}</div>`;
+
+  if (st.state === "in_firmware_ep") {
+    $("provBody").innerHTML =
+      `<div class="ok">Already set up for wire-pod — nothing to install.</div>`
+      + `<button onclick="bleWifiScan(); bleStep(2)">CONTINUE →</button>`;
+  } else if (st.state === "in_firmware_dev" || st.state === "in_recovery_dev") {
+    // OSKR/dev: no flash needed, SSH writes the two files instead.
+    $("provBody").innerHTML =
+      `<div class="hint">This is an <span class="key">OSKR / dev</span> robot — `
+      + `it doesn't need a firmware flash. Point its cloud at wire-pod over SSH:`
+      + `<pre>python -m onboarding.oskr_provision --ip ${st.ip || "&lt;robot-ip&gt;"}</pre>`
+      + `Run that once (robot reboots), then continue.</div>`
+      + `<button onclick="bleWifiScan(); bleStep(2)">CONTINUE →</button>`;
+  } else {
+    // Stock robot: flash the escape-pod firmware over BLE.
+    const inRecovery = st.state === "in_recovery_prod";
+    $("provBody").innerHTML =
+      `<div class="hint">This is a <span class="key">stock</span> Vector — his `
+      + `cloud points at Anki's servers, which are gone, so he can't be `
+      + `authorized yet. We install the <span class="key">escape-pod firmware</span> `
+      + `once; afterwards he works on any Wi-Fi.`
+      + (inRecovery ? `<br><br>He's in recovery mode — ready to flash.`
+                    : `<br><br>If the flash is refused, put him in recovery `
+                      + `first: on the charger, hold the back button ~15 s `
+                      + `until his face shows <code>anki.com/v</code>.`)
+      + `</div>`
+      + `<div id="flashBar" class="hint" style="display:none"></div>`
+      + `<button onclick="bleFlashEp()" id="btnFlash">INSTALL FIRMWARE →</button>`
+      + `<button class="secondary" onclick="bleWifiScan(); bleStep(2)">SKIP</button>`;
+  }
+}
+
+async function bleFlashEp() {
+  $("btnFlash").disabled = true;
+  $("provErr").style.display = "none";
+  $("flashBar").style.display = "";
+  $("flashBar").innerHTML = `<span class="spin">◌</span> starting…`;
+  try {
+    await api("/api/ble/flash_ep", {});
+  } catch (e) {
+    $("btnFlash").disabled = false;
+    $("provErr").style.display = "";
+    $("provErr").textContent = "Could not start the flash: " + e;
+    return;
+  }
+  // Poll until done/failed. The link drops when the robot reboots into the new
+  // firmware — the server treats that as success.
+  const poll = setInterval(async () => {
+    let s;
+    try { s = await (await fetch("/api/ble/flash_status")).json(); }
+    catch (e) { return; }
+    if (s.error) {
+      clearInterval(poll);
+      $("flashBar").style.display = "none";
+      $("btnFlash").disabled = false;
+      $("provErr").style.display = "";
+      $("provErr").textContent = s.error;
+      return;
+    }
+    $("flashBar").innerHTML = s.done
+      ? `<span class="ok">Firmware installed ✓ Vector is rebooting…</span>`
+      : `<span class="spin">◌</span> installing… ${s.percent}%`
+        + ` <span style="opacity:.6">(don't unplug him)</span>`;
+    if (s.done) {
+      clearInterval(poll);
+      $("provBody").innerHTML +=
+        `<div class="ok">Done. Give him ~1 minute to reboot, then start over `
+        + `to pair — he now talks to wire-pod on any Wi-Fi.</div>`
+        + `<button onclick="bleRestart()">START OVER →</button>`;
+    }
+  }, 2000);
+}
 
 async function bleScan() {
   $("btnBleScan").disabled = true;
@@ -968,9 +1087,17 @@ async function blePin() {
     $("blePinErr").style.display = ""; $("blePinErr").textContent = res.error;
     return;
   }
+  // Now that the encrypted channel is up we can read the firmware string and
+  // see whether this robot still needs its cloud pointed at wire-pod. A stock
+  // robot that skips this can never be authorized (it talks to ddl.io).
+  const st = res.status || {};
+  const fw = (st.firmware || "").toLowerCase();
+  const needsProvisioning = fw && !fw.includes("ep-");
+  if (needsProvisioning) { bleProvision(); return; }
+
   // Progressive: if Vector is already online, skip the Wi-Fi step entirely
   // (wifi_state 1 = connected) — no needless reconnect, no result-255 trap.
-  if (res.status && res.status.wifi_state === 1) {
+  if (st.wifi_state === 1) {
     $("bleDoneMsg").innerHTML = "Vector is already on Wi-Fi ✓";
     bleStep(3);
     return;
