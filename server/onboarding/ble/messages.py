@@ -39,6 +39,7 @@ OTA_UPDATE_RESPONSE = 0x0F
 CANCEL_PAIRING = 0x10
 ACK = 0x12
 SSH_REQUEST = 0x15
+SSH_RESPONSE = 0x16
 OTA_CANCEL_REQUEST = 0x17
 CLOUD_SESSION_REQUEST = 0x1D
 CLOUD_SESSION_RESPONSE = 0x1E
@@ -144,6 +145,29 @@ def wifi_connect_request(ssid: str, password: str, auth_type: int,
 
 def wifi_ip_request(version: int = V5_TAG) -> bytes:
     return envelope(WIFI_IP_REQUEST, b"", version)
+
+
+def ssh_authorize_request(authorized_keys: str,
+                          version: int = V5_TAG) -> bytes:
+    """RtsSshRequest — install SSH authorized_keys on the robot over BLE.
+
+    This is how an OSKR/dev robot gets SSH access back after a Clear User Data
+    wipe (which deletes /data/ssh/authorized_keys) without needing adb. With SSH
+    restored, `onboarding.oskr_provision` can point the robot's cloud at
+    wire-pod.
+
+    Layout (external.go RtsSshRequest.Pack): count (uint_16 LE), then per entry
+    a uint_8 length + bytes. Entries are capped at 255 bytes, so a normal
+    ssh-rsa key (~400 B) is split across several — the robot concatenates them.
+    """
+    raw = authorized_keys.encode()
+    chunks = [raw[i:i + 255] for i in range(0, len(raw), 255)] or [b""]
+    if len(chunks) > 65535:
+        raise ValueError("authorized_keys too large")
+    out = struct.pack("<H", len(chunks))
+    for c in chunks:
+        out += bytes([len(c)]) + c
+    return envelope(SSH_REQUEST, out, version)
 
 
 def ota_start_request(url: str, version: int = V5_TAG) -> bytes:
