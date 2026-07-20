@@ -34,9 +34,12 @@ STATUS_REQUEST = 0x0A
 STATUS_RESPONSE = 0x0B
 WIFI_SCAN_REQUEST = 0x0C
 WIFI_SCAN_RESPONSE = 0x0D
+OTA_UPDATE_REQUEST = 0x0E
+OTA_UPDATE_RESPONSE = 0x0F
 CANCEL_PAIRING = 0x10
 ACK = 0x12
 SSH_REQUEST = 0x15
+OTA_CANCEL_REQUEST = 0x17
 CLOUD_SESSION_REQUEST = 0x1D
 CLOUD_SESSION_RESPONSE = 0x1E
 SDK_PROXY_REQUEST = 0x22
@@ -141,6 +144,75 @@ def wifi_connect_request(ssid: str, password: str, auth_type: int,
 
 def wifi_ip_request(version: int = V5_TAG) -> bytes:
     return envelope(WIFI_IP_REQUEST, b"", version)
+
+
+def ota_start_request(url: str, version: int = V5_TAG) -> bytes:
+    """RtsOtaUpdateRequest — tell the robot to download+flash an OTA from `url`.
+
+    Layout (external.go RtsOtaUpdateRequest.Pack): Url length (uint_8) + Url
+    bytes. This is how wire-pod installs the escape-pod firmware on a stock
+    robot (`ble.go` -> BleClient.OTAStart), which is what repoints the robot's
+    server_config at escapepod.local. Max URL length is 255.
+    """
+    raw = url.encode()
+    if len(raw) > 255:
+        raise ValueError(f"OTA url too long ({len(raw)} > 255): {url}")
+    return envelope(OTA_UPDATE_REQUEST, bytes([len(raw)]) + raw, version)
+
+
+def ota_cancel_request(version: int = V5_TAG) -> bytes:
+    """RtsOtaCancelRequest — abort an in-flight OTA (no payload)."""
+    return envelope(OTA_CANCEL_REQUEST, b"", version)
+
+
+def parse_ota_update_response(payload: bytes) -> dict:
+    """RtsOtaUpdateResponse = Status(uint_8) + Current(uint_64) + Expected(uint_64).
+
+    `current`/`expected` are byte counters -> download/flash progress. Status 0
+    means "in progress / ok"; the robot reboots into the new firmware once
+    current == expected.
+    """
+    status = payload[0] if payload else 0
+    current = expected = 0
+    if len(payload) >= 17:
+        current, expected = struct.unpack_from("<QQ", payload, 1)
+    pct = (current / expected * 100.0) if expected else 0.0
+    return {"status": status, "current": current, "expected": expected,
+            "percent": pct, "done": bool(expected and current >= expected)}
+
+
+# --- robot state classification (mirrors wire-pod setup/ble.go RobotStatus) ---
+# Firmware strings look like:
+#   v1.8.1.6051-453e582_os1.8.1.6051ep-1536e0d-...   <- escape-pod build
+#   v0.9.0-12efb91_os0.9.0-3e8307e-...               <- recovery mode
+STATE_RECOVERY_DEV = "in_recovery_dev"
+STATE_RECOVERY_PROD = "in_recovery_prod"
+STATE_FIRMWARE_DEV = "in_firmware_dev"      # OSKR / ankidev unit
+STATE_FIRMWARE_EP = "in_firmware_ep"        # already escape-pod provisioned
+STATE_FIRMWARE_NONEP = "in_firmware_nonep"  # plain stock — needs the ep flash
+
+
+def is_dev_robot(firmware: str) -> bool:
+    """OSKR / dev unit — its firmware string carries `ankidev`."""
+    return "ankidev" in (firmware or "").lower()
+
+
+def classify_robot(firmware: str) -> str:
+    """Which provisioning path this robot needs. Drives the wizard branch:
+      *_nonep    -> flash the escape-pod firmware over BLE (stock path)
+      *_dev      -> SSH provisioning (server_config + cert) — no flash
+      *_ep       -> already provisioned, go straight to pairing
+      in_recovery* -> robot is in recovery; ready to accept an OTA flash
+    """
+    fw = (firmware or "").lower()
+    dev = is_dev_robot(fw)
+    if "0.9.0" in fw:
+        return STATE_RECOVERY_DEV if dev else STATE_RECOVERY_PROD
+    if dev:
+        return STATE_FIRMWARE_DEV
+    if "ep-" in fw:
+        return STATE_FIRMWARE_EP
+    return STATE_FIRMWARE_NONEP
 
 
 def status_request(version: int = V5_TAG) -> bytes:

@@ -61,7 +61,15 @@ class WebUI:
             web.post("/api/ble/wifi_connect", self.api_ble_wifi_connect),
             web.post("/api/ble/authorize", self.api_ble_authorize),
             web.post("/api/ble/disconnect", self.api_ble_disconnect),
+            web.post("/api/ble/state", self.api_ble_state),
+            web.post("/api/ble/flash_ep", self.api_ble_flash_ep),
+            web.get("/api/ble/flash_status", self.api_ble_flash_status),
+            # The robot downloads the escape-pod firmware from here during the
+            # stock-provisioning flash (local cache, else proxy archive.org).
+            web.get("/api/get_ota/{name}", self.api_get_ota),
         ])
+        self._flash = {"active": False, "percent": 0.0, "done": False,
+                       "error": "", "state": ""}
         self.app = app
 
     async def start(self):
@@ -235,6 +243,100 @@ class WebUI:
         timeout = float(body.get("timeout", 5.0))
         robots = await discovery.discover(min(timeout, 15.0))
         return web.json_response({"robots": robots})
+
+    # ---- stock-robot provisioning: escape-pod firmware over BLE -------------
+    # A plain stock Vector points its cloud at ddl.io and can never reach
+    # wire-pod. Flashing the escape-pod ("ep") firmware bakes
+    # server_config -> escapepod.local into the robot, after which it finds
+    # wire-pod over mDNS on ANY Wi-Fi. This is the step wire-pod does and our
+    # onboarding used to skip. OSKR/dev robots don't need it (SSH path).
+
+    async def api_get_ota(self, req):
+        """Serve the OTA the robot downloads during the flash.
+
+        Prefers a local cache (works offline / fast on LAN); otherwise streams
+        it from the Internet Archive, the same source upstream wire-pod uses.
+        """
+        name = req.match_info["name"]
+        if "/" in name or ".." in name or not name.endswith(".ota"):
+            return web.Response(status=400, text="bad ota name")
+        local = config.OTA_CACHE_DIR / name
+        if local.is_file():
+            return web.FileResponse(local)
+        import aiohttp
+        url = f"https://archive.org/download/vector-pod-firmware/{name}"
+        resp = web.StreamResponse()
+        resp.content_type = "application/octet-stream"
+        try:
+            async with aiohttp.ClientSession() as sess:
+                async with sess.get(url) as up:
+                    if up.status != 200:
+                        return web.Response(status=502,
+                                            text=f"upstream {up.status}")
+                    if up.content_length:
+                        resp.content_length = up.content_length
+                    await resp.prepare(req)
+                    async for chunk in up.content.iter_chunked(64 * 1024):
+                        await resp.write(chunk)
+            await resp.write_eof()
+            return resp
+        except Exception as e:
+            logger.warning(f"get_ota proxy failed: {e}")
+            return web.Response(status=502, text=f"proxy failed: {e}")
+
+    async def api_ble_state(self, req):
+        """Which provisioning path this robot needs (stock / OSKR / already-ep)."""
+        if not self._ble:
+            return web.json_response(
+                {"ok": False, "error": "no BLE session — pair over BLE first"},
+                status=409)
+        try:
+            st = await self._ble.robot_state()
+            return web.json_response({"ok": True, **st})
+        except Exception as e:
+            return web.json_response(
+                {"ok": False, "error": f"{type(e).__name__}: {e}"}, status=500)
+
+    async def api_ble_flash_ep(self, req):
+        """Flash the escape-pod firmware over the live BLE session."""
+        if not self._ble:
+            return web.json_response(
+                {"ok": False, "error": "no BLE session — pair over BLE first"},
+                status=409)
+        if self._flash["active"]:
+            return web.json_response(
+                {"ok": False, "error": "a flash is already running"}, status=409)
+        try:
+            body = await req.json()
+        except Exception:
+            body = {}
+        name = body.get("ota") or config.EP_OTA_NAME
+        host = _lan_ip() or req.host.split(":")[0]
+        url = f"http://{host}:{config.WEB_PORT}/api/get_ota/{name}"
+
+        self._flash = {"active": True, "percent": 0.0, "done": False,
+                       "error": "", "state": "starting"}
+
+        def on_progress(p):
+            self._flash.update(percent=round(p["percent"], 1),
+                               done=p["done"], state="flashing")
+
+        async def run():
+            try:
+                await self._ble.ota_flash(url, progress_cb=on_progress)
+                self._flash.update(active=False, done=True, percent=100.0,
+                                   state="rebooting")
+                logger.info("escape-pod firmware flashed — robot rebooting")
+            except Exception as e:
+                self._flash.update(active=False, error=f"{type(e).__name__}: {e}",
+                                   state="failed")
+                logger.warning(f"ep flash failed: {e}")
+
+        asyncio.create_task(run())
+        return web.json_response({"ok": True, "url": url, "started": True})
+
+    async def api_ble_flash_status(self, req):
+        return web.json_response({"ok": True, **self._flash})
 
     async def api_pair(self, req):
         body = await req.json()
