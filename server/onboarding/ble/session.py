@@ -222,6 +222,27 @@ class RtsSession:
         self.guid = resp["guid"]
         return self.guid
 
+    async def install_ssh_key(self, authorized_keys: str,
+                              timeout: float = 20.0) -> bool:
+        """Push SSH authorized_keys to the robot over the encrypted BLE channel.
+
+        Restores SSH on an OSKR/dev robot whose /data/ssh/authorized_keys was
+        wiped by a Clear User Data, so `oskr_provision` can then point its cloud
+        at wire-pod. The robot answers with an empty RtsSshResponse; some builds
+        just ACK, so an ACK counts as success too.
+        """
+        await self._send(m.ssh_authorize_request(authorized_keys, self.version))
+        try:
+            mtype, _ = await self._recv(timeout=timeout)
+        except Exception as e:
+            raise HandshakeError(f"no reply to the SSH key install: {e}")
+        if mtype in (m.SSH_RESPONSE, m.ACK):
+            logger.info("SSH authorized_keys installed over BLE")
+            return True
+        raise HandshakeError(
+            f"unexpected reply to SSH install: 0x{mtype:02x} "
+            "(this robot may not support BLE key provisioning)")
+
     async def robot_state(self) -> dict:
         """{state, firmware, esn} — which provisioning path this robot needs.
 
