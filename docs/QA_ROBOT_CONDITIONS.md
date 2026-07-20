@@ -37,14 +37,35 @@ from a logged-in official-app account — our dummy token is rejected.
 - The saved `~/.anki_vector/sdk_config.ini` after a reset is triple-stale (name,
   cert, and often ip) — a full re-pair is required, not a tweak.
 
-## The gap (what our BLE onboarding does NOT do)
+## Stock support IS designed to work — via escape-pod (correcting an earlier call)
 
-`ble/session.py` does: handshake → wifi_scan → wifi_connect → wifi_ip →
-`cloud_auth`. It **never repoints the robot's cloud to wire-pod** (no
-`server_config` / cloud-override push, no wire-pod trust-cert install). So on a
-bit-stock robot the robot still trusts `ddl.io`, `cloud_auth` is validated there,
-and it fails. On the Jul-17 robot this step was unnecessary because the robot was
-*already* wire-pod-provisioned (OSKR ssh had written `server_config`).
+A stock DDL robot does **not** need OSKR to reach wire-pod. DDL production
+firmware (2.x, ours = 2.0.1.6091) ships **escape-pod support**: during onboarding
+the robot resolves **`escapepod.local`** over mDNS and trusts the well-known
+escape-pod CA cert. wire-pod's own onboarding (`chipper/pkg/wirepod/setup/
+certs.go`) writes `server_config → escapepod.local:443` and `mdnshandler`
+broadcasts `escapepod.local` at the robot. That is the no-OSKR path, and it was
+observed working tonight: the wizard reached *"Vector on Wi-Fi ✓ / Credentials
+ready"* on this bit-stock robot (BLE `cloud_auth` succeeded).
+
+So the bit-stock row above is **operationally**, not fundamentally, blocked.
+Tonight's failures were: wire-pod not reliably running (restarts lose the
+in-memory session cert → `/session-certs/<esn>` = *cert does not exist*), the
+robot dropping on/off Wi-Fi mid-flow, IP + cert churn right after the reset, and
+the gRPC authorize step firing before wire-pod held the cert.
+
+## The real gap to close for reliable stock pairing
+
+The one thing to verify/fix (needs a robot on the network to test):
+**does our trimmed `vectar-onboard` actually broadcast `escapepod.local` and hold
+the session cert through the whole wizard?** Right now `cert does not exist`
+persists, which means the robot→wire-pod jdocs/token handshake isn't landing (or
+its result isn't retained). Candidate causes: (a) `vectar-onboard` doesn't post
+the escape-pod mDNS the way full wire-pod does (no "Posting mDNS" in its log);
+(b) the Python BLE `cloud_auth` mints the guid but never drives the robot to
+pull its cert into wire-pod's store; (c) wire-pod restarts drop the cert. Fixing
+this is what makes a plain stock Vector pair end-to-end — NOT a new BLE
+server_config message (the escape-pod path already handles the repoint).
 
 ## To pair a bit-stock robot with our flow — options
 
