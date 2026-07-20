@@ -34,3 +34,6 @@ lens/BackUp/
 *.crt
 *.p12
 *.pfx
+
+# built pairing server (build locally: go build -tags inbuiltble)
+server/onboarding/wire-pod/chipper/vectar-onboard

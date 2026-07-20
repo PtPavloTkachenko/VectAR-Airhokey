@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import socket
 import subprocess
 
 from ... import config
@@ -18,6 +19,26 @@ logger = logging.getLogger("game-bridge.connection")
 
 _CONTROL_RETRIES = 3
 _CONTROL_RETRY_DELAY = 2
+
+# Substrings that mean "we reached the robot but the saved TLS cert no longer
+# matches it" — i.e. the robot was factory-reset / re-onboarded and rotated its
+# self-signed certificate. No amount of IP rediscovery fixes this; the user must
+# re-pair to refresh ~/.anki_vector/<name>.cert.
+_CERT_ROTATED_MARKERS = (
+    "certificate_verify_failed", "self signed certificate", "self-signed",
+    "certificate verify failed", "ssl_error_ssl", "sslv3",
+    "certificate has expired", "wrong_version_number",
+)
+
+
+def _tcp_open(ip: str, port: int = 443, timeout: float = 2.0) -> bool:
+    """True if <ip>:443 accepts a TCP connection (robot is on this LAN and its
+    gateway is up) — lets us tell 'wrong IP' apart from 'cert/auth problem'."""
+    try:
+        with socket.create_connection((ip, port), timeout=timeout):
+            return True
+    except Exception:
+        return False
 
 
 def _discover_robot_ip(candidates: list[str], timeout: float = 1.5) -> str | None:
@@ -35,6 +56,33 @@ def _discover_robot_ip(candidates: list[str], timeout: float = 1.5) -> str | Non
     return None
 
 
+async def _mdns_find_ip(name: str, serial: str) -> str | None:
+    """Ask the LAN for the robot's CURRENT ip via mDNS (_ankivector._tcp.local.).
+    Matches on serial or Vector-name so we don't grab a different robot. Returns
+    the ip or None. Survives a stale sdk_config.ini when the robot's DHCP lease
+    changed or it hopped to a phone hotspot."""
+    try:
+        from ...web import discovery  # lazy: zeroconf is optional
+    except Exception:
+        return None
+    try:
+        found = await discovery.discover(5.0)
+    except Exception as e:
+        logger.debug(f"mDNS discovery failed: {e}")
+        return None
+    ser = (serial or "").lower()
+    nm = (name or "").lower()
+    # prefer an exact serial/name match; fall back to the sole robot on the LAN
+    for r in found:
+        rid = f"{r.get('serial','')}{r.get('name','')}".lower()
+        if (ser and ser in rid) or (nm and nm in rid):
+            if r.get("ip"):
+                return r["ip"]
+    if len(found) == 1 and found[0].get("ip"):
+        return found[0]["ip"]
+    return None
+
+
 class RobotLink:
     def __init__(self):
         self.robot = None
@@ -46,6 +94,11 @@ class RobotLink:
         self.ip = self._candidate_ips[0] if self._candidate_ips else ""
         self.name = name
         self.has_control = False
+        # Diagnostics surfaced to the dashboard so a failed connect explains
+        # ITSELF instead of a bare OFFLINE. Kinds: "", "cert_rotated",
+        # "unreachable", "ip_moved", "no_control".
+        self.last_error_kind = ""
+        self.last_error_msg = ""
 
     @property
     def paired(self) -> bool:
@@ -61,6 +114,8 @@ class RobotLink:
         import anki_vector  # lazy
 
         self._force_cleanup()
+        self.last_error_kind = ""
+        self.last_error_msg = ""
 
         if len(self._candidate_ips) > 1:
             discovered = await asyncio.to_thread(
@@ -71,6 +126,44 @@ class RobotLink:
                 logger.warning(
                     f"No robot found at {self._candidate_ips}, trying {self.ip}")
 
+        ok = await self._try_connect()
+        if ok:
+            return True
+
+        # First attempt failed. Decide WHY and, when it's fixable, fix + retry:
+        #   * cert rotated (robot re-onboarded) -> can't self-heal, tell the user
+        #   * IP moved (saved ip dead)          -> mDNS-rediscover, persist, retry
+        if self.last_error_kind == "cert_rotated":
+            return False
+        if await asyncio.to_thread(_tcp_open, self.ip):
+            # Reachable at the saved ip but the SDK still refused — the gateway
+            # is up, so this is a credential problem, not a wrong address.
+            if self.last_error_kind != "cert_rotated":
+                self.last_error_kind = "cert_rotated"
+                self.last_error_msg = (
+                    f"{self.name} answers at {self.ip} but rejected the saved "
+                    "credential — the robot was re-onboarded. Re-run PAIR ROBOT "
+                    "to refresh the certificate + token.")
+            return False
+        # Not reachable at the saved ip -> the robot probably moved (DHCP / it
+        # hopped to a phone hotspot). Ask the LAN where it is now.
+        new_ip = await _mdns_find_ip(self.name, self.serial)
+        if new_ip and new_ip != self.ip:
+            logger.info(f"Robot moved {self.ip} -> {new_ip} (mDNS); "
+                        "updating sdk_config.ini and retrying")
+            self.ip = new_ip
+            await asyncio.to_thread(config.persist_robot_ip, self.serial, new_ip)
+            return await self._try_connect()
+        self.last_error_kind = "unreachable"
+        self.last_error_msg = (
+            f"{self.name} not found at {self.ip} and not on the LAN via mDNS. "
+            "Same Wi-Fi as the Mac? Robot on the charger and awake?")
+        return False
+
+    async def _try_connect(self) -> bool:
+        """One connect+control acquisition attempt. Classifies failures into
+        self.last_error_kind so connect() can decide whether to rediscover."""
+        import anki_vector  # lazy
         logger.info(f"Connecting to {self.name} ({self.ip})...")
         try:
             # NOTE: do NOT pass name= — it makes the SDK resolve <name>.local over
@@ -96,10 +189,28 @@ class RobotLink:
             return True
         except asyncio.TimeoutError:
             logger.error("Connection timeout (40s)")
+            self.last_error_kind = "unreachable"
+            self.last_error_msg = (
+                f"Timed out connecting to {self.name} at {self.ip}. Robot on "
+                "and on the same Wi-Fi as the Mac?")
             self._force_cleanup()
             return False
         except Exception as e:
-            logger.error(f"Connection failed: {type(e).__name__}: {e}")
+            msg = str(e).lower()
+            if any(m in msg for m in _CERT_ROTATED_MARKERS):
+                self.last_error_kind = "cert_rotated"
+                self.last_error_msg = (
+                    f"{self.name}'s TLS certificate no longer matches the saved "
+                    "one — the robot was factory-reset / re-onboarded. Open PAIR "
+                    "ROBOT and run the wizard again to refresh the certificate.")
+                logger.error(
+                    "Cert rotated (robot re-onboarded) — re-pair from the web UI. "
+                    f"[{type(e).__name__}]")
+            else:
+                self.last_error_kind = "unreachable"
+                self.last_error_msg = (
+                    f"Connect to {self.name} failed: {type(e).__name__}: {e}")
+                logger.error(f"Connection failed: {type(e).__name__}: {e}")
             self._force_cleanup()
             return False
 
