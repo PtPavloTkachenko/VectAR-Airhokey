@@ -20,6 +20,20 @@ DDL production firmware 2.x (ours = 2.0.1.6091) has **escape-pod support**:
 
 No new BLE "set-server-config" message is needed — escape-pod IS the repoint.
 
+## PROVEN 2026-07-21 (second clean test, escapepod.local always-published)
+
+BLE connect → handshake → PIN → **Wi-Fi all succeeded** on a bit-stock robot
+(`Vector-X1W8`, on Wi-Fi at 172.20.10.2). The wall is **cloud authorize only**:
+`/session-certs/<esn>` stayed empty and **wire-pod logged ZERO robot traffic**
+(no `:80` connCheck, no `:443` jdocs/token). So the robot never contacted
+wire-pod — it talks to its `server_config` cloud (`ddl.io`) and does **not**
+auto-fall-back to `escapepod.local` just because it resolves. Publishing
+escapepod.local is necessary but **not sufficient**: the robot must be *directed*
+to wire-pod. On pure BLE there is no server_config message to do that (RTS has
+only wifi / cloud_session / sdk_proxy / status). → The repoint must happen at the
+**DNS layer** (resolve `*.api.ddl.io` → Mac on a network we control) or via OSKR.
+A phone hotspot can't override DNS, which is why tonight's test can't finish.
+
 ## Why it's fragile tonight (root causes)
 
 1. **mDNS is conditional.** `mdnshandler.PostmDNSWhenNewVector()` browses
