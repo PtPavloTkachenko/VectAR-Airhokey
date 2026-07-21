@@ -172,6 +172,7 @@
         <div class="step-dot" id="bdot1"></div>
         <div class="step-dot" id="bdot2"></div>
         <div class="step-dot" id="bdot3"></div>
+        <div class="step-dot" id="bdot4"></div>
       </div>
 
       <!-- b0: find over BLE -->
@@ -924,21 +925,23 @@ async function connectRobot() {
 
 /* ---------- BLE onboarding (stock robot) ---------- */
 const AUTH_NAMES = {0:"open",1:"WEP",3:"802.1X",4:"WPA",6:"WPA2",7:"WPA2-EAP"};
-function bleStep(n) {
-  for (let i = 0; i < 4; i++) {
-    $("bstep" + i).style.display = i === n ? "" : "none";
-    $("bdot" + i).className = "step-dot" + (i < n ? " done" : i === n ? " now" : "");
-  }
-  $("bstepProv").style.display = "none";
+// One 5-phase state machine, so the progress dots never lie:
+//   0 Find · 1 Pair · 2 Set up (provisioning) · 3 Wi-Fi · 4 Authorize
+// The card ids predate the "Set up" phase, hence this map (bstep0/1/2/3 +
+// bstepProv). bleStep(n) keeps taking the OLD numbering used across the file.
+const BLE_PHASES = ["0", "1", "Prov", "2", "3"];
+const BLE_LEGACY_TO_PHASE = {0: 0, 1: 1, 2: 3, 3: 4};
+
+function bleShowPhase(phase) {
+  BLE_PHASES.forEach((id, i) => {
+    $("bstep" + id).style.display = i === phase ? "" : "none";
+    $("bdot" + i).className =
+      "step-dot" + (i < phase ? " done" : i === phase ? " now" : "");
+  });
 }
-// The provisioning step sits between PIN (1) and Wi-Fi (2); it isn't one of the
-// four dots, so show it on its own with the dots parked on step 1.
+function bleStep(n) { bleShowPhase(BLE_LEGACY_TO_PHASE[n] ?? 0); }
 function bleStepShow(name) {
-  for (let i = 0; i < 4; i++) {
-    $("bstep" + i).style.display = "none";
-    $("bdot" + i).className = "step-dot" + (i < 2 ? " done" : "");
-  }
-  $("bstep" + name).style.display = "";
+  bleShowPhase(Math.max(0, BLE_PHASES.indexOf(name)));
 }
 function bleRestart() { api("/api/ble/disconnect", {}); bleStep(0); $("bleList").innerHTML=""; }
 
@@ -960,6 +963,7 @@ async function bleProvision() {
     return;
   }
   window.robotState = st.state;
+  if (st.ip) window.foundIp = st.ip;   // read over BLE; provisioning needs it
   const fw = st.firmware || "";
   const shortFw = fw.length > 46 ? fw.slice(0, 46) + "…" : fw;
   $("provDetect").innerHTML =
@@ -1201,8 +1205,32 @@ async function bleAuthorize() {
     if (msg) msg.innerHTML = res.note || "Credentials ready.";
     return;
   }
-  if (errEl) { errEl.style.display = ""; errEl.textContent = res.error; }
-  else alert(res.error);
+  // "wire-pod has no certificate for serial X" means this robot was never
+  // pointed at wire-pod. Authorizing can never succeed until it is, so offer
+  // the way forward instead of leaving a dead end. Provisioning needs a live
+  // BLE channel, so we send the user back to the Bluetooth step.
+  const needsSetup = /no certificate|404|not.*onboarded/i.test(res.error || "");
+  if (errEl) {
+    errEl.style.display = "";
+    errEl.textContent = needsSetup
+      ? "This Vector isn't set up for wire-pod yet — that's why he can't be "
+        + "authorized. Let's set him up (one time)."
+      : res.error;
+  }
+  if (needsSetup && msg) {
+    msg.innerHTML =
+      `<button onclick="bleSetupFromAuthorize()">SET UP THIS ROBOT →</button>`
+      + `<div class="hint">Put Vector on the charger and double-press his `
+      + `back button, then we'll connect over Bluetooth.</div>`;
+  }
+}
+
+// Entry into provisioning when we arrived via the "already on Wi-Fi" shortcut
+// and therefore have no BLE session yet.
+async function bleSetupFromAuthorize() {
+  bleStep(0);
+  $("bleList").innerHTML = "";
+  bleScan();
 }
 </script>
 </body>

@@ -358,9 +358,17 @@ class WebUI:
             body = {}
         ip = (body.get("ip") or getattr(self._ble, "ip", "") or "").strip()
         if not ip:
+            # We land here straight after the PIN, before the Wi-Fi step, so the
+            # IP isn't cached yet — but the BLE channel can just ask the robot.
+            try:
+                ip = (await self._ble.wifi_ip() or "").strip()
+            except Exception as e:
+                logger.debug(f"wifi_ip over BLE failed: {e}")
+        if not ip:
             return web.json_response(
-                {"ok": False, "error": "robot IP unknown — finish the Wi-Fi "
-                                       "step first"}, status=400)
+                {"ok": False, "error": "Vector isn't on Wi-Fi yet — finish the "
+                                       "Wi-Fi step, then set him up."},
+                status=400)
 
         from ...onboarding import oskr_provision as prov
         key = config.ensure_ssh_key()

@@ -252,8 +252,17 @@ class RtsSession:
         """
         st = await self.status()
         fw = st.get("firmware", "")
+        ip = self.ip
+        if not ip and st.get("wifi_state") == 1:
+            # Provisioning needs an IP and we may get here before the Wi-Fi
+            # step ran, so ask the robot directly over the open channel.
+            try:
+                ip = await self.wifi_ip()
+            except Exception as e:
+                logger.debug(f"wifi_ip lookup failed: {e}")
         return {"state": m.classify_robot(fw), "firmware": fw,
-                "esn": st.get("esn", ""), "wifi_state": st.get("wifi_state")}
+                "esn": st.get("esn", ""), "wifi_state": st.get("wifi_state"),
+                "ip": ip}
 
     async def ota_flash(self, url: str, progress_cb=None,
                         timeout: float = 900.0) -> dict:
