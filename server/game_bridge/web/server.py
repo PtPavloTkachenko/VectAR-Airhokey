@@ -381,7 +381,36 @@ class WebUI:
         # keypair in /data/ssh and ships the private half inside its log bundle,
         # which we CAN pull over BLE. A Clear User Data wipe just means it made
         # a fresh one.
+        # An OSKR owner already HAS a key — that's what makes the unit OSKR — so
+        # accepting theirs is by far the fastest route, and it's what upstream
+        # wire-pod asks for too. Try that before the slow log scrape.
+        supplied = (body.get("ssh_key") or "").strip()
+        if supplied and not await asyncio.to_thread(
+                prov.ssh_reachable, ip, str(key)):
+            if "PRIVATE KEY" not in supplied:
+                return web.json_response(
+                    {"ok": False, "step": "ssh_key", "needs_key": True,
+                     "error": "That doesn't look like an SSH private key — it "
+                              "should start with '-----BEGIN ... PRIVATE KEY'."})
+            key = await asyncio.to_thread(
+                prov.save_ssh_key, supplied, config.ROBOT_SSH_KEY)
+            if not await asyncio.to_thread(prov.ssh_reachable, ip, str(key)):
+                return web.json_response(
+                    {"ok": False, "step": "ssh_key", "needs_key": True,
+                     "error": "Vector refused that key. Is it this robot's key? "
+                              "(his name changes after a factory reset, so an "
+                              "older key won't match)"})
+
+        # Nothing to go on: offer the key box first, and only scrape the logs
+        # when explicitly asked — the full bundle is ~149k BLE packets.
         if not await asyncio.to_thread(prov.ssh_reachable, ip, str(key)):
+            if not body.get("try_logs"):
+                return web.json_response(
+                    {"ok": False, "step": "ssh_key", "needs_key": True,
+                     "error": "This Mac has no SSH access to Vector yet. Paste "
+                              "his SSH private key (OSKR owners have one), or "
+                              "let us pull it from his logs over Bluetooth — "
+                              "that works but is slow."})
             self._flash = {"active": True, "percent": 0.0, "done": False,
                            "error": "", "state": "downloading logs"}
 
