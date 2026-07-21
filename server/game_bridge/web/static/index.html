@@ -404,7 +404,18 @@ async function api(path, body) {
   const r = await fetch(path, body === undefined ? {} :
     { method: "POST", headers: {"Content-Type": "application/json"},
       body: JSON.stringify(body) });
-  return r.json();
+  // A server-side crash returns an HTML/text error page, and blindly calling
+  // .json() then surfaced a useless "SyntaxError: Unexpected non-whitespace
+  // character after JSON" instead of what actually broke.
+  const text = await r.text();
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    return {ok: false, http: r.status,
+            error: `server error ${r.status}: `
+                   + (text.trim().split("\n")[0] || r.statusText)
+                   + " — see the server log"};
+  }
 }
 
 /* ---------- dashboard ---------- */
