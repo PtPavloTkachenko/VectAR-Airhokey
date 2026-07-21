@@ -417,9 +417,10 @@ class WebUI:
                            "error": "", "state": "downloading logs"}
 
             def _logs_progress(p):
-                self._flash.update(percent=round(p["percent"], 1),
-                                   state=f"downloading logs "
-                                         f"({p['packet']}/{p['total']} packets)")
+                # download_logs emits byte counters (current/total), not frames
+                kb = p.get("current", 0) // 1024
+                self._flash.update(percent=round(p.get("percent", 0.0), 1),
+                                   state=f"downloading logs ({kb} KB)")
 
             try:
                 bundle = await self._ble.download_logs(
