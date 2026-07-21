@@ -175,7 +175,14 @@ def provision(ip: str, key: str, host_mode: str, reboot: bool = True) -> None:
 
     if reboot:
         print("rebooting the robot to pick up the new cloud config…")
-        ssh(ip, key, "sync; (sleep 1; reboot) &", timeout=15)
+        # The reboot drops the SSH connection, so this command "times out" —
+        # that IS success, not a failure. Swallow it.
+        try:
+            ssh(ip, key, "sync; (sleep 1; reboot) &", timeout=12)
+        except subprocess.TimeoutExpired:
+            pass
+        except Exception:
+            pass
         print("done — wait ~40 s, then run the pairing wizard "
               "(wire-pod must be running).")
 
