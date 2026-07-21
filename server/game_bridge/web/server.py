@@ -370,7 +370,7 @@ class WebUI:
                                        "Wi-Fi step, then set him up."},
                 status=400)
 
-        from ...onboarding import oskr_provision as prov
+        from onboarding import oskr_provision as prov
         key = config.ensure_ssh_key()
         pub = config.ssh_public_key()
 
