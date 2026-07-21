@@ -382,9 +382,21 @@ class WebUI:
         # which we CAN pull over BLE. A Clear User Data wipe just means it made
         # a fresh one.
         if not await asyncio.to_thread(prov.ssh_reachable, ip, str(key)):
+            self._flash = {"active": True, "percent": 0.0, "done": False,
+                           "error": "", "state": "downloading logs"}
+
+            def _logs_progress(p):
+                self._flash.update(percent=round(p["percent"], 1),
+                                   state=f"downloading logs "
+                                         f"({p['packet']}/{p['total']} packets)")
+
             try:
-                bundle = await self._ble.download_logs()
+                bundle = await self._ble.download_logs(
+                    progress_cb=_logs_progress,
+                    mode=int(body.get("log_mode", 0)),
+                    filters=body.get("log_filters") or None)
             except Exception as e:
+                self._flash.update(active=False, state="failed", error=str(e))
                 return web.json_response(
                     {"ok": False, "step": "logs",
                      "error": f"could not download Vector's logs over "

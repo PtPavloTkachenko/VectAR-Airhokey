@@ -1058,8 +1058,21 @@ async function bleProvisionOskr() {
   $("btnOskr").disabled = true;
   $("provErr").style.display = "none";
   $("oskrBar").style.display = "";
-  $("oskrBar").innerHTML = `<span class="spin">◌</span> installing access and `
-    + `pointing Vector at wire-pod…`;
+  $("oskrBar").innerHTML = `<span class="spin">◌</span> starting…`
+    + `<div class="hint">This can take a few minutes — Vector sends his logs `
+    + `over Bluetooth, which is slow. Keep him on the charger and don't touch `
+    + `him.</div>`;
+  // Poll the shared progress channel so the long log download isn't silent.
+  const tick = setInterval(async () => {
+    try {
+      const s = await (await fetch("/api/ble/flash_status")).json();
+      if (s.state && !s.error) {
+        $("oskrBar").innerHTML = `<span class="spin">◌</span> ${s.state}`
+          + (s.percent ? ` — ${s.percent}%` : "")
+          + `<div class="hint">Keep him on the charger and don't touch him.</div>`;
+      }
+    } catch (e) {}
+  }, 2000);
   let res;
   try {
     res = await api("/api/ble/provision_oskr",
@@ -1067,6 +1080,7 @@ async function bleProvisionOskr() {
   } catch (e) {
     res = {ok: false, error: String(e)};
   }
+  clearInterval(tick);
   if (!res.ok) {
     $("oskrBar").style.display = "none";
     $("provErr").style.display = "";
