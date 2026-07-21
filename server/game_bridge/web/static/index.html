@@ -1209,14 +1209,11 @@ async function bleAuthorize() {
   // pointed at wire-pod. Authorizing can never succeed until it is, so offer
   // the way forward instead of leaving a dead end. Provisioning needs a live
   // BLE channel, so we send the user back to the Bluetooth step.
-  const needsSetup = /no certificate|404|not.*onboarded/i.test(res.error || "");
-  if (errEl) {
-    errEl.style.display = "";
-    errEl.textContent = needsSetup
-      ? "This Vector isn't set up for wire-pod yet — that's why he can't be "
-        + "authorized. Let's set him up (one time)."
-      : res.error;
-  }
+  // The server flags this explicitly; the regex is only a fallback for older
+  // builds. Matching on English text is too fragile to rely on.
+  const needsSetup = res.needs_setup === true
+    || /no certificate|404|not.*onboarded/i.test(res.error || "");
+  if (errEl) { errEl.style.display = ""; errEl.textContent = res.error; }
   if (needsSetup && msg) {
     msg.innerHTML =
       `<button onclick="bleSetupFromAuthorize()">SET UP THIS ROBOT →</button>`
