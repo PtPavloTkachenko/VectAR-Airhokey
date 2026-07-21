@@ -1057,9 +1057,20 @@ async function bleProvisionOskr() {
   }
   if (!res.ok) {
     $("oskrBar").style.display = "none";
-    $("btnOskr").disabled = false;
     $("provErr").style.display = "";
-    $("provErr").textContent = (res.step ? res.step + ": " : "") + res.error;
+    $("provErr").textContent = res.error;
+    if (res.needs_flash) {
+      // No SSH and no way to add it — the firmware route is the supported one.
+      $("btnOskr").outerHTML =
+        `<button onclick="bleFlashEp()" id="btnFlash">INSTALL FIRMWARE →</button>`
+        + `<div id="flashBar" class="hint" style="display:none"></div>`
+        + `<div class="hint">This installs the escape-pod firmware over `
+        + `Bluetooth (a few minutes, keep him on the charger). It's the same `
+        + `step a stock Vector takes, and it can be undone later by flashing `
+        + `his old firmware the same way.</div>`;
+    } else {
+      $("btnOskr").disabled = false;
+    }
     return;
   }
   $("oskrBar").innerHTML = `<span class="ok">Done ✓ ${res.message}</span>`;

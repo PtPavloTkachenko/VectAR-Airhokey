@@ -374,20 +374,18 @@ class WebUI:
         key = config.ensure_ssh_key()
         pub = config.ssh_public_key()
 
-        # 1) SSH key over the live BLE channel (Clear User Data wipes it)
+        # 1) We need SSH. If it isn't already available there is no way to add
+        # it: RtsSshRequest exists in the CLAD schema but neither the reference
+        # BLE client nor the firmware implements it (no handler, and the robot
+        # never answers), so we ask the user to take the firmware route — which
+        # is the supported mechanism and is reversible over the same BLE OTA.
         if not await asyncio.to_thread(prov.ssh_reachable, ip, str(key)):
-            try:
-                await self._ble.install_ssh_key(pub + "\n")
-            except Exception as e:
-                return web.json_response(
-                    {"ok": False, "step": "ssh_key",
-                     "error": f"could not install the SSH key over BLE: {e}"})
-            await asyncio.sleep(2)
-            if not await asyncio.to_thread(prov.ssh_reachable, ip, str(key)):
-                return web.json_response(
-                    {"ok": False, "step": "ssh_key",
-                     "error": "key installed but SSH still refuses — this "
-                              "build may ignore BLE key provisioning."})
+            return web.json_response(
+                {"ok": False, "step": "ssh_key", "needs_flash": True, "ip": ip,
+                 "error": "This Mac has no SSH access to Vector (a Clear User "
+                          "Data wipe removes it, and it can't be re-added over "
+                          "Bluetooth). Install the escape-pod firmware instead "
+                          "— same result, and reversible."})
 
         # 2) point the robot's cloud at wire-pod, then reboot
         try:
