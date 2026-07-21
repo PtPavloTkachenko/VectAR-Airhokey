@@ -68,6 +68,8 @@ class WebUI:
             # The robot downloads the escape-pod firmware from here during the
             # stock-provisioning flash (local cache, else proxy archive.org).
             web.get("/api/get_ota/{name}", self.api_get_ota),
+            # static assets (onboarding illustrations, icons)
+            web.static("/static", STATIC_DIR),
         ])
         self._flash = {"active": False, "percent": 0.0, "done": False,
                        "error": "", "state": ""}

@@ -83,6 +83,12 @@
   .hint a { color: var(--pink); }
   /* highlight load-bearing instructions so they stand out from prose */
   .key { color: #fff; font-weight: 600; }
+  /* Official Vector onboarding illustrations (line-art SVG on our dark theme) */
+  .vec-steps { display: flex; flex-direction: column; gap: 14px; margin: 14px 0; }
+  .vec-step { display: flex; align-items: center; gap: 16px; }
+  .vec-step img { width: 64px; height: 64px; flex: none;
+    filter: brightness(0) invert(1); opacity: .9; }
+  .vec-step span { color: var(--muted); font-size: 13px; line-height: 1.4; }
   .error { color: var(--err); margin-top: 12px; font-size: 13px;
            border-left: 2px solid var(--err); padding-left: 10px; }
   .ok { color: var(--green); margin-top: 12px; }
@@ -178,11 +184,18 @@
       <!-- b0: find over BLE -->
       <div class="bstep" id="bstep0">
         <h2>1 · Find Vector over Bluetooth</h2>
-        <div class="hint"><span class="key">Put Vector on the charger.</span>
-          If his face isn't already showing a setup screen,
-          <span class="key">double-press the button on his back.</span>
-          Then scan. If nothing is found, <span class="key">double-press
-          again</span> and scan once more.</div>
+        <div class="vec-steps">
+          <div class="vec-step">
+            <img src="/static/images/onboarding_icon_plugincharger_med.svg" alt="">
+            <span><span class="key">Place Vector on his charger.</span></span>
+          </div>
+          <div class="vec-step">
+            <img src="/static/images/onboarding_icon_pressbackpack_med.svg" alt="">
+            <span><span class="key">Double-press the button on his back</span>
+              until his face shows a setup screen, then scan. Nothing found?
+              Double-press again and rescan — the window is short.</span>
+          </div>
+        </div>
         <button onclick="bleScan()" id="btnBleScan">SCAN BLUETOOTH</button>
         <span id="bleScanSpin"></span>
         <div id="bleList"></div>
