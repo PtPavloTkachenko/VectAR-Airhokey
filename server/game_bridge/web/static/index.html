@@ -1010,7 +1010,19 @@ async function bleProvision() {
     $("provBody").innerHTML =
       `<div class="ok">Already set up for wire-pod — nothing to install.</div>`
       + `<button onclick="bleWifiScan(); bleStep(2)">CONTINUE →</button>`;
-  } else if (st.state === "in_firmware_dev" || st.state === "in_recovery_dev") {
+  } else if (st.state === "in_recovery_dev" || st.state === "in_recovery_prod") {
+    // Recovery is the one state that accepts any image — the normal firmware
+    // refuses the escape-pod build because it's an older version (6076 < 6091,
+    // update-engine error 214). There's no SSH here either, so: flash.
+    $("provBody").innerHTML =
+      `<div class="ok">He's in recovery mode — ready to install.</div>`
+      + `<div class="hint">This installs the <span class="key">escape-pod `
+      + `firmware</span> over Bluetooth (a few minutes — keep him on the `
+      + `charger and don't touch him). Afterwards he talks to wire-pod on any `
+      + `Wi-Fi.</div>`
+      + `<div id="flashBar" class="hint" style="display:none"></div>`
+      + `<button onclick="bleFlashEp()" id="btnFlash">INSTALL FIRMWARE →</button>`;
+  } else if (st.state === "in_firmware_dev") {
     // OSKR/dev: no flash needed — we install our SSH key over this same BLE
     // session and write the cloud config. One button, no terminal.
     $("provBody").innerHTML =
@@ -1061,13 +1073,22 @@ async function bleProvisionOskr() {
     $("provErr").textContent = res.error;
     if (res.needs_flash) {
       // No SSH and no way to add it — the firmware route is the supported one.
-      $("btnOskr").outerHTML =
-        `<button onclick="bleFlashEp()" id="btnFlash">INSTALL FIRMWARE →</button>`
+      // Replace the whole block: the intro said "no firmware flash needed",
+      // which now contradicts what we're offering.
+      $("provBody").innerHTML =
+        `<div class="hint">Without SSH the only supported way to point this `
+        + `Vector at wire-pod is the <span class="key">escape-pod firmware</span> `
+        + `— the same step a stock Vector takes. It can be undone later by `
+        + `flashing his old firmware the same way.</div>`
+        + `<div class="hint"><span class="key">He must be in recovery mode `
+        + `first.</span> The running firmware refuses this image because it's an `
+        + `older build (that's the "update failed" cloud icon). On the charger, `
+        + `<span class="key">hold his backpack button ~15 s</span> until his `
+        + `face shows <code>anki.com/v</code> — then START OVER and connect `
+        + `again; the flash will be accepted.</div>`
         + `<div id="flashBar" class="hint" style="display:none"></div>`
-        + `<div class="hint">This installs the escape-pod firmware over `
-        + `Bluetooth (a few minutes, keep him on the charger). It's the same `
-        + `step a stock Vector takes, and it can be undone later by flashing `
-        + `his old firmware the same way.</div>`;
+        + `<button onclick="bleFlashEp()" id="btnFlash">TRY ANYWAY →</button>`
+        + `<button class="secondary" onclick="bleRestart()">← START OVER</button>`;
     } else {
       $("btnOskr").disabled = false;
     }
