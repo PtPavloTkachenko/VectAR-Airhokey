@@ -1054,7 +1054,7 @@ async function bleProvision() {
 // OSKR path, fully in the UI: the server reuses THIS BLE session to install our
 // SSH key (a second BLE connect would race CoreBluetooth), then writes the
 // cloud config over SSH and reboots.
-async function bleProvisionOskr() {
+async function bleProvisionOskr(tryLogs) {
   $("btnOskr").disabled = true;
   $("provErr").style.display = "none";
   $("oskrBar").style.display = "";
@@ -1073,10 +1073,15 @@ async function bleProvisionOskr() {
       }
     } catch (e) {}
   }, 2000);
+  const box = $("sshKeyBox");
   let res;
   try {
-    res = await api("/api/ble/provision_oskr",
-                    {ip: window.foundIp || "", host_mode: "escapepod"});
+    res = await api("/api/ble/provision_oskr", {
+      ip: window.foundIp || "",
+      host_mode: "escapepod",
+      ssh_key: box ? box.value : "",
+      try_logs: tryLogs === true,
+    });
   } catch (e) {
     res = {ok: false, error: String(e)};
   }
@@ -1085,6 +1090,24 @@ async function bleProvisionOskr() {
     $("oskrBar").style.display = "none";
     $("provErr").style.display = "";
     $("provErr").textContent = res.error;
+    if (res.needs_key) {
+      // OSKR owners have this key already — asking is far kinder than a
+      // 149k-packet log download. The log route stays as a fallback.
+      $("provBody").innerHTML =
+        `<div class="hint">Paste Vector's <span class="key">SSH private key</span>. `
+        + `OSKR robots ship with one — it's in the log bundle you downloaded when `
+        + `you set him up (<code>data/ssh/id_rsa_Vector-XXXX</code>), or wherever `
+        + `you saved it. It stays on this Mac.</div>`
+        + `<textarea id="sshKeyBox" rows="6" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
+                     style="width:100%;font-family:inherit;font-size:12px"></textarea>`
+        + `<div id="oskrBar" class="hint" style="display:none"></div>`
+        + `<button onclick="bleProvisionOskr()" id="btnOskr">USE THIS KEY →</button>`
+        + `<button class="secondary" onclick="bleProvisionOskr(true)">`
+        + `I DON'T HAVE IT — TRY HIS LOGS</button>`
+        + `<div class="hint">Pulling it from his logs works without a key, but `
+        + `Bluetooth is slow — expect several minutes.</div>`;
+      return;
+    }
     if (res.needs_flash) {
       // No SSH and no way to add it — the firmware route is the supported one.
       // Replace the whole block: the intro said "no firmware flash needed",
