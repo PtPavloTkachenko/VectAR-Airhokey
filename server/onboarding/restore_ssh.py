@@ -10,7 +10,7 @@ and the pairing wizard completes.
 
 Usage:
     # robot on the charger, then double-press its backpack button first
-    python -m onboarding.restore_ssh --pub ~/.ssh/id_rsa.pub --ip 172.20.10.2
+    python -m onboarding.restore_ssh --pub ~/.ssh/id_rsa.pub --ip <robot-ip>
 
 `--pub` defaults to the public half derived from --key, so the usual call is
 just `python -m onboarding.restore_ssh --ip <robot-ip>`.
