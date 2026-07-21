@@ -259,28 +259,35 @@ class RtsSession:
         else:
             raise HandshakeError("timed out waiting for the log bundle")
 
-        chunks: dict[int, bytes] = {}
-        total = 0
+        # RtsFileDownload's packetNumber/packetTotal are BYTE counters, not a
+        # frame count — packetTotal is the total bundle size, packetNumber the
+        # bytes delivered so far, ending exactly at packetTotal on the last
+        # frame (verified against the official Vector Web Setup rts.js). So we
+        # append chunks in ARRIVAL order and stop when packetNumber==packetTotal,
+        # accepting only frames for our file_id. (The old code compared frame
+        # count to the byte total and hung, reporting "N/149158 packets".)
+        parts: list[bytes] = []
         d = m.parse_file_download(payload)
-        chunks[d["packet"]] = d["chunk"]
-        total = d["total"]
-        while loop.time() < deadline and (not total or len(chunks) < total):
+
+        def take(dd) -> bool:
+            if file_id is not None and dd["file_id"] != file_id:
+                return False
+            parts.append(dd["chunk"])
+            if callable(progress_cb) and dd["total"]:
+                progress_cb({"current": dd["packet"], "total": dd["total"],
+                             "percent": dd["packet"] / dd["total"] * 100.0})
+            return dd["done"]
+
+        done = take(d)
+        while not done and loop.time() < deadline:
             mtype, payload = await self._recv(timeout=45.0)
             if mtype != m.FILE_DOWNLOAD:
                 continue
-            d = m.parse_file_download(payload)
-            if d["status"] not in (0, 1):
-                raise HandshakeError(
-                    f"log download failed (status {d['status']})")
-            chunks[d["packet"]] = d["chunk"]
-            total = d["total"] or total
-            if callable(progress_cb) and total:
-                progress_cb({"packet": len(chunks), "total": total,
-                             "percent": len(chunks) / total * 100.0})
-        if total and len(chunks) < total:
+            done = take(m.parse_file_download(payload))
+        blob = b"".join(parts)
+        if not done:
             raise HandshakeError(
-                f"log download incomplete ({len(chunks)}/{total} packets)")
-        blob = b"".join(chunks[k] for k in sorted(chunks))
+                f"log download stalled after {len(blob)} bytes")
         logger.info(f"log bundle received: {len(blob)} bytes")
         return blob
 
