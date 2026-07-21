@@ -226,10 +226,13 @@ class RtsSession:
                               timeout: float = 20.0) -> bool:
         """Push SSH authorized_keys to the robot over the encrypted BLE channel.
 
-        Restores SSH on an OSKR/dev robot whose /data/ssh/authorized_keys was
-        wiped by a Clear User Data, so `oskr_provision` can then point its cloud
-        at wire-pod. The robot answers with an empty RtsSshResponse; some builds
-        just ACK, so an ACK counts as success too.
+        ⚠️ NOT SUPPORTED BY THE FIRMWARE — kept only for reference. RtsSshRequest
+        exists in the CLAD schema, but the reference client (vector-bluetooth)
+        implements no SSH method and registers no RtsSshResponse handler, and a
+        2.0.1.6091 robot never answers it (verified live: the send succeeds, the
+        reply times out). So SSH cannot be re-added after a Clear User Data wipe
+        this way — use the escape-pod firmware route instead, which is the
+        supported mechanism and is reversible over the same BLE OTA.
         """
         await self._send(m.ssh_authorize_request(authorized_keys, self.version))
         try:
