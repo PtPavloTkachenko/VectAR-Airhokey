@@ -73,6 +73,15 @@ def server_config(host_mode: str) -> str:
     })
 
 
+def ssh_reachable(ip: str, key: str) -> bool:
+    """True if this key already opens a root shell on the robot."""
+    p = subprocess.run(
+        ["ssh", "-i", key, *SSH_OPTS, "-o", "BatchMode=yes",
+         f"root@{ip}", "echo ok"],
+        capture_output=True, text=True)
+    return p.returncode == 0 and "ok" in p.stdout
+
+
 def ssh(ip: str, key: str, cmd: str, timeout: int = 60) -> tuple[int, str]:
     p = subprocess.run(
         ["ssh", "-i", key, *SSH_OPTS, f"root@{ip}", cmd],

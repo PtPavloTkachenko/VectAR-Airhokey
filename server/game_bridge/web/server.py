@@ -64,6 +64,7 @@ class WebUI:
             web.post("/api/ble/state", self.api_ble_state),
             web.post("/api/ble/flash_ep", self.api_ble_flash_ep),
             web.get("/api/ble/flash_status", self.api_ble_flash_status),
+            web.post("/api/ble/provision_oskr", self.api_ble_provision_oskr),
             # The robot downloads the escape-pod firmware from here during the
             # stock-provisioning flash (local cache, else proxy archive.org).
             web.get("/api/get_ota/{name}", self.api_get_ota),
@@ -337,6 +338,64 @@ class WebUI:
 
     async def api_ble_flash_status(self, req):
         return web.json_response({"ok": True, **self._flash})
+
+    async def api_ble_provision_oskr(self, req):
+        """One-button OSKR provisioning — no terminal, no second BLE connect.
+
+        Reuses the wizard's LIVE BLE session (opening a second one races
+        CoreBluetooth and the robot's short advertising window) to install our
+        SSH key, then writes the cloud config over SSH and reboots. After this
+        the robot talks to wire-pod on any Wi-Fi, exactly like a stock robot
+        that got the escape-pod firmware.
+        """
+        if not self._ble:
+            return web.json_response(
+                {"ok": False, "error": "no BLE session — pair over BLE first"},
+                status=409)
+        try:
+            body = await req.json()
+        except Exception:
+            body = {}
+        ip = (body.get("ip") or getattr(self._ble, "ip", "") or "").strip()
+        if not ip:
+            return web.json_response(
+                {"ok": False, "error": "robot IP unknown — finish the Wi-Fi "
+                                       "step first"}, status=400)
+
+        from ...onboarding import oskr_provision as prov
+        key = config.ensure_ssh_key()
+        pub = config.ssh_public_key()
+
+        # 1) SSH key over the live BLE channel (Clear User Data wipes it)
+        if not await asyncio.to_thread(prov.ssh_reachable, ip, str(key)):
+            try:
+                await self._ble.install_ssh_key(pub + "\n")
+            except Exception as e:
+                return web.json_response(
+                    {"ok": False, "step": "ssh_key",
+                     "error": f"could not install the SSH key over BLE: {e}"})
+            await asyncio.sleep(2)
+            if not await asyncio.to_thread(prov.ssh_reachable, ip, str(key)):
+                return web.json_response(
+                    {"ok": False, "step": "ssh_key",
+                     "error": "key installed but SSH still refuses — this "
+                              "build may ignore BLE key provisioning."})
+
+        # 2) point the robot's cloud at wire-pod, then reboot
+        try:
+            await asyncio.to_thread(prov.provision, ip, str(key),
+                                    body.get("host_mode", "escapepod"), True)
+        except SystemExit as e:
+            return web.json_response({"ok": False, "step": "provision",
+                                      "error": str(e)})
+        except Exception as e:
+            return web.json_response(
+                {"ok": False, "step": "provision",
+                 "error": f"{type(e).__name__}: {e}"})
+        return web.json_response(
+            {"ok": True, "ip": ip,
+             "message": "Cloud pointed at wire-pod. Vector is rebooting "
+                        "(~40 s), then pairing will complete."})
 
     async def api_pair(self, req):
         body = await req.json()

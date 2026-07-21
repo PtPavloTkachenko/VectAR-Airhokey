@@ -38,6 +38,34 @@ EP_OTA_NAME = os.getenv("EP_OTA_NAME", "vicos-2.0.1.6076ep.ota")
 OTA_CACHE_DIR = Path(os.getenv(
     "OTA_CACHE_DIR", str(Path.home() / ".vectar" / "ota")))
 
+# --- OSKR/dev-robot provisioning ---
+# Its SSH key is ours to manage: generated on first use, installed on the robot
+# over the wizard's existing BLE session, then used to write the cloud config.
+# The user never sees a terminal.
+VECTAR_SSH_KEY = Path(os.getenv(
+    "VECTAR_SSH_KEY", str(Path.home() / ".vectar" / "id_rsa_vectar")))
+
+
+def ensure_ssh_key() -> Path:
+    """Return our provisioning key, creating it on first use."""
+    import subprocess
+    key = VECTAR_SSH_KEY
+    if not key.is_file():
+        key.parent.mkdir(parents=True, exist_ok=True)
+        subprocess.run(
+            ["ssh-keygen", "-t", "rsa", "-b", "2048", "-N", "", "-q",
+             "-C", "vectar-airhockey", "-f", str(key)],
+            check=True, capture_output=True)
+        key.chmod(0o600)
+    return key
+
+
+def ssh_public_key() -> str:
+    key = ensure_ssh_key()
+    pub = key.with_suffix(key.suffix + ".pub") if key.suffix else Path(
+        str(key) + ".pub")
+    return pub.read_text().strip()
+
 
 def read_robot_identity() -> tuple[str, str, str]:
     """(serial, ips, name) — env overrides win, else sdk_config.ini.
