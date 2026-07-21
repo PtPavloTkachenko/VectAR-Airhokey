@@ -374,18 +374,38 @@ class WebUI:
         key = config.ensure_ssh_key()
         pub = config.ssh_public_key()
 
-        # 1) We need SSH. If it isn't already available there is no way to add
-        # it: RtsSshRequest exists in the CLAD schema but neither the reference
-        # BLE client nor the firmware implements it (no handler, and the robot
-        # never answers), so we ask the user to take the firmware route — which
-        # is the supported mechanism and is reversible over the same BLE OTA.
+        # 1) We need SSH. Adding a key over BLE is not possible (RtsSshRequest
+        # is in the CLAD schema but nothing implements it), and an ankidev robot
+        # can't take the production escape-pod image either. The supported route
+        # is the one OSKR owners have always used: the robot generates its own
+        # keypair in /data/ssh and ships the private half inside its log bundle,
+        # which we CAN pull over BLE. A Clear User Data wipe just means it made
+        # a fresh one.
         if not await asyncio.to_thread(prov.ssh_reachable, ip, str(key)):
-            return web.json_response(
-                {"ok": False, "step": "ssh_key", "needs_flash": True, "ip": ip,
-                 "error": "This Mac has no SSH access to Vector (a Clear User "
-                          "Data wipe removes it, and it can't be re-added over "
-                          "Bluetooth). Install the escape-pod firmware instead "
-                          "— same result, and reversible."})
+            try:
+                bundle = await self._ble.download_logs()
+            except Exception as e:
+                return web.json_response(
+                    {"ok": False, "step": "logs",
+                     "error": f"could not download Vector's logs over "
+                              f"Bluetooth ({e}). They carry his SSH key, which "
+                              "is how a dev robot grants access."})
+            found = await asyncio.to_thread(prov.extract_ssh_key, bundle)
+            if not found:
+                return web.json_response(
+                    {"ok": False, "step": "logs",
+                     "error": "Vector's logs downloaded, but they contain no "
+                              "SSH private key — this build may not ship one in "
+                              "/data/ssh."})
+            key = await asyncio.to_thread(
+                prov.save_ssh_key, found, config.ROBOT_SSH_KEY)
+            logger.info(f"recovered Vector's SSH key from his logs -> {key}")
+            if not await asyncio.to_thread(prov.ssh_reachable, ip, str(key)):
+                return web.json_response(
+                    {"ok": False, "step": "ssh_key",
+                     "error": "Recovered a key from Vector's logs but he still "
+                              "refuses it. Is sshd running and is this the same "
+                              "robot?"})
 
         # 2) point the robot's cloud at wire-pod, then reboot
         try:

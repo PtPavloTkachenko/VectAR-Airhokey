@@ -44,6 +44,10 @@ OTA_CACHE_DIR = Path(os.getenv(
 # The user never sees a terminal.
 VECTAR_SSH_KEY = Path(os.getenv(
     "VECTAR_SSH_KEY", str(Path.home() / ".vectar" / "id_rsa_vectar")))
+# Where we stash the key recovered from the robot's own log bundle (an OSKR
+# robot generates its keypair in /data/ssh and ships the private half in logs).
+ROBOT_SSH_KEY = Path(os.getenv(
+    "ROBOT_SSH_KEY", str(Path.home() / ".vectar" / "id_rsa_robot")))
 
 
 def ensure_ssh_key() -> Path:

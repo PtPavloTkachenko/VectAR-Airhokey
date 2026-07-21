@@ -222,6 +222,63 @@ class RtsSession:
         self.guid = resp["guid"]
         return self.guid
 
+    async def download_logs(self, timeout: float = 240.0,
+                            progress_cb=None) -> bytes:
+        """Pull the robot's log bundle over BLE and return the raw bytes.
+
+        The supported way to get SSH on an OSKR/dev robot: it keeps its own
+        keypair in /data/ssh and the bundle carries the private half (that is
+        where our original key came from). Clear User Data makes it regenerate
+        one, so this gets us back in without SSH, adb or a firmware flash.
+
+        Wire flow: RtsLogRequest -> RtsLogResponse{exit_code,file_id} -> a
+        stream of RtsFileDownload chunks that we reassemble in packet order.
+        """
+        await self._send(m.log_request(version=self.version))
+        loop = asyncio.get_event_loop()
+        deadline = loop.time() + timeout
+
+        file_id = None
+        while loop.time() < deadline:
+            mtype, payload = await self._recv(timeout=45.0)
+            if mtype == m.LOG_RESPONSE:
+                r = m.parse_log_response(payload)
+                if r["exit_code"] != 0:
+                    raise HandshakeError(
+                        f"robot refused the log request (exit {r['exit_code']})")
+                file_id = r["file_id"]
+                logger.info(f"log bundle starting (file_id={file_id})")
+                continue
+            if mtype == m.FILE_DOWNLOAD:
+                break
+        else:
+            raise HandshakeError("timed out waiting for the log bundle")
+
+        chunks: dict[int, bytes] = {}
+        total = 0
+        d = m.parse_file_download(payload)
+        chunks[d["packet"]] = d["chunk"]
+        total = d["total"]
+        while loop.time() < deadline and (not total or len(chunks) < total):
+            mtype, payload = await self._recv(timeout=45.0)
+            if mtype != m.FILE_DOWNLOAD:
+                continue
+            d = m.parse_file_download(payload)
+            if d["status"] not in (0, 1):
+                raise HandshakeError(
+                    f"log download failed (status {d['status']})")
+            chunks[d["packet"]] = d["chunk"]
+            total = d["total"] or total
+            if callable(progress_cb) and total:
+                progress_cb({"packet": len(chunks), "total": total,
+                             "percent": len(chunks) / total * 100.0})
+        if total and len(chunks) < total:
+            raise HandshakeError(
+                f"log download incomplete ({len(chunks)}/{total} packets)")
+        blob = b"".join(chunks[k] for k in sorted(chunks))
+        logger.info(f"log bundle received: {len(blob)} bytes")
+        return blob
+
     async def install_ssh_key(self, authorized_keys: str,
                               timeout: float = 20.0) -> bool:
         """Push SSH authorized_keys to the robot over the encrypted BLE channel.
