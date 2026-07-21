@@ -367,8 +367,32 @@ function renderRoute() {
   $("routeCard").innerHTML = html;
 }
 
-// The single entry point: find the robot, skip what's already done.
+// The single entry point. It only skips steps it can PROVE are done: without
+// saved credentials there is nothing to shortcut, because identifying and
+// setting up a robot both need Bluetooth. Jumping such a robot to "authorize"
+// (what this used to do) always failed and dumped the user on the last step
+// with a red error after a long spinner.
 async function onboardStart() {
+  // The status poller re-renders this card every tick; without this flag it
+  // wiped the click's own feedback and the button looked dead until a 2nd try.
+  if (window.onboardBusy) return;
+  window.onboardBusy = true;
+  try {
+    await onboardStartInner();
+  } finally {
+    window.onboardBusy = false;
+  }
+}
+
+async function onboardStartInner() {
+  const st = window.lastStatus;
+  const paired = !!(st && st.robot && st.robot.paired);
+  if (!paired) {
+    chooseRoute("ble");
+    bleStep(0);
+    return;
+  }
+
   $("routeCard").innerHTML = `<h2>Finding your Vector…</h2>`
     + `<div class="hint"><span class="spin">◌</span> checking Wi-Fi and Bluetooth</div>`;
   let f = {on_wifi: false};
@@ -431,7 +455,8 @@ async function refreshStatus() {
     // keep the (idle) route chooser fresh so "ready" appears the moment the
     // robot connects — but never yank a wizard the user is mid-way through
     if ($("view-pair").style.display !== "none"
-        && $("routeCard").style.display !== "none") renderRoute();
+        && $("routeCard").style.display !== "none"
+        && !window.onboardBusy) renderRoute();   // don't clobber a click in flight
     const r = s.robot;
     let html = "";
     html += stat("Saved robot", r.paired ? (r.name || r.serial) : "none",
