@@ -303,10 +303,19 @@ class RtsSession:
             if callable(progress_cb):
                 progress_cb(last)
             if last["status"] not in (0, 1):
+                # 214 is what a running firmware answers when it won't take the
+                # image — the escape-pod build (2.0.1.6076ep) is OLDER than a
+                # 2.0.1.6091 robot, and update-engine refuses the downgrade.
+                # Recovery mode accepts any image, which is why wire-pod's own
+                # flow flashes from there.
+                extra = (" The escape-pod build is older than his current "
+                         "firmware, so the running system refuses it."
+                         if last["status"] == 214 else "")
                 raise HandshakeError(
-                    f"OTA rejected by the robot (status {last['status']}). "
-                    "A stock robot may need to be in recovery mode "
-                    "(hold the backpack button ~15 s until anki.com/v).")
+                    f"OTA rejected by the robot (status {last['status']})."
+                    f"{extra} Put him in recovery mode first: on the charger, "
+                    "hold the backpack button ~15 s until his face shows "
+                    "anki.com/v — recovery accepts any image.")
             if last["done"]:
                 logger.info("OTA complete (%d bytes) — robot is rebooting",
                             last["current"])
