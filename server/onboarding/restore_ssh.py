@@ -35,6 +35,30 @@ def derive_pub(key_path: str) -> str:
     return p.stdout.strip()
 
 
+async def read_pin(pin_file: str, timeout: float) -> str:
+    """Read the 6-digit PIN, from the terminal when there is one, otherwise from
+    a file. The PIN only appears on Vector's face AFTER the BLE handshake
+    starts, so it can't be passed up front; agents/CI drop it into `pin_file`
+    (`echo 123456 > /tmp/vector_pin`) while this waits."""
+    if sys.stdin is not None and sys.stdin.isatty():
+        return input("PIN shown on Vector's face: ").strip()
+    p = Path(pin_file)
+    p.unlink(missing_ok=True)
+    print(f"PIN is on Vector's face — write it to {pin_file} "
+          f"(echo 123456 > {pin_file}); waiting {timeout:.0f}s…", flush=True)
+    loop = asyncio.get_event_loop()
+    deadline = loop.time() + timeout
+    while loop.time() < deadline:
+        if p.is_file():
+            pin = p.read_text().strip()
+            if len(pin) == 6 and pin.isdigit():
+                p.unlink(missing_ok=True)
+                print(f"got PIN from {pin_file}", flush=True)
+                return pin
+        await asyncio.sleep(1.0)
+    raise SystemExit(f"no PIN appeared in {pin_file} within {timeout:.0f}s")
+
+
 def ssh_works(ip: str, key: str) -> bool:
     p = subprocess.run(
         ["ssh", "-i", key, "-o", "ConnectTimeout=12", "-o", "BatchMode=yes",
@@ -70,7 +94,7 @@ async def run(args) -> int:
     await sess.connect(dev["address"], dev.get("name"))
     try:
         await sess.begin_handshake()
-        pin = args.pin or input("PIN shown on Vector's face: ").strip()
+        pin = args.pin or await read_pin(args.pin_file, args.pin_timeout)
         await sess.finish_handshake(pin)
         print("encrypted channel up — installing authorized_keys…")
         await sess.install_ssh_key(pub + "\n")
@@ -101,6 +125,9 @@ def main() -> int:
     ap.add_argument("--pub", default="", help="explicit public key file")
     ap.add_argument("--ip", default="", help="robot IP, to verify SSH after")
     ap.add_argument("--pin", default="", help="skip the prompt")
+    ap.add_argument("--pin-file", default="/tmp/vector_pin",
+                    help="where to read the PIN when there's no terminal")
+    ap.add_argument("--pin-timeout", type=float, default=120.0)
     ap.add_argument("--scan-timeout", type=float, default=8.0)
     return asyncio.run(run(ap.parse_args()))
 

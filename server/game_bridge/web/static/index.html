@@ -971,13 +971,15 @@ async function bleProvision() {
       `<div class="ok">Already set up for wire-pod — nothing to install.</div>`
       + `<button onclick="bleWifiScan(); bleStep(2)">CONTINUE →</button>`;
   } else if (st.state === "in_firmware_dev" || st.state === "in_recovery_dev") {
-    // OSKR/dev: no flash needed, SSH writes the two files instead.
+    // OSKR/dev: no flash needed — we install our SSH key over this same BLE
+    // session and write the cloud config. One button, no terminal.
     $("provBody").innerHTML =
       `<div class="hint">This is an <span class="key">OSKR / dev</span> robot — `
-      + `it doesn't need a firmware flash. Point its cloud at wire-pod over SSH:`
-      + `<pre>python -m onboarding.oskr_provision --ip ${st.ip || "&lt;robot-ip&gt;"}</pre>`
-      + `Run that once (robot reboots), then continue.</div>`
-      + `<button onclick="bleWifiScan(); bleStep(2)">CONTINUE →</button>`;
+      + `no firmware flash needed. We'll point his cloud at wire-pod `
+      + `(one reboot).</div>`
+      + `<div id="oskrBar" class="hint" style="display:none"></div>`
+      + `<button onclick="bleProvisionOskr()" id="btnOskr">SET UP THIS ROBOT →</button>`
+      + `<button class="secondary" onclick="bleWifiScan(); bleStep(2)">SKIP</button>`;
   } else {
     // Stock robot: flash the escape-pod firmware over BLE.
     const inRecovery = st.state === "in_recovery_prod";
@@ -995,6 +997,34 @@ async function bleProvision() {
       + `<button onclick="bleFlashEp()" id="btnFlash">INSTALL FIRMWARE →</button>`
       + `<button class="secondary" onclick="bleWifiScan(); bleStep(2)">SKIP</button>`;
   }
+}
+
+// OSKR path, fully in the UI: the server reuses THIS BLE session to install our
+// SSH key (a second BLE connect would race CoreBluetooth), then writes the
+// cloud config over SSH and reboots.
+async function bleProvisionOskr() {
+  $("btnOskr").disabled = true;
+  $("provErr").style.display = "none";
+  $("oskrBar").style.display = "";
+  $("oskrBar").innerHTML = `<span class="spin">◌</span> installing access and `
+    + `pointing Vector at wire-pod…`;
+  let res;
+  try {
+    res = await api("/api/ble/provision_oskr",
+                    {ip: window.foundIp || "", host_mode: "escapepod"});
+  } catch (e) {
+    res = {ok: false, error: String(e)};
+  }
+  if (!res.ok) {
+    $("oskrBar").style.display = "none";
+    $("btnOskr").disabled = false;
+    $("provErr").style.display = "";
+    $("provErr").textContent = (res.step ? res.step + ": " : "") + res.error;
+    return;
+  }
+  $("oskrBar").innerHTML = `<span class="ok">Done ✓ ${res.message}</span>`;
+  $("provBody").innerHTML +=
+    `<button onclick="bleRestart()">START OVER WHEN HE'S BACK →</button>`;
 }
 
 async function bleFlashEp() {
