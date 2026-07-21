@@ -17,8 +17,8 @@ and reboot (never a live service restart — that races vic-engine, see the
 project's 915-fault lesson).
 
 Usage:
-    python -m onboarding.oskr_provision --ip 172.20.10.2 --key /tmp/vector_key
-    python -m onboarding.oskr_provision --ip 172.20.10.2 --host-mode ip   # direct Mac IP
+    python -m onboarding.oskr_provision --ip <robot-ip> --key /tmp/vector_key
+    python -m onboarding.oskr_provision --ip <robot-ip> --host-mode ip   # direct Mac IP
 
 `--host-mode escapepod` (default) is network-agnostic: it survives the Mac
 changing IP as long as wire-pod publishes escapepod.local. `--host-mode ip`
