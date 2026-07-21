@@ -592,17 +592,29 @@ class WebUI:
                 minted = True
             except pairing.PairingError as e:
                 if not self._is_provisioned():
+                    # An unprovisioned robot fails the mint because wire-pod has
+                    # no cert for it — that's a setup problem, not a user error.
                     return web.json_response(
-                        {"ok": False, "step": e.step, "error": e.message})
+                        {"ok": False, "step": e.step, "needs_setup": True,
+                         "error": e.message})
                 # already provisioned -> mint optional, fall through to connect
             except Exception as e:
                 if not self._is_provisioned():
                     return web.json_response({"ok": False, "error": str(e)})
 
         if not self._is_provisioned() and not minted:
+            # Two different causes, and blaming Wi-Fi (the old message) was
+            # wrong in both. `needs_setup` lets the UI offer the fix without
+            # pattern-matching English.
+            if not esn:
+                return web.json_response(
+                    {"ok": False, "needs_setup": True, "step": "identify",
+                     "error": "We don't know which Vector this is yet — connect "
+                              "over Bluetooth once so we can read his serial."})
             return web.json_response(
-                {"ok": False, "error": "No credentials yet — finish Wi-Fi "
-                 "setup so we can authorize this robot."})
+                {"ok": False, "needs_setup": True, "step": "provision",
+                 "error": "This Vector isn't set up for wire-pod yet, so he "
+                          "can't be authorized. Set him up once over Bluetooth."})
 
         if not b.use_robot:
             return web.json_response(
