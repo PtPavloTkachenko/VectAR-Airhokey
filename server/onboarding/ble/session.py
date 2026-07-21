@@ -303,19 +303,24 @@ class RtsSession:
             if callable(progress_cb):
                 progress_cb(last)
             if last["status"] not in (0, 1):
-                # 214 is what a running firmware answers when it won't take the
-                # image — the escape-pod build (2.0.1.6076ep) is OLDER than a
-                # 2.0.1.6091 robot, and update-engine refuses the downgrade.
-                # Recovery mode accepts any image, which is why wire-pod's own
-                # flow flashes from there.
-                extra = (" The escape-pod build is older than his current "
-                         "firmware, so the running system refuses it."
-                         if last["status"] == 214 else "")
+                # 214 is a BUILD-TYPE mismatch, not a version problem — straight
+                # from update-engine on the robot:
+                #   die(214, "Ankidev OS can't install non-ankidev OTA file")
+                #   die(214, "Non-ankidev OS can't install ankidev OTA file")
+                # A dev/OSKR (ankidev) robot therefore cannot take the
+                # production escape-pod image at all, and recovery mode does NOT
+                # relax this. Stock robots are non-ankidev, so the ep image is
+                # fine for them.
+                extra = (" His OS build type doesn't match the image: an "
+                         "OSKR/dev (ankidev) robot can only install ankidev "
+                         "builds, and the escape-pod image is a production "
+                         "build. Recovery mode does not change this."
+                         if last["status"] == 214 else
+                         " If he isn't in recovery mode, try that: on the "
+                         "charger, hold the backpack button ~15 s until his "
+                         "face shows anki.com/v.")
                 raise HandshakeError(
-                    f"OTA rejected by the robot (status {last['status']})."
-                    f"{extra} Put him in recovery mode first: on the charger, "
-                    "hold the backpack button ~15 s until his face shows "
-                    "anki.com/v — recovery accepts any image.")
+                    f"OTA rejected by the robot (status {last['status']}).{extra}")
             if last["done"]:
                 logger.info("OTA complete (%d bytes) — robot is rebooting",
                             last["current"])
