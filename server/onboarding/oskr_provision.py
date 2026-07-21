@@ -73,6 +73,46 @@ def server_config(host_mode: str) -> str:
     })
 
 
+def extract_ssh_key(bundle: bytes) -> str | None:
+    """Pull the robot's OWN SSH private key out of its log bundle.
+
+    An OSKR robot generates a keypair in /data/ssh and ships it inside the logs
+    — this is the documented way owners get shell access, and where our original
+    key came from. Handles the bundle being a plain tar or gz/bz2/xz-compressed.
+    """
+    import io
+    import tarfile
+
+    for opener in ("r:*", "r"):
+        try:
+            with tarfile.open(fileobj=io.BytesIO(bundle), mode=opener) as tf:
+                for member in tf.getmembers():
+                    name = member.name.replace("\\", "/")
+                    if "/ssh/" not in f"/{name}" and not name.startswith("ssh/"):
+                        continue
+                    base = name.rsplit("/", 1)[-1]
+                    if not base.startswith("id_") or base.endswith(".pub"):
+                        continue
+                    f = tf.extractfile(member)
+                    if not f:
+                        continue
+                    data = f.read().decode("utf-8", "replace")
+                    if "PRIVATE KEY" in data:
+                        return data
+        except tarfile.TarError:
+            continue
+    return None
+
+
+def save_ssh_key(key_text: str, dest: Path) -> Path:
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    if not key_text.endswith("\n"):
+        key_text += "\n"
+    dest.write_text(key_text)
+    dest.chmod(0o600)
+    return dest
+
+
 def ssh_reachable(ip: str, key: str) -> bool:
     """True if this key already opens a root shell on the robot."""
     p = subprocess.run(

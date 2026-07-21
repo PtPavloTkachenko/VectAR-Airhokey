@@ -1075,22 +1075,17 @@ async function bleProvisionOskr() {
       // No SSH and no way to add it — the firmware route is the supported one.
       // Replace the whole block: the intro said "no firmware flash needed",
       // which now contradicts what we're offering.
-      // Deliberately NO flash button here: an ankidev/OSKR robot cannot install
-      // the production escape-pod image (update-engine die 214, "Ankidev OS
-      // can't install non-ankidev OTA file") and recovery mode doesn't relax
-      // it. Offering the button would only fail again.
+      // No flash button for a dev robot: an ankidev OS refuses the production
+      // escape-pod image (update-engine die 214) and recovery doesn't relax it.
+      // The dev route is SSH, and the key comes out of his own log bundle.
       $("provBody").innerHTML =
-        `<div class="hint">This is a <span class="key">dev (OSKR)</span> Vector, `
-        + `and dev robots only accept dev firmware — the escape-pod image is a `
-        + `production build, so it can't be installed on him (that's the `
-        + `"update failed" cloud icon).</div>`
-        + `<div class="hint">He needs the SSH route instead, which requires `
-        + `this Mac to already have access. A Clear User Data wipe removes it `
-        + `and it can't be re-added over Bluetooth — restore SSH by other `
-        + `means, then run this again. A <span class="key">stock</span> Vector `
-        + `is unaffected: the firmware install works normally for him.</div>`
-        + `<button class="secondary" onclick="bleWifiScan(); bleStep(2)">CONTINUE ANYWAY</button>`
-        + `<button class="secondary" onclick="bleRestart()">← START OVER</button>`;
+        `<div class="hint">This is a <span class="key">dev (OSKR)</span> Vector. `
+        + `Dev robots only accept dev firmware, so the escape-pod image can't be `
+        + `installed on him — he uses SSH instead, and his key lives in his own `
+        + `logs. We'll pull them over Bluetooth (a minute or two) and use it.</div>`
+        + `<div id="oskrBar" class="hint" style="display:none"></div>`
+        + `<button onclick="bleProvisionOskr()" id="btnOskr">SET UP THIS ROBOT →</button>`
+        + `<button class="secondary" onclick="bleWifiScan(); bleStep(2)">SKIP</button>`;
     } else {
       $("btnOskr").disabled = false;
     }

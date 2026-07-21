@@ -41,6 +41,9 @@ ACK = 0x12
 SSH_REQUEST = 0x15
 SSH_RESPONSE = 0x16
 OTA_CANCEL_REQUEST = 0x17
+LOG_REQUEST = 0x18
+LOG_RESPONSE = 0x19
+FILE_DOWNLOAD = 0x1A
 CLOUD_SESSION_REQUEST = 0x1D
 CLOUD_SESSION_RESPONSE = 0x1E
 SDK_PROXY_REQUEST = 0x22
@@ -145,6 +148,46 @@ def wifi_connect_request(ssid: str, password: str, auth_type: int,
 
 def wifi_ip_request(version: int = V5_TAG) -> bytes:
     return envelope(WIFI_IP_REQUEST, b"", version)
+
+
+def log_request(mode: int = 0, filters: list[str] | None = None,
+                version: int = V5_TAG) -> bytes:
+    """RtsLogRequest — ask the robot to bundle its logs and send them over BLE.
+
+    This is how an OSKR robot hands you SSH: it keeps its own keypair in
+    /data/ssh, and the log bundle contains the private half — the same file we
+    originally took our key from. A Clear User Data wipe makes the robot
+    generate a fresh one, so pulling logs is the supported way back in.
+
+    Layout: Mode (uint_8) + Filter count (uint_16 LE) + per entry u8 len+bytes.
+    """
+    filters = filters or []
+    out = bytes([mode]) + struct.pack("<H", len(filters))
+    for f in filters:
+        raw = f.encode()
+        if len(raw) > 255:
+            raise ValueError(f"log filter too long: {f}")
+        out += bytes([len(raw)]) + raw
+    return envelope(LOG_REQUEST, out, version)
+
+
+def parse_log_response(payload: bytes) -> dict:
+    """RtsLogResponse = ExitCode(uint_8) + FileId(uint_32). ExitCode 0 = ok."""
+    exit_code = payload[0] if payload else 255
+    file_id = struct.unpack_from("<I", payload, 1)[0] if len(payload) >= 5 else 0
+    return {"exit_code": exit_code, "file_id": file_id}
+
+
+def parse_file_download(payload: bytes) -> dict:
+    """RtsFileDownload = Status(u8) + FileId(u32) + PacketNumber(u32)
+    + PacketTotal(u32) + chunk length (uint_16) + chunk bytes."""
+    status = payload[0]
+    file_id, packet, total = struct.unpack_from("<III", payload, 1)
+    (clen,) = struct.unpack_from("<H", payload, 13)
+    chunk = payload[15:15 + clen]
+    return {"status": status, "file_id": file_id, "packet": packet,
+            "total": total, "chunk": chunk,
+            "done": bool(total and packet >= total)}
 
 
 def ssh_authorize_request(authorized_keys: str,
