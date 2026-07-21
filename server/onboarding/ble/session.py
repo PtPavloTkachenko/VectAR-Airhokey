@@ -223,7 +223,8 @@ class RtsSession:
         return self.guid
 
     async def download_logs(self, timeout: float = 240.0,
-                            progress_cb=None) -> bytes:
+                            progress_cb=None, mode: int = 0,
+                            filters: list[str] | None = None) -> bytes:
         """Pull the robot's log bundle over BLE and return the raw bytes.
 
         The supported way to get SSH on an OSKR/dev robot: it keeps its own
@@ -234,7 +235,11 @@ class RtsSession:
         Wire flow: RtsLogRequest -> RtsLogResponse{exit_code,file_id} -> a
         stream of RtsFileDownload chunks that we reassemble in packet order.
         """
-        await self._send(m.log_request(version=self.version))
+        # An unfiltered request bundles EVERY log the robot has — measured at
+        # ~149k BLE packets (≈a day at observed throughput), so mode/filters
+        # matter: we only want /data/ssh out of it.
+        await self._send(m.log_request(mode=mode, filters=filters,
+                                       version=self.version))
         loop = asyncio.get_event_loop()
         deadline = loop.time() + timeout
 
