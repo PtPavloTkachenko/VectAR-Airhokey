@@ -43,9 +43,12 @@ python -m game_bridge.main
 ```
 
 Open **http://localhost:8780** → **PAIR ROBOT** → **CONNECT VECTOR**. One
-progressive wizard finds your robot over Bluetooth, joins him to Wi-Fi, and
-authorizes the Mac — nothing to type, and it skips whatever is already done.
-Full guide with screenshots: [docs/PAIRING.md](docs/PAIRING.md).
+progressive wizard finds your robot over Bluetooth, points him at the bundled
+wire-pod server (a one-time step — firmware for a stock Vector, SSH for an OSKR
+one), joins him to Wi-Fi, and authorizes the Mac. It detects which kind of robot
+you have and skips whatever is already done.
+**[docs/SETUP_ROBOT.md](docs/SETUP_ROBOT.md)** explains exactly what happens for
+each robot type; [docs/PAIRING.md](docs/PAIRING.md) has the internals.
 
 **2 · Lens**
 
@@ -63,7 +66,8 @@ Vector celebrates or grieves accordingly.
 ## Documentation
 
 - [ARCHITECTURE](docs/ARCHITECTURE.md) — how the three machines share one game
-- [PAIRING](docs/PAIRING.md) — robot setup: wire-pod once, then our web wizard
+- [SETUP_ROBOT](docs/SETUP_ROBOT.md) — **start here**: what the wizard does for a stock vs OSKR robot, and the one-time setup each needs
+- [PAIRING](docs/PAIRING.md) — robot setup internals: wire-pod, the cert/guid mint
 - [SERVER](docs/SERVER.md) — install, config, goalie tuning, troubleshooting
 - [LENS](docs/LENS.md) — Lens Studio project setup + optional voice agent
 - [PROTOCOL](docs/PROTOCOL.md) — the WebSocket protocol between lens and server
