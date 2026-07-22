@@ -65,8 +65,12 @@ Vector celebrates or grieves accordingly.
 
 ## Project status
 
-The game, the lens and the bridge run. What varies is the **one-time robot
-onboarding**, and the two robot types are independent tracks:
+The lens, the server and the game loop run (the console's mouse-playable field
+works today). **The robot-control link has not yet been brought up end-to-end in
+this repo** — the SDK control layer is written (wheels, head, eyes, faces, TTS,
+goalie AI, safety) but has not yet driven a live robot from this codebase, and
+that first connection is the current milestone. Onboarding splits into two
+independent tracks:
 
 - **OSKR / dev Vector** — working today. SSH auto-detect, and the log-archive
   route (drop the archive from Anki's setup app; the wizard finds the SSH key
