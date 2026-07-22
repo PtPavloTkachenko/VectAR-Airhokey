@@ -65,6 +65,12 @@ class WebUI:
             web.post("/api/ble/flash_ep", self.api_ble_flash_ep),
             web.get("/api/ble/flash_status", self.api_ble_flash_status),
             web.post("/api/ble/provision_oskr", self.api_ble_provision_oskr),
+            # OSKR the reliable way: accept the OFFICIAL log archive (Save Logs
+            # from vector-web-setup.anki.bot), auto-detect the key inside, find
+            # the robot on the LAN, provision over SSH. No BLE — Chrome's Web
+            # Bluetooth sustains the full log download where our Python one stalls.
+            web.post("/api/provision_oskr_archive",
+                     self.api_provision_oskr_archive),
             # The robot downloads the escape-pod firmware from here during the
             # stock-provisioning flash (local cache, else proxy archive.org).
             web.get("/api/get_ota/{name}", self.api_get_ota),
@@ -409,10 +415,10 @@ class WebUI:
             if not body.get("try_logs"):
                 return web.json_response(
                     {"ok": False, "step": "ssh_key", "needs_key": True,
-                     "error": "This Mac has no SSH access to Vector yet. Paste "
-                              "his SSH private key (OSKR owners have one), or "
-                              "let us pull it from his logs over Bluetooth — "
-                              "that works but is slow."})
+                     "error": "Vector is a dev (OSKR) robot — drop his log "
+                              "archive below (from the official app's Save Logs) "
+                              "and we'll detect his key, or paste the key if you "
+                              "have it."})
             self._flash = {"active": True, "percent": 0.0, "done": False,
                            "error": "", "state": "downloading logs"}
 
@@ -453,8 +459,9 @@ class WebUI:
 
         # 2) point the robot's cloud at wire-pod, then reboot
         try:
-            await asyncio.to_thread(prov.provision, ip, str(key),
-                                    body.get("host_mode", "escapepod"), True)
+            status = await asyncio.to_thread(
+                prov.provision, ip, str(key),
+                body.get("host_mode", "ip"), True)
         except SystemExit as e:
             return web.json_response({"ok": False, "step": "provision",
                                       "error": str(e)})
@@ -462,10 +469,132 @@ class WebUI:
             return web.json_response(
                 {"ok": False, "step": "provision",
                  "error": f"{type(e).__name__}: {e}"})
+        if status == "already":
+            msg = ("Vector is already set up for wire-pod — no reboot needed. "
+                   "Open the Dashboard and play.")
+        else:
+            msg = ("Cloud pointed at wire-pod. Vector is rebooting (~40 s), "
+                   "then pairing will complete.")
         return web.json_response(
-            {"ok": True, "ip": ip,
-             "message": "Cloud pointed at wire-pod. Vector is rebooting "
-                        "(~40 s), then pairing will complete."})
+            {"ok": True, "ip": ip, "already": status == "already",
+             "message": msg})
+
+    async def api_provision_oskr_archive(self, req):
+        """Set up an OSKR robot from his OFFICIAL log archive — the public path.
+
+        The user downloads his logs with the official Vector setup web app
+        (vector-web-setup.anki.bot -> Save Logs, a .tar.bz2), then drops that
+        file here. We detect the SSH key inside it, find the robot on the LAN by
+        the name in the archive, and point his cloud at wire-pod over SSH. This
+        sidesteps our Python BLE log download, which stalls on long transfers
+        (Chrome's BLE stack doesn't) — see docs/BLE_PROTOCOL_OFFICIAL.md.
+        """
+        from onboarding import oskr_provision as prov
+        try:
+            reader = await req.multipart()
+        except Exception:
+            return web.json_response(
+                {"ok": False, "error": "expected a file upload"}, status=400)
+        archive = b""
+        pasted_key = ""
+        ip = ""
+        # Pin this Mac's LAN IP by default: on repeater/mesh Wi-Fi the robot
+        # can't resolve escapepod.local over mDNS, so gameplay needs the literal
+        # IP (project memory DECISIONS #86). Portable networks can pass
+        # host_mode=escapepod.
+        host_mode = "ip"
+        async for part in reader:
+            if part.name == "archive":
+                archive = await part.read(decode=False)
+            elif part.name == "ssh_key":
+                pasted_key = (await part.text()).strip()
+            elif part.name == "ip":
+                ip = (await part.text()).strip()
+            elif part.name == "host_mode":
+                host_mode = (await part.text()).strip() or "ip"
+
+        # A pasted key is used verbatim; otherwise detect it inside the archive.
+        robot_code = None
+        if pasted_key and "PRIVATE KEY" in pasted_key:
+            key_text = pasted_key
+        elif archive:
+            logger.info(f"OSKR archive upload: {len(archive)} bytes")
+            key_text, robot_code = await asyncio.to_thread(
+                prov.extract_key_and_name, archive)
+            if not key_text:
+                return web.json_response(
+                    {"ok": False, "step": "archive",
+                     "error": "No SSH key found inside that archive. In the "
+                              "official Vector setup app, pair THIS robot and use "
+                              "'Save Logs' — the download is a .tar.bz2 that holds "
+                              "data/ssh/id_rsa_Vector-XXXX."})
+        else:
+            return web.json_response(
+                {"ok": False, "error": "no archive file or key received"},
+                status=400)
+        key = await asyncio.to_thread(
+            prov.save_ssh_key, key_text, config.ROBOT_SSH_KEY)
+        logger.info(f"detected SSH key in archive (robot={robot_code})")
+
+        # find his IP: explicit field > live BLE session > mDNS by archive name
+        if not ip and self._ble:
+            try:
+                ip = (await self._ble.wifi_ip() or "").strip()
+            except Exception:
+                pass
+        if not ip:
+            try:
+                robots = await discovery.discover(timeout=5.0)
+            except Exception:
+                robots = []
+            if robot_code:
+                code = robot_code.lower()
+                for r in robots:
+                    norm = r["name"].lower().replace(" ", "").replace("-", "")
+                    if code in norm:
+                        ip = r["ip"]
+                        break
+            if not ip and len(robots) == 1:
+                ip = robots[0]["ip"]
+        if not ip:
+            # mDNS came up empty (repeater/mesh eats multicast). We hold his key,
+            # so just scan the LAN for the host that accepts it — that IS him.
+            logger.info("mDNS empty — scanning LAN for the host that takes the key")
+            ip = await asyncio.to_thread(prov.find_robot_ip, str(key))
+        if not ip:
+            return web.json_response(
+                {"ok": False, "step": "ip", "needs_ip": True,
+                 "error": "Got the key from the archive, but couldn't find Vector "
+                          "on the network — not over mDNS, and no host on this "
+                          "Wi-Fi accepted his key. Make sure he's powered on and "
+                          "on the same network, or enter his IP (in the "
+                          "Spectacles/Vector phone app, or your router)."})
+
+        if not await asyncio.to_thread(prov.ssh_reachable, ip, str(key)):
+            return web.json_response(
+                {"ok": False, "step": "ssh",
+                 "error": f"Found the key and Vector at {ip}, but he refused it. "
+                          "Is this the same robot the archive came from? (his "
+                          "name and key both change after a factory reset.)"})
+        try:
+            status = await asyncio.to_thread(
+                prov.provision, ip, str(key), host_mode, True)
+        except SystemExit as e:
+            return web.json_response(
+                {"ok": False, "step": "provision", "error": str(e)})
+        except Exception as e:
+            return web.json_response(
+                {"ok": False, "step": "provision",
+                 "error": f"{type(e).__name__}: {e}"})
+        who = robot_code or ip
+        if status == "already":
+            msg = (f"Vector ({who}) is already set up for wire-pod — no reboot "
+                   "needed. Open the Dashboard and play.")
+        else:
+            msg = (f"Key accepted, cloud pointed at wire-pod. Vector ({who}) is "
+                   "rebooting (~40 s), then he's ready to play.")
+        return web.json_response(
+            {"ok": True, "ip": ip, "already": status == "already", "message": msg})
 
     async def api_pair(self, req):
         body = await req.json()
