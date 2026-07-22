@@ -17,7 +17,7 @@ Spectacles lens  ── ws://mac:8777 ──  Mac game server  ── gRPC :443 
 ```
 
 The Mac runs a small web console for pairing, monitoring, and a mouse-playable
-fallback game:
+practice field (you against a simulated goalie, for testing without the robot):
 
 ![Server console dashboard](docs/images/dashboard.png)
 
@@ -65,12 +65,20 @@ Vector celebrates or grieves accordingly.
 
 ## Project status
 
-The lens, the server and the game loop run (the console's mouse-playable field
-works today). **The robot-control link has not yet been brought up end-to-end in
-this repo** — the SDK control layer is written (wheels, head, eyes, faces, TTS,
-goalie AI, safety) but has not yet driven a live robot from this codebase, and
-that first connection is the current milestone. Onboarding splits into two
-independent tracks:
+Two of the three legs are proven on real hardware:
+
+- **Spectacles ↔ server — verified live on device.** The lens runs on Spectacles
+  and its WebSocket link to this server is tested end-to-end: surface
+  calibration, the AR field, puck physics and scoring.
+- **Server ↔ robot — the open leg.** The SDK control layer is written (wheels,
+  head, eyes, faces, voice, goalie AI, safety) but **has not yet driven a live
+  robot from this codebase**. That's deliberate: the test robot was
+  **factory-reset on purpose** so the *out-of-the-box* onboarding — what a new
+  owner actually goes through — could be built and proven rather than assumed.
+  Getting a wiped robot all the way back to SDK control is the piece still being
+  worked out, and it's the current milestone.
+
+Onboarding splits into two independent tracks:
 
 - **OSKR / dev Vector** — working today. SSH auto-detect, and the log-archive
   route (drop the archive from Anki's setup app; the wizard finds the SSH key

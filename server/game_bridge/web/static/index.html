@@ -172,12 +172,16 @@
     <div class="card">
       <h2>Project status</h2>
       <div class="hint">
-        The lens, this server and the game loop run — the field above is playable
-        with a mouse today. <span class="key">The robot-control link has not yet
-        been brought up end-to-end in this build</span>: the SDK layer (wheels,
-        head, eyes, faces, voice, goalie AI, safety) is written but hasn't driven
-        a live robot from this codebase yet. That first connection is the current
-        milestone.<br><br>
+        <b>Spectacles ↔ this server — verified live on device.</b> The lens runs
+        on Spectacles and its WebSocket link is tested end-to-end: surface
+        calibration, AR field, puck physics, scoring.<br><br>
+        <b>Server ↔ robot — the open leg.</b> The SDK layer (wheels, head, eyes,
+        faces, voice, goalie AI, safety) is written but hasn't driven a live
+        robot from this build yet. That's deliberate: the test robot was
+        <span class="key">factory-reset on purpose</span> so the out-of-the-box
+        onboarding — what a new owner actually goes through — could be built and
+        proven instead of assumed. Getting a wiped robot back to SDK control is
+        the piece still being worked out.<br><br>
         <b>Setup, per robot type</b> — two independent tracks:<br>
         · <span class="key">OSKR / dev</span> — SSH and the log-archive route are
           verified end-to-end on hardware.<br>
