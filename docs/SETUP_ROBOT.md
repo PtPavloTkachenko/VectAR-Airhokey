@@ -141,8 +141,10 @@ This was developed against a **single OSKR Vector that was already connected and
 already running on wire-pod** — the robot came into the project set up, and the
 game, the lens and the bridge were built on top of that. **The full chain
 (Spectacles → server → a real Vector driving) has been demonstrated end-to-end in
-two earlier builds** — the goalie drove, blocked and talked. The Spectacles side
-is verified live on device, not just in the console.
+two earlier builds — this air-hockey game, and the first version of VectAR OS**
+(the wider robot + AR + AI system it grew alongside). The goalie drove, blocked
+and talked. The Spectacles side is verified live on device, not just in the
+console.
 
 That history is why the "robot is already provisioned" paths are the well-trodden
 ones — and why the from-scratch path needed deliberate attention. So the test

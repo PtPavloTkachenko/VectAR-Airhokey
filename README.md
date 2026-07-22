@@ -66,9 +66,10 @@ Vector celebrates or grieves accordingly.
 ## Project status
 
 **The full chain — Spectacles → this server → a real Vector driving — has been
-demonstrated end-to-end in two earlier builds.** The goalie drove, blocked, and
-talked; the AR field and the robot ran as one game. That capability isn't the
-open question.
+demonstrated end-to-end in two earlier builds: this air-hockey game, and the
+first version of VectAR OS** (the wider robot + AR + AI system it grew alongside).
+The goalie drove, blocked, and talked; the AR field and the robot ran as one
+game. That capability isn't the open question.
 
 What's in progress is deliberate and different. The test robot was
 **factory-reset on purpose** to build the *out-of-the-box* path — what someone
