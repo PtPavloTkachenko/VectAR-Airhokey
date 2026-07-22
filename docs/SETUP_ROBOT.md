@@ -139,11 +139,16 @@ wipe the robot and expect to re-pair from zero.
 
 This was developed against a **single OSKR Vector that was already connected and
 already running on wire-pod** — the robot came into the project set up, and the
-game, the lens and the bridge were built on top of that. That history is exactly
-why the "robot is already provisioned" paths are the well-trodden ones, and why
-the *from-scratch onboarding* half — stock firmware install, and re-pairing a
-wiped robot — is the newer, less-proven side. We're closing that gap in the open
-rather than claiming it's done.
+game, the lens and the bridge were built on top of that. The Spectacles side is
+proven from that era: the lens and its link to the server are verified live on
+device, not just in the console.
+
+That history is why the "robot is already provisioned" paths are the well-trodden
+ones. To fix the other half, the test robot was then **factory-reset on purpose**
+— so the *out-of-the-box* experience a new owner actually gets could be built and
+proven rather than assumed. That reset is why the from-scratch side (stock
+firmware install, and getting a wiped robot back to SDK control) is the newer,
+less-proven half, and why it's being closed in the open rather than claimed done.
 
 Nothing here needs a terminal. If a step ever tells you to run a command, that's
 a bug — please report it.
