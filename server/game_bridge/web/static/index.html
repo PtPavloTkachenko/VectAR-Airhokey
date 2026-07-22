@@ -89,6 +89,10 @@
   .vec-step img { width: 64px; height: 64px; flex: none;
     filter: brightness(0) invert(1); opacity: .9; }
   .vec-step span { color: var(--muted); font-size: 13px; line-height: 1.4; }
+  .numdot { width: 34px; height: 34px; flex: none; border-radius: 50%;
+    background: rgba(74,222,128,.14); color: #4ade80; display: flex;
+    align-items: center; justify-content: center; font-weight: 700;
+    font-size: 15px; }
   .error { color: var(--err); margin-top: 12px; font-size: 13px;
            border-left: 2px solid var(--err); padding-left: 10px; }
   .ok { color: var(--green); margin-top: 12px; }
@@ -253,6 +257,66 @@
       </div>
     </div>
 
+    <!-- ============ OSKR archive upload (dev robots) ============
+         The reliable OSKR path: the owner downloads his logs with the OFFICIAL
+         Vector setup web app (Chrome's BLE sustains the full transfer), then
+         drops the archive here. We detect his SSH key inside it and provision
+         over SSH — no BLE from us. -->
+    <div class="card" id="archiveCard" style="display:none">
+      <h2>Set up an OSKR / dev Vector</h2>
+      <div class="hint">Dev robots grant access with their own SSH key, which
+        lives inside their logs. Get his logs from Anki's official setup app,
+        then drop the file here — we find the key and set him up for you.</div>
+
+      <div class="vec-steps" style="margin-top:14px">
+        <div class="vec-step"><span class="numdot">1</span><span>
+          Put Vector on his charger and <span class="key">double-press the back
+          button</span> until his face shows a setup screen.</span></div>
+        <div class="vec-step"><span class="numdot">2</span><span>
+          Open <a href="https://vector-web-setup.anki.bot/#" target="_blank"
+          rel="noopener">vector-web-setup.anki.bot</a> in <span class="key">Chrome</span>
+          and connect to Vector (it pairs over Bluetooth).</span></div>
+        <div class="vec-step"><span class="numdot">3</span><span>
+          Choose <span class="key">Save Logs</span> (a
+          <code>vector-logs-….tar.bz2</code> downloads).</span></div>
+        <div class="vec-step"><span class="numdot">4</span><span>
+          Come back here and drop that file below.</span></div>
+      </div>
+
+      <label id="dropZone" for="archiveFile"
+        style="display:block;margin-top:14px;padding:22px;border:2px dashed #3a3f4b;
+               border-radius:12px;text-align:center;cursor:pointer">
+        <div id="dropText">Drop the <code>.tar.bz2</code> here, or click to choose</div>
+        <input id="archiveFile" type="file"
+               accept=".bz2,.gz,.tar,.tgz,application/x-tar,application/gzip"
+               style="display:none">
+      </label>
+
+      <details style="margin-top:12px">
+        <summary class="hint" style="cursor:pointer">mDNS blocked? Enter his IP
+          (optional)</summary>
+        <input id="archiveIp" placeholder="192.168.1.42 (leave empty to auto-find)"
+               style="margin-top:8px">
+      </details>
+
+      <div id="archiveBar" class="hint" style="display:none"></div>
+      <div class="error" id="archiveErr" style="display:none"></div>
+      <button onclick="archiveProvision()" id="btnArchive" disabled>
+        SET UP FROM ARCHIVE →</button>
+
+      <details style="margin-top:14px">
+        <summary class="hint" style="cursor:pointer">Already extracted the key?
+          Paste it instead</summary>
+        <textarea id="archiveKeyBox" rows="5"
+          placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
+          style="width:100%;margin-top:8px;font-family:inherit;font-size:12px"></textarea>
+        <button class="secondary" onclick="archiveProvision(true)">USE PASTED KEY →</button>
+      </details>
+
+      <button class="secondary" onclick="chooseRoute(null)"
+        style="margin-top:6px">← BACK TO SETUP OPTIONS</button>
+    </div>
+
     <div class="card" id="wifiCard" style="display:none">
       <div class="steps">
         <div class="step-dot" id="dot0"></div>
@@ -354,7 +418,9 @@ function chooseRoute(route) {
   $("routeCard").style.display = route ? "none" : "";
   $("bleCard").style.display = route === "ble" ? "" : "none";
   $("wifiCard").style.display = route === "wifi" ? "" : "none";
+  $("archiveCard").style.display = route === "archive" ? "" : "none";
   if (route === "ble") bleStep(0);
+  if (route === "archive") wireArchiveInputs();
   if (!route) renderRoute();
 }
 
@@ -375,7 +441,12 @@ function renderRoute() {
       + `<div class="hint">One flow, from any starting point: we find Vector, `
       + `join him to Wi-Fi over Bluetooth if needed, and authorize — `
       + `<span class="key">nothing to type.</span></div>`
-      + `<button onclick="onboardStart()">CONNECT VECTOR →</button>`;
+      + `<button onclick="onboardStart()">CONNECT VECTOR →</button>`
+      + `<div class="hint" style="margin-top:16px;opacity:.8">Have an `
+      + `<span class="key">OSKR / dev</span> Vector already on Wi-Fi? Set him up `
+      + `from his log archive — no Bluetooth needed.</div>`
+      + `<button class="secondary" onclick="chooseRoute('archive')">`
+      + `OSKR ROBOT — SET UP FROM ARCHIVE →</button>`;
   }
   $("routeCard").innerHTML = html;
 }
@@ -488,6 +559,18 @@ async function refreshStatus() {
     if (r.pose) html += stat("Field pose",
                  `x ${r.pose.x} · y ${r.pose.y} · ${r.pose.deg}°`);
     $("statusGrid").innerHTML = html;
+    // Just set up (archive/OSKR) → the robot reboots ~40-60s and his face goes
+    // black; say so instead of a bare OFFLINE. Clears itself once he's back or
+    // the window passes.
+    if (window.rebootingUntil && Date.now() < window.rebootingUntil
+        && !(r.connected)) {
+      $("statusGrid").innerHTML +=
+        `<div class="hint" style="grid-column:1/-1;color:#f7b955">`
+        + `⏳ Vector was just set up and is <b>rebooting (~40–60s)</b>. A black `
+        + `face is normal — he comes online here on his own, don't touch him.</div>`;
+    } else if (window.rebootingUntil && r.connected) {
+      window.rebootingUntil = 0;
+    }
     // Actionable reason when the link is down (cert rotated / moved / unreachable).
     if (r.link_hint) {
       const rePair = r.link_hint_kind === "cert_rotated";
@@ -994,6 +1077,130 @@ function bleStepShow(name) {
 }
 function bleRestart() { api("/api/ble/disconnect", {}); bleStep(0); $("bleList").innerHTML=""; }
 
+// ---- OSKR archive upload (no BLE) --------------------------------------
+function wireArchiveInputs() {
+  const inp = $("archiveFile"), zone = $("dropZone"), btn = $("btnArchive");
+  if (!inp || inp._wired) return;
+  inp._wired = true;
+  function setFile(f) {
+    window.archiveFileObj = f || null;
+    $("dropText").innerHTML = f
+      ? `Selected: <span class="key">${f.name}</span> (${Math.round(f.size/1024)} KB)`
+      : `Drop the <code>.tar.bz2</code> here, or click to choose`;
+    btn.disabled = !f;
+  }
+  inp.addEventListener("change", () => setFile(inp.files[0]));
+  ["dragover","dragenter"].forEach(ev => zone.addEventListener(ev, e => {
+    e.preventDefault(); zone.style.borderColor = "#4ade80"; }));
+  ["dragleave"].forEach(ev => zone.addEventListener(ev, e => {
+    e.preventDefault(); zone.style.borderColor = "#3a3f4b"; }));
+  zone.addEventListener("drop", e => {
+    e.preventDefault(); zone.style.borderColor = "#3a3f4b";
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]);
+  });
+  $("archiveKeyBox").addEventListener("input", () => {
+    if ($("archiveKeyBox").value.includes("PRIVATE KEY")) btn.disabled = false;
+  });
+}
+
+async function archiveProvision(usePasted) {
+  $("archiveErr").style.display = "none";
+  const btn = $("btnArchive"), bar = $("archiveBar");
+  const pasted = ($("archiveKeyBox").value || "").trim();
+  const file = window.archiveFileObj;
+  if (usePasted && !pasted.includes("PRIVATE KEY")) {
+    $("archiveErr").style.display = ""; $("archiveErr").textContent =
+      "That doesn't look like a private key — it starts with '-----BEGIN'."; return;
+  }
+  if (!usePasted && !file) {
+    $("archiveErr").style.display = ""; $("archiveErr").textContent =
+      "Choose Vector's log archive first (the .tar.bz2 from Save Logs)."; return;
+  }
+  btn.disabled = true;
+  bar.style.display = "";
+  bar.innerHTML = `<span class="spin">◌</span> `
+    + (usePasted ? `checking the key…` : `reading the archive & finding Vector…`)
+    + `<div class="hint">Detecting his key, locating him on Wi-Fi, then one reboot.</div>`;
+  const fd = new FormData();
+  if (usePasted) fd.append("ssh_key", pasted);
+  else fd.append("archive", file, file.name);
+  const ipv = ($("archiveIp").value || "").trim();
+  if (ipv) fd.append("ip", ipv);
+  let res;
+  try {
+    const r = await fetch("/api/provision_oskr_archive", {method:"POST", body:fd});
+    const txt = await r.text();
+    try { res = JSON.parse(txt); }
+    catch { res = {ok:false, error:`server error (${r.status}): ${txt.slice(0,180)}`}; }
+  } catch (e) { res = {ok:false, error:String(e)}; }
+  if (!res.ok) {
+    bar.style.display = "none";
+    $("archiveErr").style.display = ""; $("archiveErr").textContent = res.error;
+    btn.disabled = false;
+    return;
+  }
+  if (!res.already) window.rebootingUntil = Date.now() + 80000;
+  bar.innerHTML = `<span class="ok">Done ✓ ${res.message}</span>`
+    + `<div style="margin-top:12px"><button onclick="showTab('dash')">`
+    + `GO TO DASHBOARD →</button></div>`;
+  $("archiveErr").style.display = "none";
+}
+
+// archive upload INSIDE the BLE "Set up" step (IP already known from BLE)
+function wireOskrArchive() {
+  const inp = $("oskrArchiveFile"), zone = $("oskrDrop"), btn = $("btnOskr");
+  if (!inp || inp._wired) return;
+  inp._wired = true;
+  function setFile(f) {
+    window.oskrArchiveObj = f || null;
+    $("oskrDropText").innerHTML = f
+      ? `Selected: <span class="key">${f.name}</span> (${Math.round(f.size/1024)} KB)`
+      : `Drop the <code>.tar.bz2</code> here, or click to choose`;
+    btn.disabled = !f;
+  }
+  inp.addEventListener("change", () => setFile(inp.files[0]));
+  ["dragover","dragenter"].forEach(ev => zone.addEventListener(ev, e => {
+    e.preventDefault(); zone.style.borderColor = "#4ade80"; }));
+  zone.addEventListener("dragleave", e => {
+    e.preventDefault(); zone.style.borderColor = "#3a3f4b"; });
+  zone.addEventListener("drop", e => {
+    e.preventDefault(); zone.style.borderColor = "#3a3f4b";
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]);
+  });
+}
+
+async function bleOskrArchive() {
+  const f = window.oskrArchiveObj;
+  if (!f) return;
+  $("provErr").style.display = "none";
+  $("btnOskr").disabled = true;
+  $("oskrBar").style.display = "";
+  $("oskrBar").innerHTML = `<span class="spin">◌</span> reading the archive & `
+    + `setting up…<div class="hint">Detecting his key, then one reboot — keep `
+    + `him on the charger.</div>`;
+  const fd = new FormData();
+  fd.append("archive", f, f.name);
+  if (window.foundIp) fd.append("ip", window.foundIp);
+  let res;
+  try {
+    const r = await fetch("/api/provision_oskr_archive", {method:"POST", body:fd});
+    const t = await r.text();
+    try { res = JSON.parse(t); }
+    catch { res = {ok:false, error:`server error (${r.status}): ${t.slice(0,160)}`}; }
+  } catch (e) { res = {ok:false, error:String(e)}; }
+  if (!res.ok) {
+    $("oskrBar").style.display = "none";
+    $("provErr").style.display = ""; $("provErr").textContent = res.error;
+    $("btnOskr").disabled = false;
+    return;
+  }
+  if (!res.already) window.rebootingUntil = Date.now() + 80000;
+  $("oskrBar").innerHTML = `<span class="ok">Done ✓ ${res.message}</span>`;
+  $("provBody").innerHTML += res.already
+    ? `<button onclick="showTab('dash')">GO TO DASHBOARD →</button>`
+    : `<button onclick="bleRestart()">RECONNECT WHEN HE'S BACK (~40s) →</button>`;
+}
+
 // ---- provisioning: make the robot's cloud point at wire-pod ---------------
 // Runs right after the BLE PIN, when we can read the firmware string. A stock
 // robot needs the escape-pod firmware flashed (one time, then any Wi-Fi works);
@@ -1101,24 +1308,46 @@ async function bleProvisionOskr(tryLogs) {
   clearInterval(tick);
   if (!res.ok) {
     $("oskrBar").style.display = "none";
+    // No live BLE session — this OSKR robot is already on Wi-Fi and doesn't
+    // need Bluetooth at all. Send them straight to the BLE-free archive path
+    // (which has its own IP field), instead of a dead-end red error.
+    if (/no BLE session/i.test(res.error || "")) {
+      chooseRoute("archive");
+      return;
+    }
     $("provErr").style.display = "";
     $("provErr").textContent = res.error;
     if (res.needs_key) {
-      // OSKR owners have this key already — asking is far kinder than a
-      // 149k-packet log download. The log route stays as a fallback.
+      // Reliable OSKR route: drop his log archive from the official Save Logs
+      // (Chrome sustains that full download; our BLE one stalls on long
+      // transfers — see docs/BLE_PROTOCOL_OFFICIAL.md). We detect the key inside.
       $("provBody").innerHTML =
-        `<div class="hint">Paste Vector's <span class="key">SSH private key</span>. `
-        + `OSKR robots ship with one — it's in the log bundle you downloaded when `
-        + `you set him up (<code>data/ssh/id_rsa_Vector-XXXX</code>), or wherever `
-        + `you saved it. It stays on this Mac.</div>`
-        + `<textarea id="sshKeyBox" rows="6" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
-                     style="width:100%;font-family:inherit;font-size:12px"></textarea>`
+        `<div class="hint">This is a <span class="key">dev (OSKR)</span> Vector — `
+        + `he grants access with his own SSH key, which lives inside his logs.</div>`
+        + `<div class="vec-step" style="margin-top:10px"><span class="numdot">1</span>`
+        + `<span>Get his logs from the <a href="https://vector-web-setup.anki.bot/#" `
+        + `target="_blank" rel="noopener">official Vector setup app</a> → `
+        + `<span class="key">Save Logs</span> (a <code>.tar.bz2</code> downloads).`
+        + `</span></div>`
+        + `<div class="vec-step"><span class="numdot">2</span><span>Drop that file `
+        + `here — we detect the key inside.</span></div>`
+        + `<label id="oskrDrop" for="oskrArchiveFile" style="display:block;`
+        + `margin-top:12px;padding:20px;border:2px dashed #3a3f4b;border-radius:12px;`
+        + `text-align:center;cursor:pointer"><div id="oskrDropText">Drop the `
+        + `<code>.tar.bz2</code> here, or click to choose</div>`
+        + `<input id="oskrArchiveFile" type="file" accept=".bz2,.gz,.tar,.tgz" `
+        + `style="display:none"></label>`
         + `<div id="oskrBar" class="hint" style="display:none"></div>`
-        + `<button onclick="bleProvisionOskr()" id="btnOskr">USE THIS KEY →</button>`
-        + `<button class="secondary" onclick="bleProvisionOskr(true)">`
-        + `I DON'T HAVE IT — TRY HIS LOGS</button>`
-        + `<div class="hint">Pulling it from his logs works without a key, but `
-        + `Bluetooth is slow — expect several minutes.</div>`;
+        + `<button onclick="bleOskrArchive()" id="btnOskr" disabled>`
+        + `SET UP FROM ARCHIVE →</button>`
+        + `<details style="margin-top:12px"><summary class="hint" `
+        + `style="cursor:pointer">Already have the key text? Paste it instead`
+        + `</summary><textarea id="sshKeyBox" rows="5" `
+        + `placeholder="-----BEGIN OPENSSH PRIVATE KEY-----" style="width:100%;`
+        + `margin-top:8px;font-family:inherit;font-size:12px"></textarea>`
+        + `<button class="secondary" onclick="bleProvisionOskr()">USE PASTED KEY →`
+        + `</button></details>`;
+      setTimeout(wireOskrArchive, 0);
       return;
     }
     if (res.needs_flash) {
@@ -1141,9 +1370,11 @@ async function bleProvisionOskr(tryLogs) {
     }
     return;
   }
+  if (!res.already) window.rebootingUntil = Date.now() + 80000;
   $("oskrBar").innerHTML = `<span class="ok">Done ✓ ${res.message}</span>`;
-  $("provBody").innerHTML +=
-    `<button onclick="bleRestart()">START OVER WHEN HE'S BACK →</button>`;
+  $("provBody").innerHTML += res.already
+    ? `<button onclick="showTab('dash')">GO TO DASHBOARD →</button>`
+    : `<button onclick="bleRestart()">RECONNECT WHEN HE'S BACK (~40s) →</button>`;
 }
 
 async function bleFlashEp() {

@@ -104,6 +104,41 @@ def extract_ssh_key(bundle: bytes) -> str | None:
     return None
 
 
+def extract_key_and_name(bundle: bytes) -> tuple[str | None, str | None]:
+    """Pull the private key AND the robot's short code out of a log bundle.
+
+    The key lives at `data/ssh/id_rsa_Vector-XXXX`; the `XXXX` identifies the
+    robot, which lets us find him on the LAN by mDNS (`discovery.discover`)
+    without a BLE session — the whole point of the archive-upload path. Returns
+    (key_text, robot_code) with robot_code like "X1W8" (or None if not parseable).
+    """
+    import io
+    import re
+    import tarfile
+
+    for opener in ("r:*", "r"):
+        try:
+            with tarfile.open(fileobj=io.BytesIO(bundle), mode=opener) as tf:
+                for member in tf.getmembers():
+                    name = member.name.replace("\\", "/")
+                    if "/ssh/" not in f"/{name}" and not name.startswith("ssh/"):
+                        continue
+                    base = name.rsplit("/", 1)[-1]
+                    if not base.startswith("id_") or base.endswith(".pub"):
+                        continue
+                    f = tf.extractfile(member)
+                    if not f:
+                        continue
+                    data = f.read().decode("utf-8", "replace")
+                    if "PRIVATE KEY" not in data:
+                        continue
+                    mm = re.search(r"Vector[-_ ]?([A-Za-z0-9]{4})", base)
+                    return data, (mm.group(1) if mm else None)
+        except tarfile.TarError:
+            continue
+    return None, None
+
+
 def save_ssh_key(key_text: str, dest: Path) -> Path:
     dest.parent.mkdir(parents=True, exist_ok=True)
     if not key_text.endswith("\n"):
@@ -120,6 +155,62 @@ def ssh_reachable(ip: str, key: str) -> bool:
          f"root@{ip}", "echo ok"],
         capture_output=True, text=True)
     return p.returncode == 0 and "ok" in p.stdout
+
+
+def _ssh_probe(ip: str, key: str, connect_timeout: int = 3) -> bool:
+    """Fast, quiet 'does this host accept our key?' probe for subnet scanning.
+    Uses a short ConnectTimeout (the normal 25 s is far too slow for a /24)."""
+    p = subprocess.run(
+        ["ssh", "-i", key,
+         "-o", f"ConnectTimeout={connect_timeout}",
+         "-o", "PubkeyAcceptedAlgorithms=+ssh-rsa",
+         "-o", "HostkeyAlgorithms=+ssh-rsa",
+         "-o", "StrictHostKeyChecking=no",
+         "-o", "UserKnownHostsFile=/dev/null",
+         "-o", "BatchMode=yes",
+         f"root@{ip}", "echo ok"],
+        capture_output=True, text=True)
+    return p.returncode == 0 and "ok" in p.stdout
+
+
+def find_robot_ip(key: str) -> str | None:
+    """Auto-locate the robot on the LAN with NO mDNS: the robot is simply the
+    host that accepts our SSH key. Ping-sweep this Mac's /24, then SSH-probe the
+    live hosts in parallel and return the first that authenticates. This is the
+    fallback for repeater/mesh Wi-Fi where mDNS multicast is dropped.
+    """
+    import concurrent.futures
+    import ipaddress
+
+    base = lan_ip()
+    if not base:
+        return None
+    try:
+        net = ipaddress.ip_network(f"{base}/24", strict=False)
+    except ValueError:
+        return None
+    hosts = [str(h) for h in net.hosts()]
+
+    def ping(ip: str) -> str | None:
+        r = subprocess.run(["ping", "-c", "1", "-W", "700", ip],
+                           capture_output=True)
+        return ip if r.returncode == 0 else None
+
+    live: list[str] = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=64) as ex:
+        for res in ex.map(ping, hosts):
+            if res:
+                live.append(res)
+    # Probe the Mac's own IP last-ish is irrelevant; just scan live hosts.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=24) as ex:
+        futs = {ex.submit(_ssh_probe, ip, key): ip for ip in live}
+        for fut in concurrent.futures.as_completed(futs):
+            try:
+                if fut.result():
+                    return futs[fut]
+            except Exception:
+                pass
+    return None
 
 
 def ssh(ip: str, key: str, cmd: str, timeout: int = 60) -> tuple[int, str]:
@@ -152,7 +243,23 @@ def provision(ip: str, key: str, host_mode: str, reboot: bool = True) -> None:
         raise SystemExit(f"wire-pod cert not found at {WIREPOD_CERT} — start "
                          "vectar-onboard once so it generates certs/cert.crt")
     cfg = server_config(host_mode)
-    print(f"server_config -> {json.loads(cfg)['chipper']}")
+    target_chipper = json.loads(cfg)["chipper"]
+    print(f"server_config -> {target_chipper}")
+
+    # Idempotent: if he already points at wire-pod with the cert in place, don't
+    # rewrite + reboot — a needless ~40 s round-trip that looks like a loop. This
+    # is the common case for a robot we set up earlier.
+    rc, cur = ssh(ip, key, f"cat {ROBOT_SERVER_CONFIG} 2>/dev/null")
+    same_cloud = False
+    if rc == 0 and cur.strip():
+        try:
+            same_cloud = json.loads(cur).get("chipper", "") == target_chipper
+        except Exception:
+            same_cloud = False
+    _, cert_ok = ssh(ip, key, f"test -s {ROBOT_CERT} && echo YES || echo NO")
+    if same_cloud and "YES" in cert_ok:
+        print("already pointed at wire-pod — nothing to change, no reboot.")
+        return "already"
 
     # rootfs is ro; open one rw window for both writes.
     rc, out = ssh(ip, key, "mount -o remount,rw / && echo RW_OK")
@@ -185,6 +292,7 @@ def provision(ip: str, key: str, host_mode: str, reboot: bool = True) -> None:
             pass
         print("done — wait ~40 s, then run the pairing wizard "
               "(wire-pod must be running).")
+    return "provisioned"
 
 
 def main() -> int:

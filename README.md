@@ -25,7 +25,7 @@ fallback game:
 
 | Thing | Notes |
 |---|---|
-| Anki / DDL **Vector** robot (1.0 or 2.0) | stock is fine — the pairing wizard onboards him for you (built on [wire-pod](https://github.com/kercre123/wire-pod), the community standard since the official cloud shut down) |
+| Anki / DDL **Vector** robot (1.0 or 2.0) | the pairing wizard onboards him for you, built on [wire-pod](https://github.com/kercre123/wire-pod) (the community standard since the official cloud shut down). Verified on OSKR/dev units; the stock-firmware route is built but **not yet hardware-verified** — see [Project status](#project-status) |
 | **Snap Spectacles (2024)** | + [Lens Studio 5.15](https://ar.snap.com/download) on your Mac |
 | A **Mac** | Python 3.12; runs the game server |
 | One **Wi-Fi network** | Mac + robot + Spectacles all on the same LAN |
@@ -63,11 +63,40 @@ glowing pad facing you, press the arcade START button. First to 5 wins —
 Vector celebrates or grieves accordingly.
 [docs/GAMEPLAY.md](docs/GAMEPLAY.md) has the details.
 
+## Project status
+
+The game, the lens and the bridge run. What varies is the **one-time robot
+onboarding**, and the two robot types are independent tracks:
+
+- **OSKR / dev Vector** — working today. SSH auto-detect, and the log-archive
+  route (drop the archive from Anki's setup app; the wizard finds the SSH key
+  inside it and locates the robot on your LAN by itself) are **verified
+  end-to-end on hardware**.
+- **Stock (consumer) Vector** — Bluetooth pairing, the PIN handshake and Wi-Fi
+  join are verified on hardware; the **escape-pod firmware install is built but
+  not yet run on a stock test unit**. If you're early here, an issue with the
+  exact wizard message is the fastest way to get it proven.
+- **One known open item** — a robot that has been **factory-reset / Clear User
+  Data** loses its SDK control token, and re-minting that locally isn't solved
+  yet. It does **not** affect a robot already running with wire-pod. Full
+  diagnosis and next steps: [PAIRING_86_DEEPDIVE](docs/PAIRING_86_DEEPDIVE.md).
+
+**Context, so the gaps make sense:** this was built against a single OSKR Vector
+that was *already connected and already running on wire-pod*. The game grew on
+top of a working robot — which is why the "already provisioned" paths are the
+well-trodden ones and the from-scratch onboarding half is the newer, less-proven
+side. It's being closed in the open rather than papered over.
+
+Details and the risk notes worth reading before you flash anything:
+[SETUP_ROBOT → Status & risks](docs/SETUP_ROBOT.md#status--risks-read-before-you-start).
+
 ## Documentation
 
 - [ARCHITECTURE](docs/ARCHITECTURE.md) — how the three machines share one game
-- [SETUP_ROBOT](docs/SETUP_ROBOT.md) — **start here**: what the wizard does for a stock vs OSKR robot, and the one-time setup each needs
+- [SETUP_ROBOT](docs/SETUP_ROBOT.md) — **start here**: what the wizard does for a stock vs OSKR robot, the one-time setup each needs, and the status/risk notes
 - [PAIRING](docs/PAIRING.md) — robot setup internals: wire-pod, the cert/guid mint
+- [PAIRING_86_DEEPDIVE](docs/PAIRING_86_DEEPDIVE.md) — the open token item: full reverse-engineering log, what's proven, what's next
+- [BLE_PROTOCOL_OFFICIAL](docs/BLE_PROTOCOL_OFFICIAL.md) — byte-level spec of Anki's BLE onboarding protocol, from the official setup app
 - [SERVER](docs/SERVER.md) — install, config, goalie tuning, troubleshooting
 - [LENS](docs/LENS.md) — Lens Studio project setup + optional voice agent
 - [PROTOCOL](docs/PROTOCOL.md) — the WebSocket protocol between lens and server
