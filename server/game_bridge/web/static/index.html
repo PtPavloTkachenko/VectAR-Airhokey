@@ -172,16 +172,20 @@
     <div class="card">
       <h2>Project status</h2>
       <div class="hint">
-        <b>Spectacles ↔ this server — verified live on device.</b> The lens runs
-        on Spectacles and its WebSocket link is tested end-to-end: surface
-        calibration, AR field, puck physics, scoring.<br><br>
-        <b>Server ↔ robot — the open leg.</b> The SDK layer (wheels, head, eyes,
-        faces, voice, goalie AI, safety) is written but hasn't driven a live
-        robot from this build yet. That's deliberate: the test robot was
-        <span class="key">factory-reset on purpose</span> so the out-of-the-box
-        onboarding — what a new owner actually goes through — could be built and
-        proven instead of assumed. Getting a wiped robot back to SDK control is
-        the piece still being worked out.<br><br>
+        <b>The full chain — Spectacles → this server → a real Vector driving —
+        has been demonstrated end-to-end in two earlier builds.</b> The goalie
+        drove, blocked and talked. That capability isn't the open question.<br><br>
+        What's in progress is deliberate: the test robot was
+        <span class="key">factory-reset on purpose</span> to build the
+        out-of-the-box path — what setting up a robot from scratch actually looks
+        like. The goal is to <b>automate that onboarding</b>: turn a day of manual
+        SSH, certs, cloud config and token wrangling into a few clicks, so this
+        and future robot projects get a Vector online in minutes.<br><br>
+        <b>Spectacles ↔ this server</b> — verified live on device: surface
+        calibration, AR field, puck physics, scoring.<br>
+        <b>Server ↔ robot</b> — proven in the earlier builds; from <i>this</i>
+        build against a freshly-wiped robot, the final step (re-establishing the
+        SDK control token) is what the automation still has to solve.<br><br>
         <b>Setup, per robot type</b> — two independent tracks:<br>
         · <span class="key">OSKR / dev</span> — SSH and the log-archive route are
           verified end-to-end on hardware.<br>
