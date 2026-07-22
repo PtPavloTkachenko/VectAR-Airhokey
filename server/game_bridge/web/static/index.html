@@ -168,6 +168,32 @@
         4 · Calibrate the surface with your hand, place Vector on the glowing mark, press START.
       </div>
     </div>
+    <!-- Honest project status, visible to anyone running the server. -->
+    <div class="card">
+      <h2>Project status</h2>
+      <div class="hint">
+        The lens, this server and the game loop run — the field above is playable
+        with a mouse today. <span class="key">The robot-control link has not yet
+        been brought up end-to-end in this build</span>: the SDK layer (wheels,
+        head, eyes, faces, voice, goalie AI, safety) is written but hasn't driven
+        a live robot from this codebase yet. That first connection is the current
+        milestone.<br><br>
+        <b>Setup, per robot type</b> — two independent tracks:<br>
+        · <span class="key">OSKR / dev</span> — SSH and the log-archive route are
+          verified end-to-end on hardware.<br>
+        · <span class="key">Stock</span> — Bluetooth pairing, PIN and Wi-Fi are
+          verified; the escape-pod firmware install is built but not yet run on a
+          stock unit. It's a real OTA — keep him on the charger, don't interrupt.<br>
+        · <span style="color:#f7b955">⚠ A factory-reset / Clear-User-Data robot
+          loses its SDK control token; re-minting it locally is the one open
+          item. A robot already running with wire-pod keeps its token and is
+          unaffected.</span><br><br>
+        Context: this grew on a single OSKR Vector that was <i>already</i> connected
+        and running on wire-pod — which is why the "already provisioned" paths are
+        the well-trodden ones. Details:
+        <code>docs/SETUP_ROBOT.md</code> → Status &amp; risks.
+      </div>
+    </div>
   </div>
 
   <!-- ============ PAIRING WIZARD ============ -->
@@ -446,7 +472,18 @@ function renderRoute() {
       + `<span class="key">OSKR / dev</span> Vector already on Wi-Fi? Set him up `
       + `from his log archive — no Bluetooth needed.</div>`
       + `<button class="secondary" onclick="chooseRoute('archive')">`
-      + `OSKR ROBOT — SET UP FROM ARCHIVE →</button>`;
+      + `OSKR ROBOT — SET UP FROM ARCHIVE →</button>`
+      // Honest per-track status, right where the choice is made.
+      + `<div class="hint" style="margin-top:20px;border-top:1px solid var(--line);`
+      + `padding-top:14px;opacity:.85"><b>Where each path stands</b><br>`
+      + `<span class="key">OSKR / dev</span> — SSH and the archive route are `
+      + `verified end-to-end on hardware.<br>`
+      + `<span class="key">Stock</span> — Bluetooth pairing, PIN and Wi-Fi are `
+      + `verified; the firmware install is built but <b>not yet run on a stock `
+      + `unit</b>. Keep him on the charger and don't interrupt it.<br>`
+      + `<span style="color:#f7b955">⚠ A robot that was factory-reset / Clear `
+      + `User Data loses its SDK control token — re-minting it locally is the `
+      + `one open item.</span></div>`;
   }
   $("routeCard").innerHTML = html;
 }
