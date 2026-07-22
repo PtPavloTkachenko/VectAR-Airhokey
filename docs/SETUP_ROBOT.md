@@ -139,16 +139,23 @@ wipe the robot and expect to re-pair from zero.
 
 This was developed against a **single OSKR Vector that was already connected and
 already running on wire-pod** — the robot came into the project set up, and the
-game, the lens and the bridge were built on top of that. The Spectacles side is
-proven from that era: the lens and its link to the server are verified live on
-device, not just in the console.
+game, the lens and the bridge were built on top of that. **The full chain
+(Spectacles → server → a real Vector driving) has been demonstrated end-to-end in
+two earlier builds** — the goalie drove, blocked and talked. The Spectacles side
+is verified live on device, not just in the console.
 
 That history is why the "robot is already provisioned" paths are the well-trodden
-ones. To fix the other half, the test robot was then **factory-reset on purpose**
-— so the *out-of-the-box* experience a new owner actually gets could be built and
-proven rather than assumed. That reset is why the from-scratch side (stock
-firmware install, and getting a wiped robot back to SDK control) is the newer,
-less-proven half, and why it's being closed in the open rather than claimed done.
+ones — and why the from-scratch path needed deliberate attention. So the test
+robot was **factory-reset on purpose**, to build the *out-of-the-box* experience
+a new owner actually gets instead of assuming it.
+
+**The point of the current work is automation.** Getting that robot online used
+to mean a day of manual SSH, cert juggling, cloud-config edits and token
+wrangling. The goal is to compress that into a few clicks in the wizard, so this
+project — and the next robot project after it — starts with a Vector online in
+minutes. The wipe is what exposes the last rough edge (re-establishing the SDK
+control token), and that's what's being finished in the open rather than claimed
+done.
 
 Nothing here needs a terminal. If a step ever tells you to run a command, that's
 a bug — please report it.

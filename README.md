@@ -65,20 +65,31 @@ Vector celebrates or grieves accordingly.
 
 ## Project status
 
-Two of the three legs are proven on real hardware:
+**The full chain — Spectacles → this server → a real Vector driving — has been
+demonstrated end-to-end in two earlier builds.** The goalie drove, blocked, and
+talked; the AR field and the robot ran as one game. That capability isn't the
+open question.
+
+What's in progress is deliberate and different. The test robot was
+**factory-reset on purpose** to build the *out-of-the-box* path — what someone
+setting up a robot from scratch actually goes through. The goal is to
+**automate that onboarding**: turn a day of manual SSH, certs, cloud config and
+token wrangling into a few clicks, so this and future robot projects can get a
+Vector online in minutes. This repo is where that automation is being built, and
+the wipe is what exposes the remaining rough edge.
+
+Where each piece stands today:
 
 - **Spectacles ↔ server — verified live on device.** The lens runs on Spectacles
   and its WebSocket link to this server is tested end-to-end: surface
   calibration, the AR field, puck physics and scoring.
-- **Server ↔ robot — the open leg.** The SDK control layer is written (wheels,
-  head, eyes, faces, voice, goalie AI, safety) but **has not yet driven a live
-  robot from this codebase**. That's deliberate: the test robot was
-  **factory-reset on purpose** so the *out-of-the-box* onboarding — what a new
-  owner actually goes through — could be built and proven rather than assumed.
-  Getting a wiped robot all the way back to SDK control is the piece still being
-  worked out, and it's the current milestone.
+- **Server ↔ robot — proven in the earlier builds; being re-established through
+  the new automated path.** The SDK control layer is written and has driven a
+  real robot (wheels, head, eyes, faces, voice, goalie AI, safety). From *this*
+  build, against a freshly-wiped robot, the final step — re-establishing the SDK
+  control token — is what the automation still has to solve.
 
-Onboarding splits into two independent tracks:
+The onboarding automation splits into two independent tracks:
 
 - **OSKR / dev Vector** — working today. SSH auto-detect, and the log-archive
   route (drop the archive from Anki's setup app; the wizard finds the SSH key
