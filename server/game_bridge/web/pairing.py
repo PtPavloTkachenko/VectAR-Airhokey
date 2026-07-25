@@ -229,12 +229,25 @@ def mint_guid(cert: bytes, ip: str, name: str) -> bytes:
             # is what the SDK's own configure tool sends.
             user_session_id=b"2vMhFgktH3Jrbemm2WHkfGN",
             client_name=socket.gethostname().encode("utf-8"))
-        response = interface.UserAuthentication(request)
+        # The deadline is not optional. The gateway hands this call to
+        # vic-cloud, and vic-cloud dies of its own accord on these robots (it
+        # panics when its token server can't be resolved). The TCP channel
+        # stays up, so without a deadline this waits forever and the wizard
+        # hangs with no error at all — seen live, 2026-07-25.
+        response = interface.UserAuthentication(request, timeout=30)
     except grpc.RpcError as e:
+        code = e.code().name if hasattr(e, "code") else str(e)
+        if code == "DEADLINE_EXCEEDED":
+            raise PairingError(
+                STEP_AUTH,
+                "The robot accepted the connection but never answered the "
+                "authentication call. That is his cloud process being dead "
+                "(fault 923) rather than anything about this Mac — restart "
+                "him, and if it keeps happening let setup clear his queued "
+                "fault reports.")
         raise PairingError(
             STEP_AUTH,
-            "The robot refused the authentication call "
-            f"({e.code().name if hasattr(e, 'code') else e}). Usually this "
+            f"The robot refused the authentication call ({code}). Usually this "
             "means the robot can't reach ITS token server — is wire-pod "
             "running, and did THIS wire-pod onboard the robot?")
     if response.code != messaging.protocol.UserAuthenticationResponse.AUTHORIZED:

@@ -67,17 +67,51 @@ holds a session certificate for his serial and pairing mints the SDK guid.
 If wire-pod already holds a certificate for that serial from an earlier setup,
 the BLE step can be skipped and pairing goes straight through.
 
-## Not needed for any of this: signing an OTA
+## Signing your own OTA: no Anki key required
 
-There is a separate, unfinished ambition — building a custom OSKR OS and
-installing it over BLE `OTAStart`. It is blocked on a usable `ota_prod.key`
-(the published copy is passphrase-encrypted; the host that served an
-unencrypted one is down). None of that is on the path to a working robot, and
-nothing above depends on it. What was verified, for whoever picks it up:
+Not needed to get a robot working — everything above is enough — but worth
+recording, because we spent a long time believing this was blocked.
 
-- the community `ota_prod.pub` verifies a known-good `oskr` OTA, so an OTA
-  signed with that key would be accepted;
-- an `ankidev` robot rejects a production image on the build type (die 214),
-  not on the transport — `OTAStart` itself works;
-- wire-os authorizes a key we hold, so its `dev.ota` only needs its
-  `manifest.ini` signed, not re-encrypted.
+`/anki/bin/update-engine` is a readable Python script on the robot, and it
+accepts **user-supplied signing keys**:
+
+```python
+pub_key_paths = [OTA_PUB_KEY]                     # /anki/etc/ota.pub
+if os.path.isdir("/data/etc/ota_keys"):
+    for user_key in glob.glob("/data/etc/ota_keys/*.pub"):
+        pub_key_paths.append(user_key)
+```
+
+So the hunt for a private `ota_prod.key` was chasing the wrong thing. Generate
+a keypair, drop the public half into `/data/etc/ota_keys/` (one SSH write),
+sign your `manifest.ini` with the private half, and the robot installs the
+image. Boot and recovery partitions stay off limits to user keys (die 217);
+ordinary system updates do not.
+
+The rest of what the script settles:
+
+| Rule | Detail |
+|---|---|
+| Build type | `ankidev` OS installs only `ankidev` images, and vice versa (die 214) — symmetric, and about the manifest field, not the version string |
+| Version suffixes | the accepted set is `d`, `ud`, `oskr`, `ep`, `epdev` — which is why classification keys off `oskr`, not `ankidev` |
+| Encryption | fixed passphrase file `/anki/etc/ota.pas`; images are `aes-256-ctr` |
+| Downgrade | allowed on a dev robot via `UPDATE_ENGINE_ALLOW_DOWNGRADE` |
+
+## When he will not mint: fault 923
+
+Seen live, and it feeds itself:
+
+1. a queued report in `/data/fault-reports/` gets picked up for upload;
+2. the log collector asks vic-cloud for STS credentials;
+3. vic-cloud cannot resolve its token server for a moment — at boot the name
+   is not answerable until avahi is up;
+4. the failed lookup returns nil, vic-cloud dereferences it and dies
+   (`internal/token/sts.go:71`, SIGSEGV);
+5. the robot raises fault 923 and queues another report.
+
+With vic-cloud dead the gateway still accepts TCP and still answers
+unauthenticated calls, but never answers an authentication call — so minting
+hangs rather than failing, which is what made this so hard to see. Setup now
+pins the name in `/etc/hosts` so the lookup cannot fail at boot, masks the two
+uploaders (they ship to an Anki bucket that has been gone for years), clears
+the queue, and pairing carries a deadline so a dead cloud reports itself.

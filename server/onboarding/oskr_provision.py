@@ -278,6 +278,85 @@ def put(ip: str, key: str, content: str, dest: str, mode: str = "0644") -> None:
         raise RuntimeError(f"write {dest} failed: {p.stderr.strip()}")
 
 
+def _write_host_pin(ip: str, key: str, host: str) -> None:
+    """Point `host` at this Mac's current address in the robot's /etc/hosts.
+
+    Both halves of this matter. Leaving an OLD pin is how the robot spent weeks
+    talking to an address nobody answers on: the Mac took a new DHCP lease,
+    /etc/hosts is consulted before mDNS, and resolution kept "succeeding". But
+    having no pin is worse — for the first seconds after boot the name does not
+    resolve at all while avahi comes up, and vic-cloud does not survive that: a
+    failed lookup returns nil, it dereferences it, and the process dies with
+    fault 923 before anything can be minted. So: strip whatever is there and
+    write today's address, every run.
+
+    Assumes the caller holds the rootfs rw.
+    """
+    if not host.endswith(".local"):
+        # An IP target needs no name at all; just clear stale pins.
+        ssh(ip, key, "grep -vE '(wirepod|escapepod)\\.local' /etc/hosts "
+                     "> /tmp/h; cat /tmp/h > /etc/hosts; rm -f /tmp/h")
+        return
+    ssh(ip, key,
+        "grep -vE '(wirepod|escapepod)\\.local' /etc/hosts > /tmp/h; "
+        f"echo '{lan_ip()} {host}' >> /tmp/h; "
+        "cat /tmp/h > /etc/hosts; rm -f /tmp/h")
+
+
+def refresh_host_pin(ip: str, key: str, host: str) -> str:
+    """_write_host_pin on a robot we are not otherwise touching. Returns note."""
+    _, cur = ssh(ip, key, f"grep -E '{host}' /etc/hosts 2>/dev/null | head -1")
+    want = f"{lan_ip()} {host}"
+    if cur.strip() == want:
+        return ""
+    rc, out = ssh(ip, key, "mount -o remount,rw / && echo RW_OK")
+    if "RW_OK" not in out:
+        return "could not refresh the host pin (rootfs stayed read-only)"
+    try:
+        _write_host_pin(ip, key, host)
+    finally:
+        ssh(ip, key, "mount -o remount,ro /")
+    return f"host pin -> {want}"
+
+
+def quiet_cloud_uploaders(ip: str, key: str) -> str:
+    """Stop the robot from killing his own cloud process. Returns what changed.
+
+    Chain seen live on 2026-07-25, and it feeds itself:
+
+      the robot queues a fault report -> something asks him to upload it ->
+      the log collector asks vic-cloud for STS credentials -> vic-cloud can't
+      resolve its token server for a moment -> the failed lookup returns nil
+      and vic-cloud dereferences it -> SIGSEGV, vic-cloud dead -> the robot
+      raises fault 923 and queues ANOTHER report.
+
+    With vic-cloud dead the gateway still accepts connections but never answers
+    an authentication call, so minting hangs with no error. The uploaders exist
+    to ship logs to an Anki S3 bucket that has been gone for years, so nothing
+    is lost by stopping them, and the queued reports are what keeps re-arming
+    the crash.
+    """
+    changed = []
+    _, queued = ssh(ip, key, "ls /data/fault-reports/ 2>/dev/null | wc -l")
+    if (queued.strip() or "0") != "0":
+        ssh(ip, key, "rm -f /data/fault-reports/*")
+        changed.append(f"cleared {queued.strip()} queued fault report(s)")
+    for unit in ("vic-log-uploader", "vic-crashuploader"):
+        # Mask, not disable: these units are pulled in by anki-robot.target, so
+        # `disable` leaves them startable and `is-enabled` keeps reporting
+        # "static" — which read as "still needs doing" on every single run.
+        _, state = ssh(ip, key, f"systemctl is-enabled {unit} 2>/dev/null")
+        if "masked" not in state:
+            ssh(ip, key, f"systemctl stop {unit} 2>/dev/null; "
+                         f"systemctl mask {unit} 2>/dev/null")
+            changed.append(f"masked {unit}")
+    _, alive = ssh(ip, key, "pgrep vic-cloud >/dev/null && echo UP || echo DOWN")
+    if "DOWN" in alive:
+        ssh(ip, key, "systemctl reset-failed vic-cloud; systemctl start vic-cloud")
+        changed.append("restarted vic-cloud")
+    return ", ".join(changed)
+
+
 def provision(ip: str, key: str, host_mode: str, reboot: bool = True) -> None:
     rc, out = ssh(ip, key, "cat /anki/etc/version; cat /proc/cmdline | tr ' ' '\\n' | grep -c anki.dev")
     if rc != 0:
@@ -323,6 +402,14 @@ def provision(ip: str, key: str, host_mode: str, reboot: bool = True) -> None:
     if same_cloud and have.strip() == want:
         print("already pointed at wire-pod with the matching certificate — "
               "nothing to change, no reboot.")
+        # Still worth doing: a robot who is pointed correctly can be sitting in
+        # the vic-cloud crash loop, which looks identical from the outside and
+        # makes minting hang rather than fail. And the Mac may have moved since
+        # he was set up, which the pin has to follow.
+        notes = [n for n in (refresh_host_pin(ip, key, host),
+                             quiet_cloud_uploaders(ip, key)) if n]
+        if notes:
+            print("cloud health: " + ", ".join(notes))
         return "already"
     if same_cloud and have.strip():
         print("cloud already points at wire-pod, but the installed certificate "
@@ -340,17 +427,7 @@ def provision(ip: str, key: str, host_mode: str, reboot: bool = True) -> None:
         put(ip, key, cfg, ROBOT_SERVER_CONFIG, "0644")
         put(ip, key, ca.read_text(), ROBOT_CERT, "0644")
 
-        # Drop any pinned host entry for our names. An earlier setup could bake
-        # `<mac-ip> wirepod.local` into /etc/hosts; the Mac then takes a new
-        # DHCP lease and the robot spends forever talking to an address nobody
-        # answers on — with no error anywhere, because name resolution
-        # "succeeded". Found exactly this on the live dev unit (pinned .118,
-        # Mac had moved to .204). mDNS re-answers with the current address, so
-        # the pin only ever costs us.
-        ssh(ip, key,
-            "grep -qE '(wirepod|escapepod)\\.local' /etc/hosts && "
-            "{ grep -vE '(wirepod|escapepod)\\.local' /etc/hosts > /tmp/h && "
-            "cat /tmp/h > /etc/hosts; rm -f /tmp/h; echo PIN_REMOVED; } || true")
+        _write_host_pin(ip, key, host)
 
         rc, out = ssh(ip, key,
                       f"cat {ROBOT_SERVER_CONFIG} | head -c 120; echo; "
@@ -359,6 +436,10 @@ def provision(ip: str, key: str, host_mode: str, reboot: bool = True) -> None:
     finally:
         ssh(ip, key, "mount -o remount,ro /")
         print("rootfs back to ro")
+
+    fixed = quiet_cloud_uploaders(ip, key)
+    if fixed:
+        print(f"cloud health: {fixed}")
 
     if reboot:
         print("rebooting the robot to pick up the new cloud config…")
