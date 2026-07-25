@@ -259,9 +259,28 @@ STATE_FIRMWARE_EP = "in_firmware_ep"        # already escape-pod provisioned
 STATE_FIRMWARE_NONEP = "in_firmware_nonep"  # plain stock — needs the ep flash
 
 
+# Markers that mean "this build is unlocked / dev": Anki's own tag and the
+# Digital Dream Labs OSKR line that dev units in the wild actually run.
+DEV_MARKERS = ("ankidev", "oskr")
+
+
 def is_dev_robot(firmware: str) -> bool:
-    """OSKR / dev unit — its firmware string carries `ankidev`."""
-    return "ankidev" in (firmware or "").lower()
+    """OSKR / dev unit, read off the version string he reports over BLE.
+
+    Upstream matches `ankidev` only (ble.go:91). That misses the builds people
+    actually run: a Digital Dream Labs dev image reports `2.0.1.6091oskr` and
+    the word `ankidev` appears NOWHERE on the robot — it lives in the OTA
+    manifest as its own field, which we never see over BLE. Checked on a live
+    unit: /etc/os-version = 2.0.1.6091oskr, `grep -r ankidev /etc /anki/etc`
+    finds nothing.
+
+    Getting this wrong is expensive rather than cosmetic: a dev robot read as
+    stock is sent to install the escape-pod firmware, which his own build-type
+    gate rejects (die 214), and the wizard dead-ends on a robot that needed no
+    firmware at all — just two files over SSH.
+    """
+    fw = (firmware or "").lower()
+    return any(marker in fw for marker in DEV_MARKERS)
 
 
 def is_recovery(firmware: str) -> bool:
