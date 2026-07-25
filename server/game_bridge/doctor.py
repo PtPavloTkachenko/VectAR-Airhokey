@@ -39,12 +39,29 @@ class Check:
 
 def _wirepod_checks() -> list[Check]:
     from .web import pairing
+    out = []
+
+    # Escape-pod mode needs a certificate AND its key. Only the certificate is
+    # obvious when it's missing; without the key the engine simply fails to
+    # bind :443 and every downstream check blames the mode instead.
+    from onboarding import oskr_provision as prov
+    ep_key = prov.EP_CERT.with_suffix(".key")
+    have_pair = prov.EP_CERT.is_file() and ep_key.is_file()
+    out.append(Check(
+        "escape-pod certificate", have_pair,
+        f"{prov.EP_CERT.parent}" if have_pair else
+        f"missing {'certificate' if not prov.EP_CERT.is_file() else 'key'} in "
+        f"{prov.EP_CERT.parent}",
+        "" if have_pair else
+        "Both ep.crt and ep.key must be present — the engine cannot serve the "
+        "escape-pod identity without them, and every robot needs it."))
+
     st = pairing.wirepod_status(config.WIREPOD_URL)
-    out = [Check(
+    out.append(Check(
         "pairing engine running", st["up"],
         f"wire-pod at {config.WIREPOD_URL}" if st["up"] else st["detail"],
         "" if st["up"] else
-        "cd server/onboarding/wire-pod/chipper && ./vectar-onboard")]
+        "cd server/onboarding/wire-pod/chipper && ./vectar-onboard"))
     if not st["up"]:
         return out
     out.append(Check(
@@ -52,8 +69,9 @@ def _wirepod_checks() -> list[Check]:
         st["detail"],
         "" if st["ready"] else
         "Set server.epconfig=true (port 443) in chipper/apiConfig.json and "
-        "restart vectar-onboard. Needed for a STOCK robot; an OSKR robot "
-        "pointed at this Mac by IP does not use it."))
+        "restart vectar-onboard. Every robot needs this mode: a stock one "
+        "because his firmware hard-codes the name, a dev one because we point "
+        "him at the same identity."))
     return out
 
 

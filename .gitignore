@@ -13,6 +13,14 @@ venv/
 *.jwt
 sdk_config.ini
 
+# ...with one deliberate exception. This is not a credential of ours: it is the
+# public Digital Dream Labs escape-pod key, published with wire-pod, and every
+# escape-pod robot in the world already trusts its certificate. The pairing
+# engine cannot start in escape-pod mode without it, and that mode is what BOTH
+# a stock and a dev robot need — so leaving it out made a fresh clone unusable
+# while the certificate beside it shipped fine.
+!server/onboarding/wire-pod/chipper/epod/ep.key
+
 # Lens Studio machine-local / regenerable
 lens/Cache/
 lens/Workspaces/
