@@ -74,29 +74,18 @@ Under the hood this stage:
 - writes `~/.anki_vector/sdk_config.ini` + the cert file — the standard
   `anki_vector` SDK location, so any other SDK tool you own works too.
 
-![Pairing progress](images/pair-progress.png)
-
 Token minting is **append-only** on the robot: re-pairing (new Mac, new IP,
 re-install) never invalidates previously issued tokens.
 
-## Already on Wi-Fi? The manual path
+## Already on Wi-Fi?
 
-If your Vector is already online (e.g. onboarded earlier), you can skip
-Bluetooth and just give his details directly, then authorize:
+Nothing extra to do: the same **CONNECT VECTOR** flow handles it. It only
+skips what it can prove is already done — a robot that is online keeps his
+Wi-Fi and goes straight to authorizing.
 
-![Robot details (manual path)](images/pair-manual-details.png)
-
-- **Robot name** — `Vector-XXXX`, shown on his screen after a backpack
-  double-press on the charger.
-- **Serial** — sticker on his underside, e.g. `00e20145`.
-- **Robot IP** — double-press the backpack, then raise+lower his arms; the IP
-  shows on his face.
-- **wire-pod address** — default `escapepod.local:8080`; use the host machine's
-  IP if `.local` doesn't resolve.
-
-Finish with a quick connection check, then hand the robot to the game loop:
-
-![Test and done](images/pair-done.png)
+An **OSKR / dev** Vector that is already on Wi-Fi has its own route on the
+first screen (*set him up from his log archive*) and needs no Bluetooth at
+all.
 
 ## After pairing
 

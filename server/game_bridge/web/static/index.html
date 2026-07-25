@@ -377,86 +377,6 @@
         style="margin-top:6px">← BACK TO SETUP OPTIONS</button>
     </div>
 
-    <div class="card" id="wifiCard" style="display:none">
-      <div class="steps">
-        <div class="step-dot" id="dot0"></div>
-        <div class="step-dot" id="dot1"></div>
-        <div class="step-dot" id="dot2"></div>
-        <div class="step-dot" id="dot3"></div>
-      </div>
-
-      <!-- step 1: find -->
-      <div class="wstep" id="wstep0">
-        <h2>1 · Find your robot</h2>
-        <div class="hint">
-          Prerequisite: your Vector must already be set up with
-          <a href="https://github.com/kercre123/wire-pod" target="_blank">wire-pod</a>
-          (one-time community onboarding: robot on charger → double-press the
-          backpack button → follow wire-pod's own web page). wire-pod must be
-          RUNNING right now — it is only needed during pairing, not for games.
-        </div>
-        <button onclick="discover()" id="btnDiscover">SCAN NETWORK</button>
-        <span id="discoverSpin"></span>
-        <div id="robotList"></div>
-        <div class="hint">Nothing found? mDNS often fails on repeater networks —
-          just continue and type the IP manually.</div>
-        <button class="secondary" onclick="gotoStep(1)">ENTER MANUALLY →</button>
-        <button class="secondary" onclick="chooseRoute(null)">← BACK TO SETUP OPTIONS</button>
-      </div>
-
-      <!-- step 2: confirm -->
-      <div class="wstep" id="wstep1" style="display:none">
-        <h2>2 · Robot details</h2>
-        <div class="row">
-          <div>
-            <label>Robot name (on his screen: double-press backpack on charger)</label>
-            <input id="fName" placeholder="Vector-A1B2">
-          </div>
-          <div>
-            <label>Serial (sticker on the underside, e.g. 00e20145)</label>
-            <input id="fSerial" placeholder="00e20145">
-          </div>
-        </div>
-        <div class="row">
-          <div>
-            <label>Robot IP (double-press backpack, raise+lower arms → shown on face)</label>
-            <input id="fIp" placeholder="192.168.1.42">
-          </div>
-          <div>
-            <label>wire-pod address</label>
-            <input id="fPod" placeholder="escapepod.local:8080">
-          </div>
-        </div>
-        <div class="error" id="confirmErr" style="display:none"></div>
-        <button onclick="startPair()">PAIR →</button>
-        <button class="secondary" onclick="gotoStep(0)">← BACK</button>
-      </div>
-
-      <!-- step 3: pairing progress -->
-      <div class="wstep" id="wstep2" style="display:none">
-        <h2>3 · Pairing</h2>
-        <div class="progress-step"><span class="mark" id="m_cert">·</span>
-          <span>Download certificate from wire-pod</span></div>
-        <div class="progress-step"><span class="mark" id="m_tls">·</span>
-          <span>Secure channel to the robot (:443)</span></div>
-        <div class="progress-step"><span class="mark" id="m_auth">·</span>
-          <span>Mint SDK token (robot ↔ wire-pod)</span></div>
-        <div class="progress-step"><span class="mark" id="m_write">·</span>
-          <span>Write ~/.anki_vector/sdk_config.ini</span></div>
-        <div class="error" id="pairErr" style="display:none"></div>
-        <button id="btnRetry" style="display:none" onclick="gotoStep(1)">← FIX & RETRY</button>
-      </div>
-
-      <!-- step 4: test & done -->
-      <div class="wstep" id="wstep3" style="display:none">
-        <h2>4 · Test &amp; done</h2>
-        <div class="ok">Paired ✓ — credentials written. You can now STOP wire-pod;
-          it is not needed for games.</div>
-        <div id="testResult"></div>
-        <button onclick="runTest()" id="btnTest">TEST CONNECTION</button>
-        <button onclick="connectRobot()" id="btnGo">CONNECT &amp; GO TO DASHBOARD</button>
-      </div>
-    </div>
   </div>
 
   <div class="footer">VectAR Air-Hockey · open-source · lens WS :8777 · this console :8780</div>
@@ -477,7 +397,6 @@ function showTab(t) {
 function chooseRoute(route) {
   $("routeCard").style.display = route ? "none" : "";
   $("bleCard").style.display = route === "ble" ? "" : "none";
-  $("wifiCard").style.display = route === "wifi" ? "" : "none";
   $("archiveCard").style.display = route === "archive" ? "" : "none";
   if (route === "ble") bleStep(0);
   if (route === "archive") wireArchiveInputs();
@@ -572,14 +491,6 @@ async function onboardStartInner() {
   }
 }
 
-function gotoStep(n) {
-  wizardStep = n;
-  for (let i = 0; i < 4; i++) {
-    $("wstep" + i).style.display = i === n ? "" : "none";
-    $("dot" + i).className = "step-dot" + (i < n ? " done" : i === n ? " now" : "");
-  }
-}
-gotoStep(0);
 
 async function api(path, body) {
   const r = await fetch(path, body === undefined ? {} :
@@ -690,7 +601,6 @@ async function refreshStatus() {
       act = `<button class="secondary" onclick="releaseRobot()">`
           + `RELEASE CONTROL</button>`;
     $("dashActions").innerHTML = act;
-    if (!$("fPod").value) $("fPod").value = s.wirepod_default.replace(/^https?:\/\//, "");
   } catch (e) {
     $("statusGrid").innerHTML = `<div class="error">server unreachable: ${e}</div>`;
   }
@@ -1468,76 +1378,6 @@ function playRender() {
 }
 
 /* ---------- wizard ---------- */
-async function discover() {
-  $("btnDiscover").disabled = true;
-  $("discoverSpin").innerHTML = ' <span class="spin">◌</span> scanning ~5 s…';
-  try {
-    const res = await api("/api/discover", {timeout: 5});
-    const list = $("robotList");
-    if (!res.robots.length) {
-      list.innerHTML = '<div class="hint">No robots answered mDNS.</div>';
-    } else {
-      list.innerHTML = res.robots.map(r =>
-        `<div class="robot-item" onclick="pick('${r.name}','${r.ip}')">` +
-        `<span>${r.name}</span><span>${r.ip}</span></div>`).join("");
-    }
-  } finally {
-    $("btnDiscover").disabled = false;
-    $("discoverSpin").innerHTML = "";
-  }
-}
-function pick(name, ip) {
-  $("fName").value = name;
-  $("fIp").value = ip;
-  gotoStep(1);
-}
-
-async function startPair() {
-  const name = $("fName").value.trim(), serial = $("fSerial").value.trim(),
-        ip = $("fIp").value.trim(), pod = $("fPod").value.trim();
-  const err = $("confirmErr");
-  if (!name || !serial || !ip) {
-    err.style.display = ""; err.textContent = "Name, serial and IP are all required.";
-    return;
-  }
-  err.style.display = "none";
-  gotoStep(2);
-  ["cert","tls","auth","write"].forEach(s => $("m_"+s).textContent = "·");
-  $("pairErr").style.display = "none";
-  $("btnRetry").style.display = "none";
-  // optimistic progress: mark steps as the backend passes them (single call,
-  // so animate cert/tls/auth optimistically and settle on the reply)
-  $("m_cert").innerHTML = '<span class="spin">◌</span>';
-  const res = await api("/api/pair", {name, serial, ip, pod});
-  const order = ["cert","tls","auth","write"];
-  if (res.ok) {
-    order.forEach(s => $("m_"+s).textContent = "✓");
-    setTimeout(() => gotoStep(3), 400);
-  } else {
-    const failAt = order.indexOf(res.step);
-    order.forEach((s, i) => $("m_"+s).textContent =
-      i < failAt ? "✓" : (i === failAt ? "✗" : "·"));
-    $("pairErr").style.display = "";
-    $("pairErr").textContent = res.error;
-    $("btnRetry").style.display = "";
-  }
-}
-
-async function runTest() {
-  $("btnTest").disabled = true;
-  $("testResult").innerHTML = '<div class="hint"><span class="spin">◌</span> connecting (≤20 s)…</div>';
-  const res = await api("/api/test", {});
-  $("btnTest").disabled = false;
-  if (res.ok) {
-    const b = res.battery || {};
-    $("testResult").innerHTML =
-      `<div class="ok">Robot answered ✓ battery ${b.volts || "?"} V` +
-      (res.firmware ? ` · fw ${res.firmware}` : "") + `</div>`;
-  } else {
-    $("testResult").innerHTML = `<div class="error">${res.error}</div>`;
-  }
-}
-
 async function connectRobot() {
   showTab("dash");
   // The attempt can take up to 40 s (connect + control acquisition). Without
