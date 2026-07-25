@@ -52,9 +52,10 @@ each robot type; [docs/PAIRING.md](docs/PAIRING.md) has the internals.
 
 **2 · Lens**
 
-Open `lens/robo-hockey-515.esproj` in Lens Studio 5.15, set your Mac's LAN IP
-in `Assets/Scripts/GameConfig.ts` (`WS_URL`), enable *Experimental APIs*, and
-send to your Spectacles. Full guide: [docs/LENS.md](docs/LENS.md).
+Open `lens/robo-hockey-515.esproj` in Lens Studio 5.15, enable *Experimental
+APIs*, and send it to your Spectacles — the address needs no editing: the
+server publishes itself as `vectar.local`, which is what the Lens already
+dials. Full guide: [docs/LENS.md](docs/LENS.md).
 
 **3 · Play**
 

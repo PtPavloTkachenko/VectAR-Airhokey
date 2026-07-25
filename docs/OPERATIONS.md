@@ -125,8 +125,9 @@ reservation in your router so it stops moving.
 The Mac reaches the robot by **IP on the same subnet**. If the robot joins one
 network (e.g. a phone hotspot `172.20.10.x`) and the Mac is on another
 (`192.168.0.x`), the dashboard shows OFFLINE no matter what. Put **all three
-devices on one network**. The dashboard's *LENS WS_URL* always reflects the
-Mac's current IP — paste that exact string into the lens' `GameConfig.WS_URL`.
+devices on one network**. The Lens finds the Mac by name (`vectar.local`),
+so its address never needs editing; the dashboard's *LENS WS_URL* shows the
+literal IP for the case where a headset can't resolve `.local`.
 
 The server self-heals a **changed robot IP** (DHCP lease / hotspot hop): on a
 failed connect it re-resolves the robot via mDNS (`_ankivector._tcp.local.`)

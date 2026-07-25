@@ -5,9 +5,16 @@
  */
 export const GameConfig = {
   // --- Network ---
-  // Set this to YOUR Mac's LAN IP (the machine running the game server).
-  // Find it: macOS System Settings -> Wi-Fi -> Details, or `ipconfig getifaddr en0`.
-  WS_URL: "ws://192.168.1.100:8777",
+  // Works as-is: the game server publishes itself on your network as
+  // `vectar.local`, so this name follows the Mac wherever DHCP puts it.
+  // Nothing to look up, nothing to edit, and it survives an address change
+  // or a move to another Wi-Fi.
+  //
+  // If your headset turns out not to resolve `.local` names, put the Mac's
+  // LAN IP here instead — the server console at http://localhost:8780 shows
+  // the exact string under LENS WS_URL — and give the Mac a DHCP reservation
+  // in your router, or you will be editing this line again.
+  WS_URL: "ws://vectar.local:8777",
   PING_INTERVAL_S: 2.0,
   PONG_TIMEOUT_S: 5.0,
   PUCK_SEND_HZ: 30,

@@ -8,8 +8,10 @@ FieldBuilder), so the project itself is mostly scripts + a few assets.
 
 1. Install [Lens Studio 5.15.x](https://ar.snap.com/download) and open
    `lens/robo-hockey-515.esproj`.
-2. `Assets/Scripts/GameConfig.ts` → set `WS_URL` to your Mac's LAN IP
-   (`ipconfig getifaddr en0`), keep port `8777`.
+2. `Assets/Scripts/GameConfig.ts` → nothing to change: `WS_URL` is
+   `ws://vectar.local:8777`, and the server publishes that name on your
+   network. Only if your headset can't resolve `.local` names, put the Mac's
+   LAN IP there instead (`ipconfig getifaddr en0`), keeping port `8777`.
 3. Project Settings → enable **Experimental APIs** (required for `ws://` —
    plain, non-TLS WebSocket). This also means the lens can't be published to
    the public store; you run it as your own dev lens.
