@@ -216,6 +216,7 @@ def mint_guid(cert: bytes, ip: str, name: str) -> bytes:
     try:
         grpc.channel_ready_future(channel).result(timeout=15)
     except grpc.FutureTimeoutError:
+        channel.close()
         raise PairingError(
             STEP_TLS,
             f"Can't reach {name} at {ip}:443 (15 s timeout). Is the robot ON "
@@ -250,6 +251,17 @@ def mint_guid(cert: bytes, ip: str, name: str) -> bytes:
             f"The robot refused the authentication call ({code}). Usually this "
             "means the robot can't reach ITS token server — is wire-pod "
             "running, and did THIS wire-pod onboard the robot?")
+    finally:
+        # Hand the robot's one client slot back. vic-gateway serves a single
+        # client, so a channel left open here means the very next connection --
+        # the one that proves the pairing worked -- is refused, and the error
+        # it gives ("unable to establish a connection") points at the network
+        # instead of at us still holding the socket. Seen live: retries inside
+        # this process all failed while a fresh process connected first try.
+        try:
+            channel.close()
+        except Exception:
+            pass
     if response.code != messaging.protocol.UserAuthenticationResponse.AUTHORIZED:
         raise PairingError(
             STEP_AUTH,
@@ -257,6 +269,29 @@ def mint_guid(cert: bytes, ip: str, name: str) -> bytes:
             "server is not this wire-pod — re-run wire-pod onboarding, then "
             "pair again.")
     return response.client_token_guid
+
+
+def pod_guid(pod: str, serial: str) -> bytes:
+    """The guid the pairing engine issued for this robot, or b''.
+
+    The robot does not always hand his guid back over the network call — on a
+    dev robot he answers with an empty one — but the engine minted it and knows
+    it, and its hash is already in the robot's token store. So asking the engine
+    is not a workaround; it is asking whoever actually issued the thing.
+    """
+    import requests
+
+    pod = (pod or "").strip().rstrip("/")
+    if "://" not in pod:
+        pod = "http://" + pod
+    try:
+        r = requests.get(f"{pod}/api-sdk/get_sdk_info", timeout=8)
+        for robot in (r.json() or {}).get("robots") or []:
+            if str(robot.get("esn", "")).lower() == serial.lower():
+                return (robot.get("guid") or "").encode("utf-8")
+    except Exception as e:
+        logger.debug(f"could not read the engine's sdk info: {e}")
+    return b""
 
 
 def save_cert(cert: bytes, name: str, serial: str) -> str:
@@ -335,6 +370,23 @@ def pair(pod: str, serial: str, name: str, ip: str,
     else:
         name = _cert_common_name(cert) or f"Vector-{serial[-4:].upper()}"
     guid = mint_guid(cert, ip, name)
+    if not guid:
+        # A dev robot answers the authentication call with an EMPTY guid — the
+        # call succeeds, so this used to be written out and reported as a
+        # successful pairing. Every later connection then failed with a bare
+        # 401 and nothing pointed back here. The engine issued a real guid for
+        # him, so use that; if even it has none, say so instead of persisting
+        # a credential that cannot work.
+        guid = pod_guid(pod, serial)
+        if guid:
+            logger.info(f"{serial}: robot returned no guid; used the engine's")
+    if not guid:
+        raise PairingError(
+            STEP_AUTH,
+            "The robot accepted the authentication call but issued no key, and "
+            "the pairing engine has none for him either. He has not been "
+            "associated with this engine yet — connect over Bluetooth once so "
+            "he can sign in.")
     try:
         cert_file = save_cert(cert, name, serial)
         write_config(serial, cert_file, ip, name, guid)
@@ -352,7 +404,7 @@ def test_connection(serial: str = "") -> dict:
     os.environ.setdefault("PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION", "python")
     from .. import config as gconfig
 
-    ser, ips, name = gconfig.read_robot_identity()
+    ser, ips, name = gconfig.read_robot_identity(serial)
     serial = (serial or ser).lower()
     if not serial:
         raise PairingError(STEP_WRITE, "No robot in sdk_config.ini — pair first.")

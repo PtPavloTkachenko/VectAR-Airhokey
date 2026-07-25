@@ -71,14 +71,19 @@ def ssh_public_key() -> str:
     return pub.read_text().strip()
 
 
-def read_robot_identity() -> tuple[str, str, str]:
+def read_robot_identity(want: str = "") -> tuple[str, str, str]:
     """(serial, ips, name) — env overrides win, else sdk_config.ini.
 
     Read fresh on every call so a pairing done while the server is running
     is picked up without a restart. Empty strings = not paired yet.
+
+    `want` asks for one specific robot. Without it this returns whichever
+    section comes first, which is fine with one robot and actively wrong with
+    two: callers that knew the serial still got the OTHER robot's address, and
+    the connection failure that followed read as "he isn't answering".
     """
     import configparser
-    serial = os.getenv("VECTOR_SERIAL", "").lower()
+    serial = (want or os.getenv("VECTOR_SERIAL", "")).lower()
     ips = os.getenv("VECTOR_IP", "")
     name = os.getenv("VECTOR_NAME", "")
     try:
@@ -94,6 +99,12 @@ def read_robot_identity() -> tuple[str, str, str]:
             # env gave IPs but ini knows another one -> append as a candidate
             if ini_ip and ini_ip not in ips.split(","):
                 ips = f"{ips},{ini_ip}" if ips else ini_ip
+            # ...unless a specific robot was asked for, in which case HIS
+            # address leads: an env override set for another robot must not
+            # send us knocking on the wrong door.
+            if want and ini_ip:
+                rest = [x for x in ips.split(",") if x and x != ini_ip]
+                ips = ",".join([ini_ip, *rest])
     except Exception:
         pass
     return serial, ips, name

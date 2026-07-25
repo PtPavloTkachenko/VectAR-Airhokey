@@ -142,6 +142,24 @@ def setup(ip: str = "", key: str = "", pod: str = "", host_mode: str = "auto",
                               on_wait=on_wait)
 
     log(f"paired {result['name']} ({result['serial']}) at {result['ip']}")
+
+    # Finish on proof, not on a written file. The first connect straight after
+    # a mint often fails while the gateway re-reads its token store, so give it
+    # a couple of tries before calling it a failure.
+    for attempt in (1, 2, 3):
+        try:
+            info = pairing.test_connection(result["serial"])
+            log(f"SDK control confirmed: firmware {info.get('firmware')}, "
+                f"battery {info.get('battery')}")
+            result["verified"] = True
+            return result
+        except pairing.PairingError as e:
+            log(f"  connect attempt {attempt}/3 did not take ({e.step})")
+            last = e
+    log("Paired, but he did not answer the SDK yet. He is often a few seconds "
+        "behind a fresh mint — try the dashboard, and restart him if it "
+        f"persists. ({last.message})")
+    result["verified"] = False
     return result
 
 
