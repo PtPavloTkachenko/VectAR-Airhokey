@@ -4,27 +4,32 @@ that the NETWORK UserAuthentication skips (and why it returns an empty guid).
 This is how onboarding actually worked: the BLE CloudSession makes the robot
 authenticate with its cloud (now wire-pod) as the primary user, which mints AND
 persists the token. After this, the network SDK connects and the dashboard sees
-the robot. Our robot points at wire-pod (SESSION_TOKEN is what wire-pod accepts),
-so — unlike a stock robot whose Anki cloud is gone — this should succeed.
+the robot.
 
-Run (robot on charger, double-press backpack so it advertises + shows a PIN):
+A Vector never contacts his token server on his own, so this message is the
+whole trigger — without it the robot sits on Wi-Fi talking to nobody and
+`/session-certs/<esn>` stays 404 forever. It is needed once per robot, on both
+paths: a stock robot after the firmware install, and a dev (OSKR) robot after
+his cloud is repointed over SSH.
+
+Run (robot on charger, double-press the backpack so he advertises + shows a PIN):
     python -m onboarding.mint_guid_ble
+    python -m onboarding.mint_guid_ble --serial 00e20145   # override identity
+
 Then put the 6-digit PIN in /tmp/vector_pin:  echo 123456 > /tmp/vector_pin
 """
 from __future__ import annotations
 
+import argparse
 import asyncio
 import configparser
 import sys
 from pathlib import Path
 
-from .ble import messages as m
 from .ble.session import RtsSession
 
 PIN_FILE = "/tmp/vector_pin"
 ANKI_DIR = Path.home() / ".anki_vector"
-SERIAL = "0dd1dfd4"
-NAME = "Vector-X1W8"
 
 
 async def read_pin(timeout: float = 150.0) -> str:
@@ -54,12 +59,13 @@ def save_guid(serial: str, guid: str) -> None:
     if serial not in cfg:
         cfg[serial] = {}
     cfg[serial]["guid"] = guid
+    ANKI_DIR.mkdir(parents=True, exist_ok=True)
     with open(cfg_file, "w") as f:
         cfg.write(f)
     print(f"guid written to {cfg_file} [{serial}]")
 
 
-async def run() -> int:
+async def run(serial: str = "", name: str = "") -> int:
     print("scanning BLE (double-press his backpack now)…", flush=True)
     found = await RtsSession.scan(timeout=12.0)
     if not found:
@@ -72,16 +78,25 @@ async def run() -> int:
     try:
         await sess.begin_handshake()
         await sess.finish_handshake(await read_pin())
-        print("channel up — requesting cloud auth (RtsCloudSession)…", flush=True)
+        # Identity comes from the robot we just connected to, not from a
+        # constant: this tool has to work for whichever Vector is in the room.
+        serial = serial or (sess.esn or "")
+        name = name or (sess.name or "")
+        print(f"channel up with {name or 'Vector'} ({serial or 'serial unknown'})"
+              " — requesting cloud auth (RtsCloudSession)…", flush=True)
         guid = await sess.cloud_auth()
         print(f"\n*** GUID MINTED over BLE: {guid!r} (len {len(guid)}) ***\n",
               flush=True)
-        if guid:
-            save_guid(SERIAL, guid)
-            print("SUCCESS — primary association done, guid persisted.")
-            return 0
-        print("cloud_auth returned an EMPTY guid.")
-        return 1
+        if not guid:
+            print("cloud_auth returned an EMPTY guid.")
+            return 1
+        if not serial:
+            print("Minted, but the robot did not report a serial over BLE — "
+                  "re-run with --serial to persist it.")
+            return 1
+        save_guid(serial, guid)
+        print("SUCCESS — primary association done, guid persisted.")
+        return 0
     finally:
         try:
             await sess.disconnect()
@@ -89,5 +104,15 @@ async def run() -> int:
             pass
 
 
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--serial", default="",
+                    help="robot ESN (default: whatever he reports over BLE)")
+    ap.add_argument("--name", default="",
+                    help="robot name, e.g. Vector-A1B2 (default: from BLE)")
+    a = ap.parse_args()
+    return asyncio.run(run(a.serial, a.name))
+
+
 if __name__ == "__main__":
-    sys.exit(asyncio.run(run()))
+    sys.exit(main())

@@ -17,16 +17,21 @@ and reboot (never a live service restart — that races vic-engine, see the
 project's 915-fault lesson).
 
 Usage:
-    python -m onboarding.oskr_provision --ip <robot-ip> --key /tmp/vector_key
+    python -m onboarding.oskr_provision --ip <robot-ip> --key ~/.vectar/id_rsa_robot
     python -m onboarding.oskr_provision --ip <robot-ip> --host-mode ip   # direct Mac IP
 
-`--host-mode escapepod` (default) is network-agnostic: it survives the Mac
-changing IP as long as wire-pod publishes escapepod.local. `--host-mode ip`
-pins the current LAN IP — more reliable on networks with flaky mDNS.
+`--host-mode auto` (default) matches whatever the pairing engine is actually
+serving, so the robot is pointed at a name he can reach AND handed the
+certificate he will be shown. `escapepod` and `ip` force one or the other.
+
+Prefer the escape-pod identity: it is network-agnostic and survives the Mac
+taking a new DHCP lease, because the name is answered live over mDNS. Pinning
+an IP looks simpler and then quietly rots the day the lease changes.
 """
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import shlex
 import socket
@@ -35,7 +40,15 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent
-WIREPOD_CERT = REPO / "wire-pod" / "certs" / "cert.crt"
+
+# The two identities wire-pod can serve on :443. WHICH one it serves depends on
+# the mode it runs in, and the robot only trusts the CA we install here — so
+# picking the wrong file points him at a server whose certificate he refuses.
+# Escape-pod mode (what a stock robot needs, so what we run) serves the
+# well-known Digital Dream Labs certificate; upstream's own SSH provisioning
+# makes the same choice (chipper/pkg/wirepod/setup/ssh.go, `if EPConfig`).
+WIREPOD_CERT = REPO / "wire-pod" / "certs" / "cert.crt"       # CN=wirepod.local
+EP_CERT = REPO / "wire-pod" / "chipper" / "epod" / "ep.crt"   # CN=escapepod.local
 
 # Paths on the robot (verified on a live 2.0.1.6091 unit)
 ROBOT_SERVER_CONFIG = (
@@ -43,6 +56,9 @@ ROBOT_SERVER_CONFIG = (
 ROBOT_CERT = "/anki/etc/wirepod-cert.crt"
 
 SSH_OPTS = [
+    # Without this, ssh's "Permanently added ... to the list of known hosts"
+    # lands in the same stream as the robot's answer and gets parsed as data.
+    "-o", "LogLevel=ERROR",
     "-o", "ConnectTimeout=25",
     "-o", "PubkeyAcceptedAlgorithms=+ssh-rsa",
     "-o", "HostkeyAlgorithms=+ssh-rsa",
@@ -60,9 +76,41 @@ def lan_ip() -> str:
         s.close()
 
 
+def engine_mode(pod: str = "") -> str:
+    """Which identity wire-pod is serving right now: 'escapepod' or 'ip'.
+
+    Probed, not read from config — the mode only counts if it's actually live on
+    :443, and that's exactly what the robot will meet.
+    """
+    try:
+        from game_bridge import config as gconfig
+        from game_bridge.web import pairing
+    except Exception:
+        return "ip"
+    try:
+        st = pairing.wirepod_status(pod or gconfig.WIREPOD_URL)
+    except Exception:
+        return "ip"
+    return "escapepod" if st.get("ready") else "ip"
+
+
+def trust_anchor(host_mode: str) -> tuple[str, Path]:
+    """(name to point the robot at, CA file to install on him).
+
+    These two travel together. Escape-pod mode answers to `escapepod.local` with
+    the DDL certificate; the other mode answers on this Mac's IP with wire-pod's
+    self-signed one. Mixing them — the old behaviour, which always installed the
+    self-signed cert — hands the robot a name he can reach and a certificate he
+    refuses, so his cloud handshake never completes and no token is ever minted.
+    """
+    if host_mode == "escapepod":
+        return "escapepod.local", EP_CERT
+    return lan_ip(), WIREPOD_CERT
+
+
 def server_config(host_mode: str) -> str:
     """The jdoc wire-pod expects. `check` is http (no :443), the rest are TLS."""
-    host = "escapepod.local" if host_mode == "escapepod" else lan_ip()
+    host, _ = trust_anchor(host_mode)
     return json.dumps({
         "jdocs": f"{host}:443",
         "tms": f"{host}:443",
@@ -110,7 +158,7 @@ def extract_key_and_name(bundle: bytes) -> tuple[str | None, str | None]:
     The key lives at `data/ssh/id_rsa_Vector-XXXX`; the `XXXX` identifies the
     robot, which lets us find him on the LAN by mDNS (`discovery.discover`)
     without a BLE session — the whole point of the archive-upload path. Returns
-    (key_text, robot_code) with robot_code like "X1W8" (or None if not parseable).
+    (key_text, robot_code) with robot_code like "A1B2" (or None if not parseable).
     """
     import io
     import re
@@ -239,16 +287,30 @@ def provision(ip: str, key: str, host_mode: str, reboot: bool = True) -> None:
             "(OSKR units expose adbd: adb connect <ip>:5555, then write the "
             "pubkey into /data/ssh/authorized_keys).")
     print(f"robot: {out.splitlines()[0]}  (anki.dev markers: {out.splitlines()[-1]})")
-    if not WIREPOD_CERT.is_file():
-        raise SystemExit(f"wire-pod cert not found at {WIREPOD_CERT} — start "
-                         "vectar-onboard once so it generates certs/cert.crt")
+
+    if host_mode == "auto":
+        host_mode = engine_mode()
+        print(f"pairing engine is in '{host_mode}' mode")
+    host, ca = trust_anchor(host_mode)
+    if not ca.is_file():
+        raise SystemExit(
+            f"the certificate to install is missing: {ca}\n"
+            + ("Escape-pod mode serves the Digital Dream Labs certificate; it "
+               "ships with wire-pod under chipper/epod/."
+               if host_mode == "escapepod" else
+               "Start vectar-onboard once so it generates certs/cert.crt."))
     cfg = server_config(host_mode)
     target_chipper = json.loads(cfg)["chipper"]
-    print(f"server_config -> {target_chipper}")
+    print(f"server_config -> {target_chipper}   CA -> {ca.name}")
 
-    # Idempotent: if he already points at wire-pod with the cert in place, don't
-    # rewrite + reboot — a needless ~40 s round-trip that looks like a loop. This
-    # is the common case for a robot we set up earlier.
+    # Idempotent: if he already points at wire-pod with the RIGHT cert in place,
+    # don't rewrite + reboot — a needless ~40 s round-trip that looks like a
+    # loop. This is the common case for a robot we set up earlier.
+    #
+    # "the right cert", not merely "a cert": a robot provisioned before the
+    # engine moved to escape-pod mode carries the self-signed one, which he now
+    # refuses on every handshake. Treating that as done left him permanently
+    # unmintable while every check said he was set up.
     rc, cur = ssh(ip, key, f"cat {ROBOT_SERVER_CONFIG} 2>/dev/null")
     same_cloud = False
     if rc == 0 and cur.strip():
@@ -256,10 +318,15 @@ def provision(ip: str, key: str, host_mode: str, reboot: bool = True) -> None:
             same_cloud = json.loads(cur).get("chipper", "") == target_chipper
         except Exception:
             same_cloud = False
-    _, cert_ok = ssh(ip, key, f"test -s {ROBOT_CERT} && echo YES || echo NO")
-    if same_cloud and "YES" in cert_ok:
-        print("already pointed at wire-pod — nothing to change, no reboot.")
+    want = hashlib.sha256(ca.read_bytes()).hexdigest()
+    _, have = ssh(ip, key, f"sha256sum {ROBOT_CERT} 2>/dev/null | cut -d' ' -f1")
+    if same_cloud and have.strip() == want:
+        print("already pointed at wire-pod with the matching certificate — "
+              "nothing to change, no reboot.")
         return "already"
+    if same_cloud and have.strip():
+        print("cloud already points at wire-pod, but the installed certificate "
+              "is not the one being served — replacing it.")
 
     # rootfs is ro; open one rw window for both writes.
     rc, out = ssh(ip, key, "mount -o remount,rw / && echo RW_OK")
@@ -271,7 +338,20 @@ def provision(ip: str, key: str, host_mode: str, reboot: bool = True) -> None:
             f"[ -f {ROBOT_SERVER_CONFIG}.bak ] || cp {ROBOT_SERVER_CONFIG} "
             f"{ROBOT_SERVER_CONFIG}.bak")
         put(ip, key, cfg, ROBOT_SERVER_CONFIG, "0644")
-        put(ip, key, WIREPOD_CERT.read_text(), ROBOT_CERT, "0644")
+        put(ip, key, ca.read_text(), ROBOT_CERT, "0644")
+
+        # Drop any pinned host entry for our names. An earlier setup could bake
+        # `<mac-ip> wirepod.local` into /etc/hosts; the Mac then takes a new
+        # DHCP lease and the robot spends forever talking to an address nobody
+        # answers on — with no error anywhere, because name resolution
+        # "succeeded". Found exactly this on the live dev unit (pinned .118,
+        # Mac had moved to .204). mDNS re-answers with the current address, so
+        # the pin only ever costs us.
+        ssh(ip, key,
+            "grep -qE '(wirepod|escapepod)\\.local' /etc/hosts && "
+            "{ grep -vE '(wirepod|escapepod)\\.local' /etc/hosts > /tmp/h && "
+            "cat /tmp/h > /etc/hosts; rm -f /tmp/h; echo PIN_REMOVED; } || true")
+
         rc, out = ssh(ip, key,
                       f"cat {ROBOT_SERVER_CONFIG} | head -c 120; echo; "
                       f"wc -c < {ROBOT_CERT}")
@@ -299,10 +379,12 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--ip", required=True, help="robot LAN IP")
     ap.add_argument("--key", default="/tmp/vector_key", help="ssh private key")
-    ap.add_argument("--host-mode", choices=("escapepod", "ip"),
-                    default="escapepod",
-                    help="point the robot at escapepod.local (mDNS, portable) "
-                         "or this Mac's current LAN IP (pinned)")
+    ap.add_argument("--host-mode", choices=("auto", "escapepod", "ip"),
+                    default="auto",
+                    help="auto: match whatever the pairing engine is serving "
+                         "(default). escapepod: escapepod.local + the DDL "
+                         "certificate. ip: this Mac's LAN IP + wire-pod's "
+                         "self-signed certificate")
     ap.add_argument("--no-reboot", action="store_true")
     a = ap.parse_args()
     provision(a.ip, a.key, a.host_mode, reboot=not a.no_reboot)
