@@ -42,6 +42,19 @@ cd server/onboarding/wire-pod/chipper && ./vectar-onboard
 Serves cert-gen + `/session-certs` + jdocs + token on `:8080` / `:443` / `:80`.
 Leave it running through the whole pairing; gameplay afterwards does not need it.
 
+**For a stock robot it must run in escape-pod mode** (`apiConfig.json` →
+`server.epconfig: true`, port 443). Only then does it answer to
+`escapepod.local` with the certificate the escape-pod firmware trusts — the
+one address such a robot ever calls. Check in one line:
+
+```bash
+curl -s localhost:8780/api/wirepod_status     # -> "ready": true
+```
+
+The wizard shows the same state and refuses to flash firmware without it. See
+[STOCK_ONBOARDING_PLAN.md](STOCK_ONBOARDING_PLAN.md) for how to flip the mode
+(and why wire-pod's own `use_ep` endpoint panics instead of doing it).
+
 ## 3 · Pair a stock Vector (the wizard)
 
 1. Dashboard → **PAIR ROBOT → CONNECT VECTOR**.

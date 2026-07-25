@@ -25,7 +25,7 @@ practice field (you against a simulated goalie, for testing without the robot):
 
 | Thing | Notes |
 |---|---|
-| Anki / DDL **Vector** robot (1.0 or 2.0) | the pairing wizard onboards him for you, built on [wire-pod](https://github.com/kercre123/wire-pod) (the community standard since the official cloud shut down). Verified on OSKR/dev units; the stock-firmware route is built but **not yet hardware-verified** — see [Project status](#project-status) |
+| Anki / DDL **Vector** robot (1.0 or 2.0) | the pairing wizard onboards him for you, built on [wire-pod](https://github.com/kercre123/wire-pod) (the community standard since the official cloud shut down). A **stock** robot is verified end-to-end, out of the box; the OSKR/dev route is not yet re-verified — see [Project status](#project-status) |
 | **Snap Spectacles (2024)** | + [Lens Studio 5.15](https://ar.snap.com/download) on your Mac |
 | A **Mac** | Python 3.12; runs the game server |
 | One **Wi-Fi network** | Mac + robot + Spectacles all on the same LAN |
@@ -84,32 +84,36 @@ Where each piece stands today:
 - **Spectacles ↔ server — verified live on device.** The lens runs on Spectacles
   and its WebSocket link to this server is tested end-to-end: surface
   calibration, the AR field, puck physics and scoring.
-- **Server ↔ robot — proven in the earlier builds; being re-established through
-  the new automated path.** The SDK control layer is written and has driven a
-  real robot (wheels, head, eyes, faces, voice, goalie AI, safety). From *this*
-  build, against a freshly-wiped robot, the final step — re-establishing the SDK
-  control token — is what the automation still has to solve.
+- **Stock robot, out of the box → authorized — verified end-to-end on hardware
+  (2026-07-25).** A brand-new consumer Vector, never signed into the official
+  app, went through the wizard in one sitting: Bluetooth pairing, PIN, Wi-Fi,
+  the escape-pod firmware install (he downloads ~180 MB from your Mac and
+  reboots himself), his sign-in to the pairing engine, and minting this Mac's
+  SDK control token. **Nothing typed by hand, and the Vector app is never
+  needed.**
+- **Server ↔ robot control** — the SDK layer has driven a real robot (wheels,
+  head, eyes, faces, voice, goalie AI, safety) and is reached over the token
+  minted above.
 
 The onboarding automation splits into two independent tracks:
 
-- **OSKR / dev Vector** — working today. SSH auto-detect, and the log-archive
-  route (drop the archive from Anki's setup app; the wizard finds the SSH key
-  inside it and locates the robot on your LAN by itself) are **verified
-  end-to-end on hardware**.
-- **Stock (consumer) Vector** — Bluetooth pairing, the PIN handshake and Wi-Fi
-  join are verified on hardware; the **escape-pod firmware install is built but
-  not yet run on a stock test unit**. If you're early here, an issue with the
-  exact wizard message is the fastest way to get it proven.
-- **One known open item** — a robot that has been **factory-reset / Clear User
-  Data** loses its SDK control token, and re-minting that locally isn't solved
-  yet. It does **not** affect a robot already running with wire-pod. Full
-  diagnosis and next steps: [PAIRING_86_DEEPDIVE](docs/PAIRING_86_DEEPDIVE.md).
+- **Stock (consumer) Vector** — **verified end-to-end**, as above. Budget ~10
+  minutes, most of it waiting on the firmware install and one reboot.
+- **OSKR / dev Vector** — SSH auto-detect and the log-archive route (drop the
+  archive from Anki's setup app; the wizard finds the SSH key inside it and
+  locates the robot on your LAN) are implemented and worked on the original dev
+  unit, but are **not yet re-verified on current hardware** — this is the
+  remaining open track.
 
-**Context, so the gaps make sense:** this was built against a single OSKR Vector
-that was *already connected and already running on wire-pod*. The game grew on
-top of a working robot — which is why the "already provisioned" paths are the
-well-trodden ones and the from-scratch onboarding half is the newer, less-proven
-side. It's being closed in the open rather than papered over.
+**The old open item is closed.** A robot with no SDK control token (wiped, or
+brand new) never re-mints one just by sitting on Wi-Fi — `vic-cloud` has to be
+*told* to sign in, and that trigger is a Bluetooth message the wizard now sends
+during Authorize. Background: [PAIRING_86_DEEPDIVE](docs/PAIRING_86_DEEPDIVE.md).
+
+**Context:** this was originally built against a single OSKR Vector that was
+already running on wire-pod, so the from-scratch stock path was the newer,
+less-proven half. That half is now closed; the dev-unit half is the one still
+owed a fresh hardware run.
 
 Details and the risk notes worth reading before you flash anything:
 [SETUP_ROBOT → Status & risks](docs/SETUP_ROBOT.md#status--risks-read-before-you-start).

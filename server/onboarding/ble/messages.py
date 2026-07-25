@@ -264,6 +264,23 @@ def is_dev_robot(firmware: str) -> bool:
     return "ankidev" in (firmware or "").lower()
 
 
+def is_recovery(firmware: str) -> bool:
+    """Recovery mode = the 0.9.x OS branch.
+
+    Upstream wire-pod matches the literal string "0.9.0" (ble.go:213), which
+    only knows the 2018 recovery image. Real robots ship newer ones — a 2026
+    stock unit came up as `v0.9.3.1013-..._os0.9.3.1013-...-202209101520` and
+    was misread as normal firmware, hiding the flash step behind "put him in
+    recovery" instructions while he was ALREADY in recovery. Match the branch,
+    not one build.
+    """
+    fw = (firmware or "").lower()
+    # Prefer the OS half (`..._os<version>-<hash>-<date>`); fall back to the
+    # whole string, which starts with the same version on these builds.
+    ver = fw.split("_os")[-1] if "_os" in fw else fw.lstrip("v")
+    return ver.lstrip("v").startswith("0.9.")
+
+
 def classify_robot(firmware: str) -> str:
     """Which provisioning path this robot needs. Drives the wizard branch:
       *_nonep    -> flash the escape-pod firmware over BLE (stock path)
@@ -273,7 +290,7 @@ def classify_robot(firmware: str) -> str:
     """
     fw = (firmware or "").lower()
     dev = is_dev_robot(fw)
-    if "0.9.0" in fw:
+    if is_recovery(fw):
         return STATE_RECOVERY_DEV if dev else STATE_RECOVERY_PROD
     if dev:
         return STATE_FIRMWARE_DEV

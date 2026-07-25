@@ -23,6 +23,7 @@ import configparser
 import logging
 import os
 import socket
+import time
 from pathlib import Path
 
 logger = logging.getLogger("game-bridge.pairing")
@@ -59,32 +60,134 @@ def standardize_name(robot_name: str) -> str:
     return robot_name[:7] + robot_name[7:].upper()
 
 
-def fetch_cert(pod: str, serial: str) -> bytes:
-    """Download the robot's TLS cert from wire-pod's session-certs store."""
+def wirepod_status(pod: str = "") -> dict:
+    """Is the pairing engine actually usable by a STOCK (escape-pod) robot?
+
+    A robot running the `ep` firmware reaches its cloud at the fixed name
+    `escapepod.local:443` and only trusts the well-known Digital Dream Labs
+    escape-pod certificate (CN=escapepod.local). wire-pod serves that identity
+    ONLY in escape-pod mode (`apiConfig.json` -> `server.epconfig: true`); in
+    the other mode it serves a self-signed IP certificate and never broadcasts
+    the mDNS name, so a freshly flashed stock robot silently talks to nobody
+    and pairing dies later at "cert does not exist".
+
+    Probing the live behaviour (name resolves + which cert :443 presents) is
+    what actually matters, so we check that rather than reading the config.
+
+    Returns {up, mdns, ep_cert, ready, ip, detail} — never raises.
+    """
+    import socket
+    import ssl
+
+    out = {"up": False, "mdns": False, "ep_cert": False, "ready": False,
+           "ip": "", "detail": ""}
+
+    import requests
+    base = (pod or "").strip().rstrip("/") or "http://localhost:8080"
+    if "://" not in base:
+        base = "http://" + base
+    try:
+        requests.get(base, timeout=4)
+        out["up"] = True
+    except Exception as e:
+        out["detail"] = (f"wire-pod is not answering at {base} "
+                         f"({type(e).__name__}). Start `vectar-onboard`.")
+        return out
+
+    try:
+        out["ip"] = socket.gethostbyname("escapepod.local")
+        out["mdns"] = True
+    except Exception:
+        out["detail"] = ("wire-pod is running but `escapepod.local` does not "
+                         "resolve — it is not in escape-pod mode, so a stock "
+                         "robot can never find it. Set `server.epconfig: true` "
+                         "in chipper/apiConfig.json and restart vectar-onboard.")
+        return out
+
+    # Which certificate does :443 present? The ep firmware pins this.
+    try:
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        with socket.create_connection((out["ip"], 443), timeout=5) as raw:
+            with ctx.wrap_socket(raw, server_hostname="escapepod.local") as tls:
+                der = tls.getpeercert(binary_form=True)
+        from cryptography import x509
+        parsed = x509.load_der_x509_certificate(der)
+        cn = ""
+        for field in parsed.subject:
+            if "commonName" in str(field.oid):
+                cn = field.value
+        out["ep_cert"] = (cn == "escapepod.local")
+        if not out["ep_cert"]:
+            out["detail"] = (
+                f"escapepod.local:443 presents a certificate for '{cn}', not "
+                "'escapepod.local'. A stock robot will refuse it. Restart "
+                "vectar-onboard in escape-pod mode.")
+            return out
+    except Exception as e:
+        out["detail"] = (f"Nothing is serving TLS on escapepod.local:443 "
+                         f"({type(e).__name__}) — wire-pod is not in "
+                         "escape-pod mode or its port 443 failed to bind.")
+        return out
+
+    out["ready"] = True
+    out["detail"] = f"Escape-pod mode live on {out['ip']} (mDNS + ep cert)."
+    return out
+
+
+def fetch_cert(pod: str, serial: str, wait: float = 0.0,
+               on_wait=None) -> bytes:
+    """Download the robot's TLS cert from wire-pod's session-certs store.
+
+    `wait` (seconds) polls instead of failing on the first miss: the cert only
+    appears once the ROBOT has completed its own handshake against wire-pod,
+    which lags the wizard's Wi-Fi step by a few seconds to a minute on a fresh
+    stock unit. Failing fast here was the classic "cert does not exist" dead
+    end even though the robot was on its way.
+    """
     import requests
 
     pod = pod.strip().rstrip("/")
     if "://" not in pod:
         pod = "http://" + pod
     url = f"{pod}/session-certs/{serial}"
-    try:
-        r = requests.get(url, timeout=8)
-    except Exception as e:
-        raise PairingError(
-            STEP_CERT,
-            f"Can't reach wire-pod at {pod} ({type(e).__name__}). Is wire-pod "
-            "running on this network? Check the address (default "
-            "escapepod.local:8080 — try the machine's IP if .local fails).")
-    if r.status_code != 200:
-        raise PairingError(
-            STEP_CERT,
-            f"wire-pod has no certificate for serial '{serial}' (HTTP "
-            f"{r.status_code}). Check the serial (bottom of the robot), and "
-            "that THIS wire-pod instance onboarded the robot.")
-    if b"BEGIN CERTIFICATE" not in r.content:
+    started = time.monotonic()
+    deadline = started + max(0.0, wait)
+    last_status = None
+    while True:
+        if callable(on_wait):
+            try:
+                on_wait(time.monotonic() - started)
+            except Exception:
+                pass
+        try:
+            r = requests.get(url, timeout=8)
+        except Exception as e:
+            raise PairingError(
+                STEP_CERT,
+                f"Can't reach wire-pod at {pod} ({type(e).__name__}). Is wire-pod "
+                "running on this network? Check the address (default "
+                "escapepod.local:8080 — try the machine's IP if .local fails).")
+        if r.status_code == 200 and b"BEGIN CERTIFICATE" in r.content:
+            return r.content
+        last_status = r.status_code
+        if time.monotonic() >= deadline:
+            break
+        time.sleep(2.0)
+
+    if last_status == 200:
         raise PairingError(
             STEP_CERT, f"Response from {url} is not a PEM certificate.")
-    return r.content
+    waited = (f" (waited {wait:.0f}s for the robot's handshake)"
+              if wait else "")
+    # Diagnosing WHY is the caller's job (it adds wirepod_status to the reply)
+    # so this stays a pure HTTP function with no side probes.
+    raise PairingError(
+        STEP_CERT,
+        f"wire-pod has no certificate for serial '{serial}' (HTTP "
+        f"{last_status}){waited}. The robot has not completed its handshake "
+        "against THIS wire-pod.")
 
 
 def validate_cert_name(cert: bytes, robot_name: str) -> None:
@@ -194,11 +297,15 @@ def _cert_common_name(cert: bytes) -> str:
     return ""
 
 
-def pair(pod: str, serial: str, name: str, ip: str) -> dict:
+def pair(pod: str, serial: str, name: str, ip: str,
+         cert_wait: float = 0.0, on_wait=None) -> dict:
     """Full pairing: cert -> validate -> mint -> persist. Returns a summary.
 
     `name` may be empty — it's then taken from the certificate's CommonName
     (the robot name), so the on-Wi-Fi shortcut doesn't need a name typed.
+    `cert_wait` polls wire-pod for the robot's session cert instead of failing
+    on the first miss (see fetch_cert) — a fresh stock robot needs a moment
+    after joining Wi-Fi before its handshake lands.
     """
     serial = serial.strip().lower()
     if not serial:
@@ -208,7 +315,7 @@ def pair(pod: str, serial: str, name: str, ip: str) -> dict:
         raise PairingError(STEP_TLS, "Robot IP is required.")
     ip = ip.strip()
 
-    cert = fetch_cert(pod, serial)
+    cert = fetch_cert(pod, serial, wait=cert_wait, on_wait=on_wait)
     if name.strip():
         name = standardize_name(name)
         validate_cert_name(cert, name)

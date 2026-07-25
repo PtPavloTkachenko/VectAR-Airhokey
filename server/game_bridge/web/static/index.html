@@ -185,23 +185,20 @@
         and future robot projects get a Vector online in minutes.<br><br>
         <b>Spectacles ↔ this server</b> — verified live on device: surface
         calibration, AR field, puck physics, scoring.<br>
-        <b>Server ↔ robot</b> — proven in the earlier builds; from <i>this</i>
-        build against a freshly-wiped robot, the final step (re-establishing the
-        SDK control token) is what the automation still has to solve.<br><br>
+        <b>Stock robot, out of the box → authorized</b> — <span class="ok">verified
+        end-to-end on hardware (2026-07-25)</span>: Bluetooth pairing, PIN,
+        Wi-Fi, the escape-pod firmware install, the robot's sign-in to the
+        pairing engine, and minting this Mac's control token. Nothing is typed
+        by hand and the Vector app is never needed.<br><br>
         <b>Setup, per robot type</b> — two independent tracks:<br>
-        · <span class="key">OSKR / dev</span> — SSH and the log-archive route are
-          verified end-to-end on hardware.<br>
-        · <span class="key">Stock</span> — Bluetooth pairing, PIN and Wi-Fi are
-          verified; the escape-pod firmware install is built but not yet run on a
-          stock unit. It's a real OTA — keep him on the charger, don't interrupt.<br>
-        · <span style="color:#f7b955">⚠ A factory-reset / Clear-User-Data robot
-          loses its SDK control token; re-minting it locally is the one open
-          item. A robot already running with wire-pod keeps its token and is
-          unaffected.</span><br><br>
-        Context: this grew on a single OSKR Vector that was <i>already</i> connected
-        and running on wire-pod — which is why the "already provisioned" paths are
-        the well-trodden ones. Details:
-        <code>docs/SETUP_ROBOT.md</code> → Status &amp; risks.
+        · <span class="key">Stock</span> — verified end-to-end, as above. The
+          firmware install is a real OTA: he downloads ~180 MB himself and
+          reboots — keep him on the charger and don't interrupt.<br>
+        · <span class="key">OSKR / dev</span> — the SSH and log-archive routes
+          are implemented but <b>not yet re-verified</b> on current hardware;
+          this is the remaining open track.<br><br>
+        Details: <code>docs/STOCK_ONBOARDING_PLAN.md</code> (how the stock path
+        works) and <code>docs/SETUP_ROBOT.md</code> → Status &amp; risks.
       </div>
     </div>
   </div>
@@ -476,7 +473,11 @@ function renderRoute() {
     html = `<h2>Connect your Vector</h2>`
       + `<div class="hint">One flow, from any starting point: we find Vector, `
       + `join him to Wi-Fi over Bluetooth if needed, and authorize — `
-      + `<span class="key">nothing to type.</span></div>`
+      + `<span class="key">nothing to type.</span>`
+      + `<br><br>If this is a <b>stock</b> Vector he also needs a one-time `
+      + `firmware install, so the full run is: pair → Wi-Fi → install → he `
+      + `reboots → pair again → authorize. Around 10 minutes, most of it `
+      + `waiting. You'll never need the Vector app.</div>`
       + `<button onclick="onboardStart()">CONNECT VECTOR →</button>`
       + `<div class="hint" style="margin-top:16px;opacity:.8">Have an `
       + `<span class="key">OSKR / dev</span> Vector already on Wi-Fi? Set him up `
@@ -486,14 +487,12 @@ function renderRoute() {
       // Honest per-track status, right where the choice is made.
       + `<div class="hint" style="margin-top:20px;border-top:1px solid var(--line);`
       + `padding-top:14px;opacity:.85"><b>Where each path stands</b><br>`
+      + `<span class="key">Stock</span> — <span class="ok">verified end-to-end `
+      + `on hardware</span>: pairing, PIN, Wi-Fi, the escape-pod firmware `
+      + `install and authorization. Expect one firmware install (~180 MB, he `
+      + `downloads it himself) and one reboot — keep him on the charger.<br>`
       + `<span class="key">OSKR / dev</span> — SSH and the archive route are `
-      + `verified end-to-end on hardware.<br>`
-      + `<span class="key">Stock</span> — Bluetooth pairing, PIN and Wi-Fi are `
-      + `verified; the firmware install is built but <b>not yet run on a stock `
-      + `unit</b>. Keep him on the charger and don't interrupt it.<br>`
-      + `<span style="color:#f7b955">⚠ A robot that was factory-reset / Clear `
-      + `User Data loses its SDK control token — re-minting it locally is the `
-      + `one open item.</span></div>`;
+      + `implemented but <b>not yet re-verified</b> on current hardware.</div>`;
   }
   $("routeCard").innerHTML = html;
 }
@@ -620,14 +619,19 @@ async function refreshStatus() {
     }
     // Actionable reason when the link is down (cert rotated / moved / unreachable).
     if (r.link_hint) {
-      const rePair = r.link_hint_kind === "cert_rotated";
+      const attention = r.link_hint_kind === "cert_rotated"
+                     || r.link_hint_kind === "needs_reboot";
       $("statusGrid").innerHTML +=
-        `<div class="hint" style="grid-column:1/-1;color:${rePair ? "#f7b955" : "#9aa"}">`
-        + (rePair ? "⚠ " : "") + r.link_hint + "</div>";
+        `<div class="hint" style="grid-column:1/-1;color:${attention ? "#f7b955" : "#9aa"}">`
+        + (attention ? "⚠ " : "") + r.link_hint + "</div>";
     }
     let act = "";
     if (!r.paired)
       act = `<button onclick="showTab('pair')">PAIR YOUR ROBOT →</button>`;
+    // A stalled control channel is fixed by restarting the ROBOT, not by
+    // re-pairing — offering RE-PAIR here just loops people through the wizard.
+    else if (!r.connected && r.link_hint_kind === "needs_reboot")
+      act = `<button onclick="connectRobot()">I RESTARTED HIM — RETRY →</button>`;
     else if (!r.connected && r.link_hint_kind === "cert_rotated")
       act = `<button onclick="showTab('pair')">RE-PAIR ROBOT →</button>`;
     else if (!r.connected && s.server.use_robot)
@@ -1271,12 +1275,14 @@ async function bleProvision() {
   const shortFw = fw.length > 46 ? fw.slice(0, 46) + "…" : fw;
   $("provDetect").innerHTML =
     `Detected: <span class="key">${st.state}</span>`
-    + `<div class="hint" style="opacity:.7">${shortFw}</div>`;
+    + `<div class="hint" style="opacity:.7">${shortFw}</div>`
+    + `<div id="podReady" class="hint"></div>`;
+  wirepodReadyLine();
 
   if (st.state === "in_firmware_ep") {
     $("provBody").innerHTML =
       `<div class="ok">Already set up for wire-pod — nothing to install.</div>`
-      + `<button onclick="bleWifiScan(); bleStep(2)">CONTINUE →</button>`;
+      + `<button onclick="bleStep(3)">CONTINUE →</button>`;
   } else if (st.state === "in_recovery_prod") {
     // Recovery on a PRODUCTION robot: the state wire-pod flashes from. (A dev
     // robot in recovery is still ankidev and would fail with 214, so it falls
@@ -1284,9 +1290,12 @@ async function bleProvision() {
     $("provBody").innerHTML =
       `<div class="ok">He's in recovery mode — ready to install.</div>`
       + `<div class="hint">This installs the <span class="key">escape-pod `
-      + `firmware</span> over Bluetooth (a few minutes — keep him on the `
-      + `charger and don't touch him). Afterwards he talks to wire-pod on any `
-      + `Wi-Fi.</div>`
+      + `firmware</span>: Vector downloads it from this Mac over Wi-Fi and `
+      + `flashes himself. A few minutes — keep him on the charger and don't `
+      + `touch him. Afterwards he talks to the pairing engine on any Wi-Fi.`
+      + `<br><br>Then he reboots into his own setup screen (cloud, then "get `
+      + `the Vector app") — that's expected; you come back here, pair again `
+      + `and authorize, and this wizard clears it.</div>`
       + `<div id="flashBar" class="hint" style="display:none"></div>`
       + `<button onclick="bleFlashEp()" id="btnFlash">INSTALL FIRMWARE →</button>`;
   } else if (st.state === "in_firmware_dev" || st.state === "in_recovery_dev") {
@@ -1298,24 +1307,45 @@ async function bleProvision() {
       + `(one reboot).</div>`
       + `<div id="oskrBar" class="hint" style="display:none"></div>`
       + `<button onclick="bleProvisionOskr()" id="btnOskr">SET UP THIS ROBOT →</button>`
-      + `<button class="secondary" onclick="bleWifiScan(); bleStep(2)">SKIP</button>`;
+      + `<button class="secondary" onclick="bleStep(3)">SKIP</button>`;
   } else {
-    // Stock robot: flash the escape-pod firmware over BLE.
-    const inRecovery = st.state === "in_recovery_prod";
+    // Stock robot in NORMAL firmware. The production image refuses an OTA
+    // here — the install only runs from recovery — so send him to recovery
+    // instead of offering a button that is guaranteed to fail (this is
+    // exactly what upstream wire-pod does for `in_firmware_nonep`).
     $("provBody").innerHTML =
       `<div class="hint">This is a <span class="key">stock</span> Vector — his `
       + `cloud points at Anki's servers, which are gone, so he can't be `
-      + `authorized yet. We install the <span class="key">escape-pod firmware</span> `
-      + `once; afterwards he works on any Wi-Fi.`
-      + (inRecovery ? `<br><br>He's in recovery mode — ready to flash.`
-                    : `<br><br>If the flash is refused, put him in recovery `
-                      + `first: on the charger, hold the back button ~15 s `
-                      + `until his face shows <code>anki.com/v</code>.`)
-      + `</div>`
+      + `authorized yet. He needs the <span class="key">escape-pod firmware</span> `
+      + `once; afterwards he works on any Wi-Fi.</div>`
+      + `<div class="hint"><b>He has to be in recovery mode to accept it:</b>`
+      + `<br>1. Put Vector on the charger.`
+      + `<br>2. Hold the backpack button ~15 s — he switches off; <i>keep `
+      + `holding</i> until he comes back on.`
+      + `<br>3. His face shows <code>anki.com/v</code> — that's recovery.`
+      + `<br>4. Double-press the backpack button and pair again below; the `
+      + `install starts once he's back on Wi-Fi.</div>`
       + `<div id="flashBar" class="hint" style="display:none"></div>`
-      + `<button onclick="bleFlashEp()" id="btnFlash">INSTALL FIRMWARE →</button>`
-      + `<button class="secondary" onclick="bleWifiScan(); bleStep(2)">SKIP</button>`;
+      + `<button onclick="bleRestart()">PAIR AGAIN (in recovery) →</button>`
+      + `<button class="secondary" onclick="bleFlashEp()" id="btnFlash">TRY `
+      + `INSTALLING ANYWAY</button>`;
   }
+}
+
+// The escape-pod firmware hard-codes `escapepod.local:443` and pins the DDL
+// escape-pod certificate. wire-pod only answers to that identity in escape-pod
+// mode, so show the operator whether it does — BEFORE a 180 MB install.
+async function wirepodReadyLine() {
+  const el = $("podReady");
+  if (!el) return;
+  el.innerHTML = `<span class="spin">◌</span> checking the pairing engine…`;
+  let s;
+  try { s = await (await fetch("/api/wirepod_status")).json(); }
+  catch (e) { s = {ready: false, detail: String(e)}; }
+  el.innerHTML = s.ready
+    ? `<span class="ok">Pairing engine ready — escapepod.local → ${s.ip}</span>`
+    : `<span class="error">Pairing engine not ready.</span> ${s.detail || ""}`
+      + ` <a href="#" onclick="wirepodReadyLine();return false">re-check</a>`;
 }
 
 // OSKR path, fully in the UI: the server reuses THIS BLE session to install our
@@ -1411,7 +1441,7 @@ async function bleProvisionOskr(tryLogs) {
         + `logs. We'll pull them over Bluetooth (a minute or two) and use it.</div>`
         + `<div id="oskrBar" class="hint" style="display:none"></div>`
         + `<button onclick="bleProvisionOskr()" id="btnOskr">SET UP THIS ROBOT →</button>`
-        + `<button class="secondary" onclick="bleWifiScan(); bleStep(2)">SKIP</button>`;
+        + `<button class="secondary" onclick="bleStep(3)">SKIP</button>`;
     } else {
       $("btnOskr").disabled = false;
     }
@@ -1429,12 +1459,21 @@ async function bleFlashEp() {
   $("provErr").style.display = "none";
   $("flashBar").style.display = "";
   $("flashBar").innerHTML = `<span class="spin">◌</span> starting…`;
+  let started;
   try {
-    await api("/api/ble/flash_ep", {});
+    started = await api("/api/ble/flash_ep", {});
   } catch (e) {
+    started = {ok: false, error: String(e)};
+  }
+  // The server refuses to flash unless wire-pod really answers as
+  // escapepod.local with the escape-pod certificate — otherwise the robot
+  // finishes a long install and comes back pointed at nobody.
+  if (!started || !started.ok) {
     $("btnFlash").disabled = false;
+    $("flashBar").style.display = "none";
     $("provErr").style.display = "";
-    $("provErr").textContent = "Could not start the flash: " + e;
+    $("provErr").textContent = (started && started.error)
+      ? started.error : "Could not start the flash.";
     return;
   }
   // Poll until done/failed. The link drops when the robot reboots into the new
@@ -1454,13 +1493,22 @@ async function bleFlashEp() {
     $("flashBar").innerHTML = s.done
       ? `<span class="ok">Firmware installed ✓ Vector is rebooting…</span>`
       : `<span class="spin">◌</span> installing… ${s.percent}%`
-        + ` <span style="opacity:.6">(don't unplug him)</span>`;
+        + `<div class="hint">Vector downloads the firmware himself over `
+        + `Wi-Fi, so this takes a few minutes. Keep him on the charger. His `
+        + `Bluetooth link may go quiet near the end — that's him rebooting `
+        + `into the new firmware, not a failure.</div>`;
     if (s.done) {
       clearInterval(poll);
       $("provBody").innerHTML +=
-        `<div class="ok">Done. Give him ~1 minute to reboot, then start over `
-        + `to pair — he now talks to wire-pod on any Wi-Fi.</div>`
-        + `<button onclick="bleRestart()">START OVER →</button>`;
+        `<div class="ok">Done — the escape-pod firmware is installed.</div>`
+        + `<div class="hint">What happens now: Vector reboots (~1 minute) and `
+        + `comes up in <b>his own first-time setup</b> — a cloud icon, then a `
+        + `"get the Vector app" screen. <b>Ignore it</b>, you don't need the `
+        + `app: this wizard does the same job over Bluetooth, and the last `
+        + `step here clears that screen for you.`
+        + `<br><br>His Wi-Fi is wiped by the install, so pair again below and `
+        + `re-enter the network — then authorize.</div>`
+        + `<button onclick="bleRestart()">PAIR AGAIN →</button>`;
     }
   }, 2000);
 }
@@ -1519,13 +1567,16 @@ async function blePin() {
   // robot that skips this can never be authorized (it talks to ddl.io).
   const st = res.status || {};
   const fw = (st.firmware || "").toLowerCase();
-  const needsProvisioning = fw && !fw.includes("ep-");
-  if (needsProvisioning) { bleProvision(); return; }
+  window.needsProvisioning = !!(fw && !fw.includes("ep-"));
 
-  // Progressive: if Vector is already online, skip the Wi-Fi step entirely
-  // (wifi_state 1 = connected) — no needless reconnect, no result-255 trap.
+  // Wi-Fi comes BEFORE provisioning: the escape-pod install is a 180 MB
+  // download the ROBOT pulls over Wi-Fi from this Mac, so a robot with no
+  // network can't be flashed at all. (Upstream wire-pod orders it the same
+  // way — its OTA step only runs from the Wi-Fi success callback.)
+  // wifi_state 1 = already connected -> no needless reconnect, no 255 trap.
   if (st.wifi_state === 1) {
     $("bleDoneMsg").innerHTML = "Vector is already on Wi-Fi ✓";
+    if (window.needsProvisioning) { bleProvision(); return; }
     bleStep(3);
     return;
   }
@@ -1572,11 +1623,24 @@ async function bleWifiConnect() {
   if (!res.ok) {
     $("bleWifiOk").style.display = "none";
     $("bleWifiErr").style.display = "";
-    $("bleWifiErr").textContent = res.error ||
-      ("Wi-Fi connect failed (result " + (res.result && res.result.result) + ") — check the password.");
+    const code = res.result && res.result.result;
+    // 255 right after a reboot is usually the robot's network stack still
+    // coming up, not a wrong password — telling people to retype a correct
+    // password sends them chasing the wrong thing. (Seen live: first attempt
+    // 255, second attempt with the same password connected.)
+    $("bleWifiErr").innerHTML = res.error
+      || (code === 255
+          ? "Vector didn't join on that try (code 255). This is common right "
+            + "after he reboots — his Wi-Fi isn't ready yet. Press <b>CONNECT"
+            + "</b> again with the same password; only re-check the password "
+            + "if it fails a few times."
+          : "Wi-Fi connect failed (result " + code + ") — check the password.");
     return;
   }
   $("bleDoneMsg").innerHTML = "Vector is on Wi-Fi" + (res.ip ? " at <b>"+res.ip+"</b>" : "") + " ✓";
+  // He has a network now — this is the point where a stock robot can be
+  // flashed (he downloads the firmware from this Mac himself).
+  if (window.needsProvisioning) { bleProvision(); return; }
   bleStep(3);
 }
 
@@ -1587,15 +1651,51 @@ async function bleAuthorize() {
   if (errEl) errEl.style.display = "none";
   const msg = $("bleAuthMsg");
   if (msg) msg.innerHTML = '<span class="spin">◌</span> authorizing…';
-  const res = await api("/api/ble/authorize",
-                        window.foundIp ? {ip: window.foundIp} : {});
+
+  // Authorizing is four steps and can take a minute — the robot has to sign
+  // in to the pairing engine before his certificate exists. Show the live
+  // stage so a normal wait doesn't look like a hang, and never conclude
+  // anything while the request is still running.
+  const tick = setInterval(async () => {
+    let s;
+    try { s = await (await fetch("/api/ble/authorize_status")).json(); }
+    catch (e) { return; }
+    if (msg && s.detail) {
+      msg.innerHTML = `<span class="spin">◌</span> ${s.detail}`;
+    }
+  }, 1000);
+
+  let res;
+  try {
+    res = await api("/api/ble/authorize",
+                    window.foundIp ? {ip: window.foundIp} : {});
+  } finally {
+    clearInterval(tick);
+  }
   if (btn) btn.disabled = false;
   if (res.ok && res.connected) {
     showTab("dash");
     return;
   }
   if (res.ok && !res.connected) {
-    if (msg) msg.innerHTML = res.note || "Credentials ready.";
+    // Credentials are written but the control link is NOT up — saying
+    // "ready" here is the same premature conclusion as calling a running
+    // firmware install "rejected". Name what's missing and what fixes it.
+    // A robot whose token was just minted commonly needs one full reboot
+    // before his control channel answers (restarting his services isn't
+    // enough) — see docs/PAIRING_86_DEEPDIVE.md.
+    if (msg) {
+      msg.innerHTML = res.note
+        ? res.note
+        : `<div class="ok">Credentials written ✓</div>`
+          + `<div class="hint">His control link isn't answering yet. This is `
+          + `normal right after a first-time setup: <b>restart Vector once</b> `
+          + `— hold his backpack button ~5 s until he switches off, then put `
+          + `him back on the charger. When he's up, press RETRY.</div>`
+          + `<button onclick="bleAuthorize()">RETRY LINK →</button>`
+          + `<button class="secondary" onclick="showTab('dash')">`
+          + `GO TO DASHBOARD</button>`;
+    }
     return;
   }
   // "wire-pod has no certificate for serial X" means this robot was never

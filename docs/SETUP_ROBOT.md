@@ -92,10 +92,21 @@ you, and vice versa.
 
 | Step | State |
 |---|---|
+**Verified end-to-end on a brand-new stock robot, 2026-07-25** — a unit that had
+never been signed into the official app.
+
+| Step | State |
+|---|---|
 | Find + pair over Bluetooth, PIN handshake | **verified on hardware** |
 | Join him to your Wi-Fi | **verified on hardware** |
-| Install the escape-pod firmware over Bluetooth | **built, not yet verified by us on a stock unit** |
-| Cloud → wire-pod, then SDK control | follows from the firmware install; **unproven end-to-end on our side** |
+| Install the escape-pod firmware (he downloads it from your Mac) | **verified on hardware** |
+| His sign-in to the pairing engine → session certificate | **verified on hardware** |
+| Mint this Mac's SDK control token | **verified on hardware** |
+
+**What the run actually looks like:** pair → Wi-Fi → firmware install (~180 MB,
+a few minutes) → he reboots into his own first-time setup screen → pair again →
+Wi-Fi again (the install wipes it) → authorize. About 10 minutes, mostly
+waiting. You never need the Vector app.
 
 **Risks worth knowing:**
 
@@ -103,8 +114,12 @@ you, and vice versa.
   the same image and the same route upstream wire-pod uses, and the robot keeps a
   recovery mode — but treat it like any firmware flash: **keep him on the charger,
   don't unplug, don't interrupt it.**
-- We have not yet run this on a stock test unit. If you're early here, please open
-  an issue with the exact wizard message — that's the fastest way to get it proven.
+- The robot must be **in recovery mode** to accept it (on the charger, hold the
+  backpack button ~15 s until his face shows `anki.com/v`). The wizard detects
+  this and tells you; production firmware simply refuses the install otherwise.
+- A `Wi-Fi connect failed (result 255)` on the first try right after a reboot is
+  usually his network stack still coming up — press CONNECT again with the same
+  password before suspecting it.
 
 ### OSKR / dev Vector
 
@@ -113,21 +128,26 @@ you, and vice versa.
 | Mac already has SSH access → auto-provision | **verified** |
 | Log-archive drop → key detected, robot found on the LAN, provisioned | **verified end-to-end** |
 | Paste-the-key route | **verified** |
-| A robot that was **factory-reset / Clear User Data** | ⚠️ **open item — see below** |
+| A robot with **no token at all** (factory-reset / brand new) | **solved** — see below |
 
-**The one open item.** A wipe clears not just the SSH key but the robot's **SDK
-control token store** (`vic.AppTokens`). Re-establishing that token locally is the
-piece still being worked on: the robot only trusts a token its cloud client
-actually *pulled*, and getting a freshly-wiped robot to perform that pull is not
-solved yet. Full diagnosis, everything already proven, and the concrete next
-steps are in [PAIRING_86_DEEPDIVE.md](PAIRING_86_DEEPDIVE.md).
+**The old "open item" is closed.** A wipe clears the robot's **SDK control token
+store** (`vic.AppTokens`), and the long-standing puzzle was that a robot never
+re-populates it on its own: the robot only trusts a token its cloud client
+actually *pulled*, and `vic-cloud` does not do that unprompted. Sitting on Wi-Fi
+next to a running wire-pod changes nothing — which is exactly why
+`/session-certs/<esn>` stayed empty and pairing looked broken.
 
-**This does not affect a normal OSKR robot** that has been running with wire-pod —
-it already holds its token, so setup and play work today. It only bites if you
-wipe the robot and expect to re-pair from zero.
+**The trigger is a Bluetooth message**, not a network condition:
+`RtsCloudSessionRequest` (wire-pod's `do_auth`) tells `vic-cloud` to perform
+primary auth *now*, against whatever its `server_config` points at. Send that
+over the live BLE session and the pairing engine gets the robot's session
+certificate a second later; the SDK token mint then just works. The wizard does
+this automatically inside **Authorize**.
 
-- **Don't factory-reset / Clear User Data** on a robot you want to keep playing
-  with until that item is closed.
+Proven on a from-zero stock robot (2026-07-25). The same mechanism should
+rescue a wiped OSKR unit, since RTS is present on every firmware — but that
+specific case has not been re-run on hardware yet. Background:
+[PAIRING_86_DEEPDIVE.md](PAIRING_86_DEEPDIVE.md).
 - The wizard **rewrites the robot's cloud config** (`server_config.json`) and
   installs a CA cert. The original is backed up on the robot (`.bak`) so it's
   reversible — but if your robot is already pointed at *your own* wire-pod, this

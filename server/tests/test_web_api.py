@@ -9,6 +9,9 @@ from game_bridge.web.server import WebUI
 
 class _StubWS:
     client = None
+    alive = False          # /api/status reads these for the lens link panel
+    client_role = ""
+    on_screen = False
 
 
 class _StubTransform:

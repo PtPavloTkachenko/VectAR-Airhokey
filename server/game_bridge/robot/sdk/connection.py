@@ -136,14 +136,27 @@ class RobotLink:
         if self.last_error_kind == "cert_rotated":
             return False
         if await asyncio.to_thread(_tcp_open, self.ip):
-            # Reachable at the saved ip but the SDK still refused — the gateway
-            # is up, so this is a credential problem, not a wrong address.
+            # Reachable at the saved ip but the SDK still refused. Two very
+            # different causes share this signature, and blaming the
+            # certificate for both sends people to re-pair forever:
+            #
+            #   * TLS actually failed  -> _try_connect already saw the SSL
+            #     error and set cert_rotated. Certificate problems fail FAST.
+            #   * Connect TIMED OUT    -> TLS was fine and the gateway answers
+            #     unauthenticated calls, but every AUTHENTICATED call hangs.
+            #     That's a robot whose control token was just minted and whose
+            #     gateway hasn't been through a full reboot yet — restarting
+            #     its services is not enough (docs/PAIRING_86_DEEPDIVE.md).
+            #     Verified live 2026-07-25: identical symptom, and one reboot
+            #     brought the link straight up.
             if self.last_error_kind != "cert_rotated":
-                self.last_error_kind = "cert_rotated"
+                self.last_error_kind = "needs_reboot"
                 self.last_error_msg = (
-                    f"{self.name} answers at {self.ip} but rejected the saved "
-                    "credential — the robot was re-onboarded. Re-run PAIR ROBOT "
-                    "to refresh the certificate + token.")
+                    f"{self.name} answers at {self.ip} and his certificate is "
+                    "fine, but his control channel isn't responding. This is "
+                    "normal right after a first-time setup: restart Vector "
+                    "once — hold his backpack button ~5 s until he switches "
+                    "off, then put him back on the charger.")
             return False
         # Not reachable at the saved ip -> the robot probably moved (DHCP / it
         # hopped to a phone hotspot). Ask the LAN where it is now.

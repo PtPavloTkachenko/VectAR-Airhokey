@@ -371,7 +371,14 @@ class RtsSession:
             last = m.parse_ota_update_response(payload)
             if callable(progress_cb):
                 progress_cb(last)
-            if last["status"] not in (0, 1):
+            # Status 1 AND 2 both mean "still going" — the reference client
+            # continues on either (vector-bluetooth ble/otastart.go:
+            # `if resp.Status == 1 || resp.Status == 2 { return b, true, err }`).
+            # Treating 2 as fatal aborted our progress loop the instant a real
+            # robot accepted the flash: the install ran fine (he downloaded all
+            # 180 MB and rebooted) while the UI showed "OTA rejected".
+            # Verified live 2026-07-25 on a stock unit in recovery.
+            if last["status"] not in (0, 1, 2):
                 # 214 is a BUILD-TYPE mismatch, not a version problem — straight
                 # from update-engine on the robot:
                 #   die(214, "Ankidev OS can't install non-ankidev OTA file")

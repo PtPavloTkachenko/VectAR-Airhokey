@@ -78,7 +78,7 @@ def anki_dir(tmp_path, monkeypatch):
 
 def test_pair_happy_path(monkeypatch, anki_dir):
     pem = b"-----BEGIN CERTIFICATE-----\nabc\n-----END CERTIFICATE-----\n"
-    monkeypatch.setattr(pairing, "fetch_cert", lambda pod, serial: pem)
+    monkeypatch.setattr(pairing, "fetch_cert", lambda pod, serial, wait=0.0, on_wait=None: pem)
     monkeypatch.setattr(pairing, "validate_cert_name", lambda cert, name: None)
     monkeypatch.setattr(pairing, "mint_guid", lambda cert, ip, name: b"guid-123")
 
@@ -105,7 +105,7 @@ def test_pair_preserves_other_sections(monkeypatch, anki_dir):
         "[11111111]\ncert = /x.cert\nip = 10.0.0.5\nname = Vector-Q1Q1\n"
         "guid = old-guid\n")
     pem = b"-----BEGIN CERTIFICATE-----\nabc\n-----END CERTIFICATE-----\n"
-    monkeypatch.setattr(pairing, "fetch_cert", lambda pod, serial: pem)
+    monkeypatch.setattr(pairing, "fetch_cert", lambda pod, serial, wait=0.0, on_wait=None: pem)
     monkeypatch.setattr(pairing, "validate_cert_name", lambda cert, name: None)
     monkeypatch.setattr(pairing, "mint_guid", lambda cert, ip, name: b"new-guid")
 
@@ -125,7 +125,7 @@ def test_pair_requires_serial_and_ip(monkeypatch, anki_dir):
 
 def test_pair_propagates_mint_failure(monkeypatch, anki_dir):
     pem = b"-----BEGIN CERTIFICATE-----\nabc\n-----END CERTIFICATE-----\n"
-    monkeypatch.setattr(pairing, "fetch_cert", lambda pod, serial: pem)
+    monkeypatch.setattr(pairing, "fetch_cert", lambda pod, serial, wait=0.0, on_wait=None: pem)
     monkeypatch.setattr(pairing, "validate_cert_name", lambda cert, name: None)
 
     def fail(cert, ip, name):

@@ -42,6 +42,11 @@ class WebUI:
         self._pair_lock = asyncio.Lock()
         self._ble_lock = asyncio.Lock()
         self._ble = None          # live RtsSession during onboarding
+        self._known = {}          # last identity read over BLE (survives drops)
+        # Live authorize progress. Authorizing takes up to a minute (the robot
+        # has to handshake with wire-pod before his cert exists), and a single
+        # spinner for that long reads as a hang — so publish each stage.
+        self._auth = {"active": False, "step": "", "detail": "", "error": ""}
 
         app = web.Application()
         app.add_routes([
@@ -74,6 +79,12 @@ class WebUI:
             # The robot downloads the escape-pod firmware from here during the
             # stock-provisioning flash (local cache, else proxy archive.org).
             web.get("/api/get_ota/{name}", self.api_get_ota),
+            # Is the pairing engine in escape-pod mode? A stock robot cannot
+            # be onboarded without it, so the wizard checks before flashing.
+            web.get("/api/wirepod_status", self.api_wirepod_status),
+            # Live stage of an in-flight authorize, so a 60 s wait for the
+            # robot's check-in reads as progress instead of a hang.
+            web.get("/api/ble/authorize_status", self.api_authorize_status),
             # static assets (onboarding illustrations, icons)
             web.static("/static", STATIC_DIR),
         ])
@@ -293,6 +304,12 @@ class WebUI:
             logger.warning(f"get_ota proxy failed: {e}")
             return web.Response(status=502, text=f"proxy failed: {e}")
 
+    async def api_wirepod_status(self, req):
+        """Escape-pod readiness — probed live, not read from config."""
+        pod = req.query.get("pod") or config.WIREPOD_URL
+        st = await asyncio.to_thread(pairing.wirepod_status, pod)
+        return web.json_response({"ok": True, **st})
+
     async def api_ble_state(self, req):
         """Which provisioning path this robot needs (stock / OSKR / already-ep)."""
         if not self._ble:
@@ -319,6 +336,19 @@ class WebUI:
             body = await req.json()
         except Exception:
             body = {}
+        # Flashing `ep` bakes `escapepod.local` into the robot permanently. If
+        # wire-pod isn't actually answering to that name with the escape-pod
+        # certificate, the robot comes back from a 180 MB flash pointed at
+        # nobody — so verify first rather than discover it two steps later.
+        pod = body.get("pod") or config.WIREPOD_URL
+        ready = await asyncio.to_thread(pairing.wirepod_status, pod)
+        if not ready["ready"] and not body.get("force"):
+            return web.json_response(
+                {"ok": False, "step": "wirepod", "wirepod": ready,
+                 "error": "The pairing engine isn't in escape-pod mode, so "
+                          f"flashing now would strand the robot. {ready['detail']}"},
+                status=409)
+
         name = body.get("ota") or config.EP_OTA_NAME
         host = _lan_ip() or req.host.split(":")[0]
         url = f"http://{host}:{config.WEB_PORT}/api/get_ota/{name}"
@@ -744,6 +774,16 @@ class WebUI:
         except Exception:
             return False
 
+    def _set_auth(self, step: str, detail: str, error: str = "") -> None:
+        """Publish what authorize is doing right now (polled by the wizard)."""
+        self._auth = {"active": not error, "step": step, "detail": detail,
+                      "error": error}
+        if detail:
+            logger.debug(f"authorize[{step}] {detail}")
+
+    async def api_authorize_status(self, _req):
+        return web.json_response({"ok": True, **self._auth})
+
     async def api_ble_authorize(self, req):
         """One authorize used by the whole progressive flow.
 
@@ -759,6 +799,7 @@ class WebUI:
         except Exception:
             body = {}
         pod = body.get("pod") or config.WIREPOD_URL
+        self._set_auth("start", "Starting…")
 
         cfg_serial, cfg_ips, _n = config.read_robot_identity()
         if self._ble is not None:
@@ -770,24 +811,90 @@ class WebUI:
                 except Exception:
                     ip = ""
             name = (self._ble.name or "").replace(" ", "-")
+            # Remember who this is: BLE drops (robot reboot, retry, a failed
+            # authorize) and without this a second press lands on "we don't
+            # know which Vector this is" even though we read his serial a
+            # minute ago. Seen live, 2026-07-25.
+            if esn:
+                self._known = {"esn": esn, "ip": ip, "name": name}
+
+            # THE step that makes wire-pod hold a certificate for this robot.
+            # A Vector never contacts its token server on its own — vic-cloud
+            # does primary auth only when asked, and the ask is this BLE
+            # message (wire-pod's own `do_auth`, ble.go:450). Without it the
+            # robot sits on Wi-Fi talking to nobody and `/session-certs/<esn>`
+            # stays 404 forever, which reads as "wire-pod is broken" when in
+            # fact nothing ever triggered the handshake.
+            # Verified missing on the live stock robot, 2026-07-25.
+            cloud_err = ""
+            for attempt in range(1, 4):
+                self._set_auth("cloud", "Asking Vector to sign in to the "
+                               f"pairing engine (try {attempt}/3)…")
+                try:
+                    await self._ble.cloud_auth()
+                    logger.info("robot cloud-authed against wire-pod "
+                                f"(attempt {attempt})")
+                    cloud_err = ""
+                    break
+                except Exception as e:
+                    cloud_err = f"{type(e).__name__}: {e}"
+                    logger.warning(f"cloud auth attempt {attempt}/3 failed: {e}")
+                    await asyncio.sleep(2.0)
+            if cloud_err:
+                # Not fatal on its own: an already-provisioned robot has a cert
+                # from an earlier run, so let the cert poll below decide.
+                logger.warning(f"cloud auth did not succeed: {cloud_err}")
+
+            # Leave the robot's own setup flow. A freshly flashed Vector sits
+            # on the "download the Vector app" screen until something sends
+            # this — the app normally does. Needs the guid that cloud_auth
+            # just returned, so it has to happen here, before we drop BLE.
+            self._set_auth("onboarding", "Getting Vector out of his own setup "
+                           "screen…")
+            try:
+                await self._ble.onboard_complete()
+                logger.info("robot onboarding marked complete")
+            except Exception as e:
+                logger.warning(f"could not finish the robot's onboarding: {e}")
+
             await self._drop_ble()      # release BLE so the mint's gRPC can run
         else:
-            esn = body.get("serial") or os.getenv("VECTOR_SERIAL", "") or cfg_serial
-            ip = body.get("ip", "") or (cfg_ips.split(",")[0] if cfg_ips else "")
-            name = body.get("name", "")
+            known = getattr(self, "_known", {})
+            esn = (body.get("serial") or os.getenv("VECTOR_SERIAL", "")
+                   or cfg_serial or known.get("esn", ""))
+            ip = (body.get("ip", "") or (cfg_ips.split(",")[0] if cfg_ips else "")
+                  or known.get("ip", ""))
+            name = body.get("name", "") or known.get("name", "")
+
+        # The robot's session cert only exists once HE has handshaked with
+        # wire-pod, which trails the Wi-Fi step. Poll for it (default 60 s)
+        # instead of failing on the first miss — that race was the usual
+        # "cert does not exist" dead end on a freshly onboarded robot.
+        cert_wait = float(body.get("cert_wait", 60.0))
 
         minted = False
         if esn and ip:
+            def on_wait(waited: float):
+                left = max(0, int(cert_wait - waited))
+                self._set_auth(
+                    "cert", "Waiting for Vector to check in with the pairing "
+                    f"engine — this is normal, up to {left}s left…")
+
+            self._set_auth("cert", "Waiting for Vector to check in with the "
+                           "pairing engine…")
             try:
-                await asyncio.to_thread(pairing.pair, pod, esn, name, ip)
+                await asyncio.to_thread(pairing.pair, pod, esn, name, ip,
+                                        cert_wait, on_wait)
+                self._set_auth("mint", "Minting this Mac's key…")
                 minted = True
             except pairing.PairingError as e:
                 if not self._is_provisioned():
                     # An unprovisioned robot fails the mint because wire-pod has
                     # no cert for it — that's a setup problem, not a user error.
+                    ready = await asyncio.to_thread(pairing.wirepod_status, pod)
                     return web.json_response(
                         {"ok": False, "step": e.step, "needs_setup": True,
-                         "error": e.message})
+                         "wirepod": ready, "error": e.message})
                 # already provisioned -> mint optional, fall through to connect
             except Exception as e:
                 if not self._is_provisioned():
