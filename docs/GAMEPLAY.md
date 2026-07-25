@@ -72,3 +72,22 @@ vision correction absorbs most of it; if the physical robot visibly disagrees
 with his AR ghost, just finish the rally — a goal reset re-parks him — or
 re-place him on the pad (the lens will prompt if the server declares
 `delocalized`).
+
+## The goal beat, and why it yields to play
+
+A goal reaction is a 10-18 s performance: turn to face you, animation,
+drive home, settle on the patrol axis. The pause it has to fit in is about
+six seconds. While it runs the goalie is disabled — the choreography owns
+the motors — so if goals arrive quickly the reactions queue up and the robot
+never defends again. Measured on hardware: 1:5 in thirty seconds with the
+robot standing still, each goal buying another eight seconds of blindness.
+
+So play preempts the show. `rally_start` stops the robot's motors, cancels the
+running choreography and clears the queue; the goalie has the wheels back on
+the same tick. A celebration is worth exactly as much time as the game isn't
+using.
+
+Turn budgets scale with the angle for the same reason: a flat 1.6 s is fine
+for 20 degrees (measured ~1 s) and impossible for 180, so every big turn used
+to "fail" on a timeout and fall through to the wheel servo — 14 times in one
+session, zero after.

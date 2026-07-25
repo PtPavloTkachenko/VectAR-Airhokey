@@ -190,8 +190,16 @@ class Bridge:
         if name == "rally_start":
             self.rally_active = True
             self.safety.note_puck()
-            # eyes back to game cyan
             if self.commander:
+                # The puck is live: whatever the robot was performing, stop
+                # it and give the goalie the wheels back NOW. A goal reaction
+                # runs 10-18 s against a ~6 s pause, and the goalie is frozen
+                # for all of it — so on quick goals the reactions pile up and
+                # he never defends again (measured: 1:5 in thirty seconds,
+                # standing still). Celebration is worth exactly as much time
+                # as the game is not using.
+                self.commander.preempt("rally started")
+                # eyes back to game cyan
                 self.commander._eye_mood(config.EYE_NORMAL)
         elif name == "puck_paddle":
             # collision sound FROM the robot (the physical speaker)

@@ -128,16 +128,57 @@ class RobotCommander:
     # --- Choreography path ---
 
     async def run_queue(self):
-        """Consume choreography jobs forever (task in Bridge)."""
+        """Consume choreography jobs forever (task in Bridge).
+
+        Jobs run as a CANCELLABLE task so play can cut them short: a goal
+        reaction is a 10-18 s beat (turn + animation + drive home) budgeted
+        against a ~6 s pause, and while it runs the goalie is disabled. When
+        goals come quickly the reactions queue up, the robot never gets to
+        defend, and the game locks itself into that state — measured live:
+        1:5 in thirty seconds with the robot standing still. See preempt().
+        """
         while True:
             job = await self._queue.get()
+            self._job_task = asyncio.create_task(job())
             try:
-                await job()
+                await self._job_task
+            except asyncio.CancelledError:
+                logger.info("Choreography cut short — play resumed")
             except Exception as e:
                 logger.error(f"Choreography job failed: {e}")
             finally:
+                self._job_task = None
                 self.busy = "idle"
+                self.owns_motors = False
                 self._queue.task_done()
+
+    def preempt(self, reason: str = ""):
+        """Drop the show: the game outranks it.
+
+        Cancels the running choreography and clears anything queued behind
+        it, so the goalie takes the wheels back on the same tick. Safe to
+        call at any time — an idle commander just clears an empty queue.
+        """
+        self._drain_queue()
+        task = getattr(self, "_job_task", None)
+        if task is None or task.done():
+            return
+        logger.info(f"Preempting choreography ({reason or 'play resumed'})")
+        # Cancelling the task only ends OUR wait — an SDK behaviour already
+        # accepted by the robot (turn_in_place, drive_straight) keeps running
+        # on the robot itself. Leave it going and the goalie's wheel commands
+        # fight it at the motor arbiter: the robot lurches, odometry diverges,
+        # and the field pose runs off the table (seen live: y jumped to -384
+        # in a 300 mm-wide field, tripping the escape guard). So stop the
+        # MOTORS first, which ends the action's motion, and only then let go.
+        robot = self._link.robot
+        if robot is not None:
+            try:
+                robot.motors.stop_all_motors()
+            except Exception as e:
+                logger.warning(f"preempt: stop_all_motors failed: {e}")
+        self._last_wheels = (0.0, 0.0)
+        task.cancel()
 
     def say_async(self, text: str):
         """Fire-and-forget grunt — must NOT block the goalie loop."""
@@ -149,6 +190,7 @@ class RobotCommander:
 
     pose_getter = None  # bridge wires: () -> (fx, fy, fdeg) field pose
     owns_motors = False  # True while a behavior move (turn/drive/anim) runs
+    _job_task = None     # the choreography currently running (preempt cancels it)
 
     _last_flash = 0.0
 
@@ -287,12 +329,20 @@ class RobotCommander:
         logger.info(f"TURN_TO {target_deg:.0f} from {pose[2]:.0f} (d={d:.0f})")
         if abs(d) < 10.0:
             return
+        # Give the turn time proportional to the ANGLE. A fixed budget is
+        # wrong by construction: callers pass 1.4-1.6 s, which a 20 deg turn
+        # meets (measured 1.0 s) and a 180 deg one cannot — so every big turn
+        # "failed" on a timeout and fell through to the wheel servo, 14 times
+        # in one session. Measured ~1 s for 20 deg including call overhead;
+        # 0.8 s of slack plus 45 deg/s covers a 180 with room to spare.
+        need = 0.8 + abs(d) / 45.0
+        budget = max(timeout, need)
         robot = self._link.robot
         try:
             from anki_vector.util import degrees as _deg
             fut = robot.behavior.turn_in_place(_deg(d))
             await asyncio.wait_for(
-                asyncio.to_thread(fut.result, timeout=timeout), timeout + 0.5)
+                asyncio.to_thread(fut.result, timeout=budget), budget + 0.5)
             return
         except Exception as e:
             logger.warning(f"TURN_TO sdk failed ({e}) — wheel fallback")
