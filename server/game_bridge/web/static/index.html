@@ -188,8 +188,10 @@
       <div class="hint">
         1 · Pair your Vector (tab above) — the Bluetooth path sets it up, no typing.<br>
         2 · Put Vector on a table with ~1 m of free space, robot connected (green).<br>
-        3 · In Lens Studio set <code>GameConfig.WS_URL</code> to the address shown
-            in the "Lens WS_URL" card above, then send the lens to Spectacles.<br>
+        3 · Open the lens in Lens Studio and send it to Spectacles — no address
+            to set, it finds this Mac by name. (Only if your headset can't
+            resolve <code>.local</code>: put the literal address from the
+            "Lens WS_URL" card into <code>GameConfig.WS_URL</code>.)<br>
         4 · Calibrate the surface with your hand, place Vector on the glowing mark, press START.
       </div>
     </div>
@@ -1121,7 +1123,10 @@ function playWSConnect() {
     ws.send(JSON.stringify({t: "hello", role: "screen", proto: 1}));
     ws.send(JSON.stringify({t: "place_confirm", field: {l: PF.L, w: PF.W},
       robotFieldPose: {x: 140, y: 0, deg: 180}}));
-    ws.send(JSON.stringify({t: "event", name: "rally_start", score: play.score}));
+    // The game opens in COUNTDOWN, so announce that — `rally_start` is sent
+    // when the puck goes live, or the bridge's silence guard disarms the
+    // goalie during the count and he never defends the first rally.
+    ws.send(JSON.stringify({t: "event", name: "countdown", score: play.score}));
     $("playHint").textContent = "real Vector armed";
   };
   ws.onmessage = (ev) => {
@@ -1210,8 +1215,32 @@ $("playCanvas").addEventListener("mousemove", (e) => {
   play.paddle.x = fx; play.paddle.y = fy;
 });
 
+// Browsers stop requestAnimationFrame in a hidden or backgrounded tab, and
+// screen play lives in that loop: the puck stops being streamed, the bridge
+// sees 1.5 s of silence and freezes the rally, and the robot stands there.
+// That happened 30 times in one session — you look at the ROBOT, not the
+// screen, so the window loses focus constantly. Pause deliberately instead,
+// and say so, rather than leaving him frozen with a live puck.
+document.addEventListener("visibilitychange", () => {
+  if (!play) return;
+  if (document.hidden) {
+    play.paused = true;
+    // the bridge already knows these two: pause stops the rally and
+    // the wheels, resume re-arms it
+    wsSend({t: "event", name: "pause"});
+    $("playHint").textContent = "paused — this tab went to the background";
+  } else if (play.paused) {
+    play.paused = false;
+    play.last = performance.now();     // don't integrate the whole gap
+    if (play.phase === "rally") wsSend({t: "event", name: "resume"});
+    $("playHint").textContent = play.driveReal ? "real Vector armed" : "";
+    requestAnimationFrame(playLoop);
+  }
+});
+
 function playLoop(now) {
   if (!play) return;
+  if (play.paused) return;   // resumed by the visibilitychange handler
   const dt = Math.min(0.033, (now - play.last) / 1000); play.last = now;
   playStep(dt);
   playRender();
@@ -1223,7 +1252,11 @@ function playStep(dt) {
   const p = play.puck, hl = PF.L/2, hw = PF.W/2;
   if (play.phase === "countdown") {
     play.tPhase += dt;
-    if (play.tPhase > PF.COUNTDOWN) { play.phase = "rally"; play.tPhase = 0; }
+    if (play.tPhase > PF.COUNTDOWN) {
+      play.phase = "rally"; play.tPhase = 0;
+      // the puck is live NOW — this is what arms the goalie
+      wsSend({t: "event", name: "rally_start", score: play.score});
+    }
     return;
   }
   if (play.phase === "goal") {
@@ -1237,7 +1270,13 @@ function playStep(dt) {
       }
       play.phase = "countdown"; play.tPhase = 0;
       serve(play.lastGoalByVector ? 1 : -1);
-      wsSend({t: "event", name: "rally_start", score: play.score});
+      // "countdown" now, "rally_start" when the puck actually goes live —
+      // the order the lens uses. Announcing the rally here instead meant the
+      // bridge armed the goalie and then heard NOTHING for the whole 4 s
+      // countdown (no puck is streamed while it runs), so its 1.5 s silence
+      // guard disarmed the rally before play even began: the robot went home
+      // and stayed there, returning briskly but never blocking anything.
+      wsSend({t: "event", name: "countdown", score: play.score});
     }
     return;
   }
