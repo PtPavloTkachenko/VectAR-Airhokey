@@ -77,6 +77,9 @@ class Bridge:
         # explain a down link (cert rotated / robot moved / unreachable).
         self.last_link_hint = ""
         self.last_link_hint_kind = ""
+        # Set when a human deliberately handed the robot back (RELEASE CONTROL).
+        # The link watchdog honours it, so he stays free until you say otherwise.
+        self.link_paused = False
         self.pump = None
         self.commander = None
         self.rally_active = False
@@ -333,6 +336,41 @@ class Bridge:
         # anchoring now (this flag has defaulted off since it was retired).
         logger.warning("CUBE_ANCHOR requested but unsupported on the "
                        "VectAR Link — ignored (YOLO vision_fix covers it)")
+
+    async def link_watchdog(self):
+        """Bring the robot back on his own after HE goes away and returns.
+
+        Rebooting Vector (which first-time setup requires, and which people do
+        anyway) left the server sitting at OFFLINE forever: `control_watchdog`
+        only re-acquires control on a LIVE link, and a torn-down link nobody
+        retries. You had to notice and press CONNECT ROBOT. Now we retry
+        quietly whenever he's paired, not connected, and answering on the
+        network — no faster than every 15 s so a genuinely absent robot
+        doesn't spin.
+
+        `paused` is the manual release (the dashboard's RELEASE CONTROL): if a
+        human handed the robot back on purpose, do NOT grab him again.
+        """
+        while True:
+            await asyncio.sleep(15.0)
+            if self.link_paused or not self.use_robot:
+                continue
+            if self.robot_alive:
+                continue
+            try:
+                from .robot.sdk.connection import RobotLink, _tcp_open
+                serial, ips, _n = config.read_robot_identity()
+                if not serial:
+                    continue
+                ip = (ips.split(",")[0] or "").strip()
+                # Only reach for him when he's actually answering — otherwise
+                # every 15 s costs a 40 s connect timeout.
+                if not ip or not await asyncio.to_thread(_tcp_open, ip):
+                    continue
+                logger.info("link watchdog: robot is back — reconnecting")
+                await self.connect_robot()
+            except Exception as e:
+                logger.debug(f"link watchdog: {e}")
 
     async def control_watchdog(self):
         """Behavior control silently drops sometimes (robot slips into
@@ -638,12 +676,37 @@ class Bridge:
             except Exception as e:
                 logger.debug(f"battery poll: {e}")
 
+    @property
+    def robot_alive(self) -> bool:
+        """One definition of "the robot link works", used everywhere.
+
+        Holding a robot HANDLE is not the same as having a live link: after
+        the robot reboots, the old handle survives with dead telemetry. This
+        used to be tested one way here (`link.robot` -> "already connected")
+        and another way on the dashboard (handle AND fresh pose -> ONLINE), so
+        CONNECT ROBOT returned success instantly without reconnecting while
+        the dashboard still said OFFLINE, and no diagnosis was ever produced
+        because no attempt was ever made.
+        """
+        return bool(self.link and self.link.robot and self.pump
+                    and getattr(self.pump, "fresh", False))
+
     async def connect_robot(self) -> bool:
         """Connect + acquire control over the SDK (gRPC). NON-FATAL: returns
         False when the robot is unpaired or unreachable — the server keeps
         running so the web UI can pair and then retry via /api/connect."""
-        if self.link and self.link.robot:
+        if self.robot_alive:
             return True   # already connected
+        if self.link:
+            # A stale link would otherwise keep its dead handle and block the
+            # reconnect below forever.
+            try:
+                await self.link.disconnect()
+            except Exception as e:
+                logger.debug(f"dropping stale link: {e}")
+            self.link = None
+            self.pump = None
+            self.commander = None
         from .robot.sdk.connection import RobotLink
         from .robot.sdk.pose_pump import PosePump
         from .robot.sdk.commander import RobotCommander
@@ -716,6 +779,7 @@ class Bridge:
                 logger.warning(f"Web UI failed to start (continuing): {e}")
         tasks = [self.pose_task(), self.goalie_task(), self.status_task(),
                  self.health_task(), self.control_watchdog(),
+                 self.link_watchdog(),
                  self.battery_task(), self.cube_anchor_task()]
         try:
             await asyncio.gather(*tasks)

@@ -120,6 +120,12 @@ waiting. You never need the Vector app.
 - A `Wi-Fi connect failed (result 255)` on the first try right after a reboot is
   usually his network stack still coming up — press CONNECT again with the same
   password before suspecting it.
+- **If the link won't come up after authorizing**, restart Vector once (hold the
+  backpack button ~5 s until he switches off, then back on the charger). A
+  gateway that answers the network but stalls on every authenticated call is
+  stuck in that state and only a power cycle clears it. A clean run does **not**
+  need this — it showed up when the same robot had tokens minted at it
+  repeatedly, so treat it as a recovery step, not part of the procedure.
 
 ### OSKR / dev Vector
 

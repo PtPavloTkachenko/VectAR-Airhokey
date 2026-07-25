@@ -106,8 +106,19 @@ The server does this check for you — see below.
 Keep the OTA cached at `~/.vectar/ota/vicos-2.0.1.6076ep.ota` (179,763,200 B):
 the robot then pulls it from the Mac over LAN instead of the Internet Archive.
 
-## Still unproven
+## Proven, twice
 
-The escape-pod flash itself has **not yet run on a stock unit** — everything
-above is built and the prerequisites are now verified, but the live
-recovery→flash→reboot→handshake→mint chain is what the next session tests.
+Run 1 (2026-07-25, a brand-new stock unit) and run 2 (the same robot after
+**Clear User Data**, i.e. from zero again) both went the whole way:
+pair → PIN → Wi-Fi → escape-pod flash → reboot → pair → Wi-Fi → cloud sign-in
+→ onboarding complete → token mint → control acquired.
+
+Two things worth knowing from those runs:
+
+- **The robot's name and TLS certificate rotate on every wipe** (`Vector-B7J4`
+  became `Vector-C6Z4` on the same ESN), which is why pairing keys off the ESN
+  and reads the name back from the certificate.
+- **A clean run needs no extra robot reboot.** The stall that made one
+  necessary in run 1 came from minting tokens repeatedly at a robot that had
+  never been asked to sign in — the missing `cloud_auth`. With that step in
+  place, control was acquired on the first attempt.

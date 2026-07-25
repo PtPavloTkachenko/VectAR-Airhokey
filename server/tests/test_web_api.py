@@ -32,6 +32,13 @@ class _StubBridge:
         self.mock_pose = False
         self.use_robot = True
         self.connect_calls = 0
+        self.link_paused = False
+
+    @property
+    def robot_alive(self):
+        # Mirrors Bridge.robot_alive: a handle alone is not a live link.
+        return bool(self.link and getattr(self.link, "robot", None)
+                    and self.pump and getattr(self.pump, "fresh", False))
 
     async def connect_robot(self):
         self.connect_calls += 1

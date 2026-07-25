@@ -145,17 +145,23 @@
           <span id="playScore" style="color:var(--muted);font-weight:400;
             letter-spacing:1px"></span></h2>
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-          <label class="hint" style="margin:0;display:flex;align-items:center;gap:5px;cursor:pointer">
-            <input type="checkbox" id="driveReal"> drive the real Vector
+          <!-- nowrap: in the narrow dashboard column this label wrapped to
+               three lines ("drive the / real / Vector") next to the box. -->
+          <label class="hint" style="margin:0;display:flex;align-items:center;
+                 gap:6px;cursor:pointer;white-space:nowrap">
+            <input type="checkbox" id="driveReal" style="flex:none;margin:0">
+            <span>drive the real Vector</span>
           </label>
           <span class="hint" id="playHint" style="margin:0"></span>
           <button id="btnPlay" onclick="playToggle()" style="margin:0">PLAY ON SCREEN</button>
         </div>
       </div>
       <div style="display:flex;justify-content:center;margin-top:12px">
-        <canvas id="playCanvas" width="300" height="400"
-                style="max-width:100%;display:block;border-radius:12px;
-                       touch-action:none"></canvas>
+        <!-- Backing store is 2x the display size so the rink stays crisp on
+             retina; every drawing size is multiplied by t.ui (= W/300). -->
+        <canvas id="playCanvas" width="600" height="800"
+                style="width:300px;height:400px;max-width:100%;display:block;
+                       border-radius:12px;touch-action:none"></canvas>
       </div>
     </div>
     <div class="card">
@@ -625,6 +631,9 @@ async function refreshStatus() {
         `<div class="hint" style="grid-column:1/-1;color:${attention ? "#f7b955" : "#9aa"}">`
         + (attention ? "⚠ " : "") + r.link_hint + "</div>";
     }
+    // A connect attempt owns this box until it answers — otherwise the 1 Hz
+    // poller wipes its spinner and its failure message on the next tick.
+    if (window.connectBusy) return;
     let act = "";
     if (!r.paired)
       act = `<button onclick="showTab('pair')">PAIR YOUR ROBOT →</button>`;
@@ -636,6 +645,11 @@ async function refreshStatus() {
       act = `<button onclick="showTab('pair')">RE-PAIR ROBOT →</button>`;
     else if (!r.connected && s.server.use_robot)
       act = `<button onclick="connectRobot()">CONNECT ROBOT</button>`;
+    // Connected: offer the way back out. While we hold behavior control Vector
+    // can't do anything of his own — no roaming, no self-docking.
+    else if (r.connected)
+      act = `<button class="secondary" onclick="releaseRobot()">`
+          + `RELEASE CONTROL</button>`;
     $("dashActions").innerHTML = act;
     if (!$("fPod").value) $("fPod").value = s.wirepod_default.replace(/^https?:\/\//, "");
   } catch (e) {
@@ -649,50 +663,245 @@ refreshStatus();
 // field frame: origin center, +X toward Vector's goal, +Y player's left.
 // Canvas: Vector's goal on the RIGHT, player's goal on the LEFT.
 const GREEN = "#59ff80", PINK = "#f266bf", DIM = "#1b2430";
+
+/* ================= RINK RENDERING =================
+   One painter for both the idle view and live play — they used to draw the
+   board twice, with different details, and drifted apart.
+
+   Side identity is fixed here: VECTOR is pink (top half, his goal, his body),
+   YOU are green (bottom half, your goal, your mallet). It used to be mixed —
+   a green robot defending a pink goal — which made the board hard to read at
+   a glance. Everything below sizes off t.ui so it looks the same whatever the
+   canvas resolution.                                                        */
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+// Board + all its markings. Returns the board rect so callers can lay out
+// text inside it.
+function drawRink(ctx, t, W, H, f) {
+  const u = t.ui, hl = f.l/2, hw = f.w/2;
+  const a = t.px(hl, hw), b = t.px(-hl, -hw);
+  const x = Math.min(a[0], b[0]), y = Math.min(a[1], b[1]);
+  const w = Math.abs(b[0]-a[0]), h = Math.abs(b[1]-a[1]);
+
+  // backdrop: dark surround with a soft glow behind the board
+  ctx.fillStyle = "#05070a"; ctx.fillRect(0, 0, W, H);
+  const halo = ctx.createRadialGradient(W/2, y+h/2, 10*u, W/2, y+h/2, h*0.75);
+  halo.addColorStop(0, "rgba(46,122,68,0.16)");
+  halo.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = halo; ctx.fillRect(0, 0, W, H);
+
+  // ice
+  const r = 10*u;
+  const ice = ctx.createLinearGradient(0, y, 0, y+h);
+  ice.addColorStop(0,   "#0d1117");
+  ice.addColorStop(0.5, "#0a0e13");
+  ice.addColorStop(1,   "#0d1117");
+  roundRect(ctx, x, y, w, h, r); ctx.fillStyle = ice; ctx.fill();
+
+  // half tints — whose end of the table you're looking at
+  ctx.save();
+  roundRect(ctx, x, y, w, h, r); ctx.clip();
+  ctx.fillStyle = "rgba(242,102,191,0.05)"; ctx.fillRect(x, y, w, h/2);
+  ctx.fillStyle = "rgba(89,255,128,0.05)";  ctx.fillRect(x, y+h/2, w, h/2);
+  ctx.restore();
+
+  // centre line + faceoff circle
+  ctx.save();
+  ctx.strokeStyle = "rgba(120,150,135,0.28)"; ctx.lineWidth = Math.max(1, u);
+  ctx.setLineDash([6*u, 6*u]);
+  ctx.beginPath(); ctx.moveTo(x, y+h/2); ctx.lineTo(x+w, y+h/2); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.beginPath(); ctx.arc(W/2, y+h/2, Math.min(w, h)*0.17, 0, 7); ctx.stroke();
+  ctx.fillStyle = "rgba(120,150,135,0.35)";
+  ctx.beginPath(); ctx.arc(W/2, y+h/2, 2.5*u, 0, 7); ctx.fill();
+  ctx.restore();
+
+  // creases + goal mouths
+  const goalHalf = hw*0.55;
+  for (const side of [1, -1]) {
+    const color = side > 0 ? PINK : GREEN;
+    const g1 = t.px(side*hl,  goalHalf), g2 = t.px(side*hl, -goalHalf);
+    const gy = g1[1];
+    // crease
+    ctx.save();
+    ctx.strokeStyle = color; ctx.globalAlpha = 0.22;
+    ctx.lineWidth = Math.max(1, u);
+    ctx.beginPath();
+    ctx.arc(W/2, gy, Math.abs(g1[0]-g2[0])*0.42, 0, Math.PI, side < 0);
+    ctx.stroke();
+    ctx.restore();
+    // mouth
+    ctx.save();
+    ctx.strokeStyle = color; ctx.shadowColor = color; ctx.shadowBlur = 14*u;
+    ctx.lineWidth = 5*u; ctx.lineCap = "round";
+    ctx.beginPath(); ctx.moveTo(g1[0], gy); ctx.lineTo(g2[0], gy); ctx.stroke();
+    ctx.restore();
+  }
+
+  // frame last, so it sits over the tints
+  roundRect(ctx, x, y, w, h, r);
+  ctx.strokeStyle = "rgba(46,122,68,0.85)"; ctx.lineWidth = 2*u; ctx.stroke();
+
+  // side labels, inside the board
+  ctx.save();
+  ctx.textAlign = "center"; ctx.font = `${Math.round(9*u)}px monospace`;
+  ctx.fillStyle = "rgba(242,102,191,0.55)";
+  ctx.fillText("V E C T O R", W/2, y + 15*u);
+  ctx.fillStyle = "rgba(89,255,128,0.55)";
+  ctx.fillText("Y O U", W/2, y + h - 8*u);
+  ctx.restore();
+
+  return {x, y, w, h};
+}
+
+// A playing piece: soft ground shadow, lit body, rim light, outer glow.
+function drawDisc(ctx, cx, cy, rad, color, u) {
+  ctx.save();
+  ctx.fillStyle = "rgba(0,0,0,0.45)";
+  ctx.beginPath();
+  ctx.ellipse(cx, cy + rad*0.28, rad*0.92, rad*0.5, 0, 0, 7); ctx.fill();
+
+  const g = ctx.createRadialGradient(
+    cx - rad*0.35, cy - rad*0.4, rad*0.1, cx, cy, rad);
+  g.addColorStop(0, "#ffffff");
+  g.addColorStop(0.35, color);
+  g.addColorStop(1, "rgba(0,0,0,0.55)");
+  ctx.shadowColor = color; ctx.shadowBlur = 16*u;
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(cx, cy, rad, 0, 7); ctx.fill();
+  ctx.shadowBlur = 0;
+
+  ctx.strokeStyle = "rgba(255,255,255,0.55)";
+  ctx.lineWidth = Math.max(1, 1.2*u);
+  ctx.beginPath();
+  ctx.arc(cx, cy, rad*0.92, Math.PI*1.05, Math.PI*1.75); ctx.stroke();
+  ctx.restore();
+}
+
+// Puck with a speed trail. `trail` is newest-last.
+function drawPuck(ctx, px, py, rad, u, trail) {
+  if (trail && trail.length > 1) {
+    ctx.save();
+    for (let i = 0; i < trail.length - 1; i++) {
+      const k = (i + 1) / trail.length;
+      ctx.globalAlpha = 0.30 * k;
+      ctx.fillStyle = "#cfe3ff";
+      ctx.beginPath();
+      ctx.arc(trail[i][0], trail[i][1], rad*(0.35 + 0.55*k), 0, 7);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+  ctx.save();
+  ctx.shadowColor = "#dceaff"; ctx.shadowBlur = 18*u;
+  const g = ctx.createRadialGradient(px - rad*0.3, py - rad*0.35, rad*0.1,
+                                     px, py, rad);
+  g.addColorStop(0, "#ffffff"); g.addColorStop(1, "#9fb6c9");
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(px, py, rad, 0, 7); ctx.fill();
+  ctx.restore();
+}
+
+// Score strip above the board: each number in its own side's colour.
+function drawScoreHud(ctx, W, u, you, vec) {
+  ctx.save();
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  const y = 17*u;
+  ctx.font = `bold ${Math.round(15*u)}px monospace`;
+  const sep = "  :  ";
+  const wYou = ctx.measureText(String(you)).width;
+  const wVec = ctx.measureText(String(vec)).width;
+  const wSep = ctx.measureText(sep).width;
+  const total = wYou + wSep + wVec;
+  let cx = W/2 - total/2;
+  ctx.textAlign = "left";
+  ctx.fillStyle = GREEN; ctx.fillText(String(you), cx, y); cx += wYou;
+  ctx.fillStyle = "#54636b"; ctx.fillText(sep, cx, y); cx += wSep;
+  ctx.fillStyle = PINK; ctx.fillText(String(vec), cx, y);
+  ctx.restore();
+}
+// Canvas text has no layout engine: a fixed font size that fits one board
+// width spills out of a narrower one, which is how the idle hint ended up
+// hanging off both edges. Wrap to the width we actually have, shrinking only
+// if wrapping alone isn't enough.
+function wrapText(ctx, text, maxW, px, minPx) {
+  for (; px >= minPx; px--) {
+    ctx.font = `${px}px monospace`;
+    const lines = [];
+    let line = "";
+    for (const word of text.split(" ")) {
+      const next = line ? line + " " + word : word;
+      if (ctx.measureText(next).width <= maxW) { line = next; continue; }
+      if (line) lines.push(line);
+      line = word;
+    }
+    if (line) lines.push(line);
+    // Accept once every line fits (a single very long word can still fail,
+    // and then we simply keep shrinking).
+    if (lines.every(l => ctx.measureText(l).width <= maxW)) {
+      // Greedy wrapping packs the first line full and leaves a stub on the
+      // second ("...to grab a" / "mallet"). For the common two-line case,
+      // pick the split that makes the halves closest in width instead.
+      if (lines.length === 2) {
+        const words = text.split(" ");
+        let best = null;
+        for (let i = 1; i < words.length; i++) {
+          const one = words.slice(0, i).join(" ");
+          const two = words.slice(i).join(" ");
+          const w1 = ctx.measureText(one).width;
+          const w2 = ctx.measureText(two).width;
+          if (w1 > maxW || w2 > maxW) continue;
+          const diff = Math.abs(w1 - w2);
+          if (!best || diff < best.diff) best = {diff, lines: [one, two]};
+        }
+        if (best) return {lines: best.lines, px};
+      }
+      return {lines, px};
+    }
+  }
+  ctx.font = `${minPx}px monospace`;
+  return {lines: [text], px: minPx};
+}
+
 // Idle spectator view on the SAME vertical canvas the game uses — Vector's
 // goal at top, yours at bottom. Shows the live field (robot/puck from the
 // server) so the panel is never an empty black void.
 function drawIdle(g) {
   const cv = $("playCanvas"), ctx = cv.getContext("2d");
   const W = cv.width, H = cv.height;
-  ctx.fillStyle = "#07090c"; ctx.fillRect(0, 0, W, H);
   const f = (g && g.field) || {l: PF.L, w: PF.W, goalie_x: 140, puck_r: 15, body_r: 55};
-  const t = pcvt(cv), hl = f.l/2, hw = f.w/2;
-  const board = (x, y) => t.px(x, y);
-  // board
-  const a = board(hl, hw), b = board(-hl, -hw);
-  ctx.strokeStyle = "#2e7a44"; ctx.lineWidth = 2;
-  ctx.strokeRect(Math.min(a[0],b[0]), Math.min(a[1],b[1]),
-                 Math.abs(b[0]-a[0]), Math.abs(b[1]-a[1]));
-  ctx.strokeStyle = DIM; ctx.lineWidth = 1;
-  let p=board(0,hw), q=board(0,-hw);
-  ctx.beginPath(); ctx.moveTo(p[0],p[1]); ctx.lineTo(q[0],q[1]); ctx.stroke();
-  ctx.lineWidth = 5;
-  ctx.strokeStyle = PINK; p=board(hl,hw*0.55); q=board(hl,-hw*0.55);
-  ctx.beginPath(); ctx.moveTo(p[0],p[1]); ctx.lineTo(q[0],q[1]); ctx.stroke();
-  ctx.strokeStyle = GREEN; p=board(-hl,hw*0.55); q=board(-hl,-hw*0.55);
-  ctx.beginPath(); ctx.moveTo(p[0],p[1]); ctx.lineTo(q[0],q[1]); ctx.stroke();
-  // robot
+  const t = pcvt(cv), u = t.ui;
+  const board = drawRink(ctx, t, W, H, f);
+
   if (g && g.robot) {
-    const rp = board(g.robot.x, g.robot.y);
-    ctx.fillStyle = GREEN; ctx.shadowColor = GREEN; ctx.shadowBlur = 12;
-    ctx.beginPath(); ctx.arc(rp[0], rp[1], f.body_r*t.sc, 0, 7); ctx.fill();
-    ctx.shadowBlur = 0;
+    const rp = t.px(g.robot.x, g.robot.y);
+    drawDisc(ctx, rp[0], rp[1], f.body_r*t.sc, PINK, u);
   }
   if (g && g.puck) {
-    const up = board(g.puck.x, g.puck.y);
-    ctx.fillStyle = "#fff"; ctx.shadowColor = "#fff"; ctx.shadowBlur = 12;
-    ctx.beginPath(); ctx.arc(up[0], up[1], f.puck_r*t.sc, 0, 7); ctx.fill();
-    ctx.shadowBlur = 0;
+    const up = t.px(g.puck.x, g.puck.y);
+    drawPuck(ctx, up[0], up[1], f.puck_r*t.sc, u, null);
   }
-  // labels + call to action
-  ctx.fillStyle = "#6b7f72"; ctx.font = "11px monospace"; ctx.textAlign="center";
-  ctx.fillText("VECTOR", W/2, board(hl,0)[1] + 16);
-  ctx.fillText("YOU", W/2, board(-hl,0)[1] - 8);
+  if (g && g.score) drawScoreHud(ctx, W, u, g.score[0]|0, g.score[1]|0);
+
   const idleMsg = (g && g.lens) ? "playing on Spectacles"
     : "press PLAY ON SCREEN to grab a mallet";
-  ctx.fillStyle = "#4a5a50"; ctx.font = "12px monospace";
-  ctx.fillText(idleMsg, W/2, H/2);
+  // Fit inside the board, not the canvas, and sit clear of the centre line.
+  ctx.save();
+  ctx.textAlign = "center"; ctx.fillStyle = "#5b6f64";
+  const {lines, px} = wrapText(ctx, idleMsg, board.w - 28*u, 12*u, 9*u);
+  const lh = px + 4*u;
+  let y = t.cy - ((lines.length - 1) * lh) / 2 - lh*1.6;
+  for (const line of lines) { ctx.fillText(line, W/2, y); y += lh; }
+  ctx.restore();
 }
 
 async function pollField() {
@@ -717,16 +926,28 @@ pollField();
 const PF = {   // field constants (mirror GameConfig / config.py)
   L: 400, W: 300, PUCK_R: 15, PADDLE_R: 25, BODY_R: 55,
   SERVE: 150, MAX: 300, WIN: 5,
+  // 3-2-1 before every serve. Not decoration: the REAL Vector has to finish
+  // his goal reaction and drive back across the crease, and 1.2 s (the old
+  // value, which only ever showed "2" and "1") left him still turning when
+  // the puck went live.
+  COUNTDOWN: 3.0,
 };
 let play = null;   // active game or null
 
 function pcvt(cv) {
   // field(x,y) -> canvas px. +X(top) -> up; +Y(left) -> canvas -x
-  const pad = 16, W = cv.width, H = cv.height;
-  const sc = Math.min((W - 2*pad) / PF.W, (H - 2*pad) / PF.L);
-  const cx = W/2, cy = H/2;
+  // HEAD reserves a strip at the top for the score: the board used to be
+  // centred over the whole canvas, so its top edge landed exactly where the
+  // score is drawn and Vector's puck-side body covered the digits.
+  // ui = drawing scale: the canvas backing store is 2x its CSS size for
+  // sharpness, so every font/stroke/radius multiplies by this instead of
+  // being hard-coded in pixels.
+  const ui = cv.width / 300;
+  const pad = 16*ui, HEAD = 34*ui, W = cv.width, H = cv.height;
+  const sc = Math.min((W - 2*pad) / PF.W, (H - HEAD - pad) / PF.L);
+  const cx = W/2, cy = HEAD + (H - HEAD - pad)/2;
   return {
-    sc, cx, cy,
+    sc, cx, cy, ui,
     px: (x, y) => [cx - y*sc, cy - x*sc],   // field -> canvas
     fx: (mx, my) => [(cy - my)/sc, (cx - mx)/sc],  // canvas -> field (x,y)
   };
@@ -895,7 +1116,7 @@ function playStep(dt) {
   const p = play.puck, hl = PF.L/2, hw = PF.W/2;
   if (play.phase === "countdown") {
     play.tPhase += dt;
-    if (play.tPhase > 1.2) { play.phase = "rally"; play.tPhase = 0; }
+    if (play.tPhase > PF.COUNTDOWN) { play.phase = "rally"; play.tPhase = 0; }
     return;
   }
   if (play.phase === "goal") {
@@ -980,50 +1201,84 @@ function goal(byVector) {
 
 function playRender() {
   const {cv, t} = play, ctx = cv.getContext("2d");
-  const W = cv.width, H = cv.height, hl = PF.L/2, hw = PF.W/2;
-  ctx.fillStyle = "#07090c"; ctx.fillRect(0,0,W,H);
-  // board
-  const a = t.px(hl, hw), b = t.px(-hl, -hw);
-  ctx.strokeStyle = "#2e7a44"; ctx.lineWidth = 2;
-  ctx.strokeRect(Math.min(a[0],b[0]), Math.min(a[1],b[1]),
-                 Math.abs(b[0]-a[0]), Math.abs(b[1]-a[1]));
-  // center line
-  ctx.strokeStyle = "#1b2430"; ctx.lineWidth = 1;
-  let p=t.px(0,hw), q=t.px(0,-hw);
-  ctx.beginPath(); ctx.moveTo(p[0],p[1]); ctx.lineTo(q[0],q[1]); ctx.stroke();
-  // goals: Vector top (pink), you bottom (green)
-  ctx.lineWidth = 5;
-  ctx.strokeStyle = PINK; p=t.px(hl,hw*0.55); q=t.px(hl,-hw*0.55);
-  ctx.beginPath(); ctx.moveTo(p[0],p[1]); ctx.lineTo(q[0],q[1]); ctx.stroke();
-  ctx.strokeStyle = GREEN; p=t.px(-hl,hw*0.55); q=t.px(-hl,-hw*0.55);
-  ctx.beginPath(); ctx.moveTo(p[0],p[1]); ctx.lineTo(q[0],q[1]); ctx.stroke();
-  // robot (Vector)
-  const R = play.robot, rp = t.px(R.x, R.y);
-  ctx.fillStyle = GREEN; ctx.shadowColor = GREEN; ctx.shadowBlur = 12;
-  ctx.beginPath(); ctx.arc(rp[0], rp[1], PF.BODY_R*t.sc, 0, 7); ctx.fill();
-  ctx.shadowBlur = 0;
-  // paddle (you)
+  const W = cv.width, H = cv.height, u = t.ui;
+  const board = drawRink(ctx, t, W, H, {l: PF.L, w: PF.W});
+  const a = [board.x + board.w, board.y], b = [board.x, board.y + board.h];
+
+  // Vector (pink, his half) and your mallet (green, yours)
+  const rp = t.px(play.robot.x, play.robot.y);
+  drawDisc(ctx, rp[0], rp[1], PF.BODY_R*t.sc, PINK, u);
   const pd = t.px(play.paddle.x, play.paddle.y);
-  ctx.fillStyle = PINK; ctx.shadowColor = PINK; ctx.shadowBlur = 12;
-  ctx.beginPath(); ctx.arc(pd[0], pd[1], PF.PADDLE_R*t.sc, 0, 7); ctx.fill();
-  ctx.shadowBlur = 0;
-  // puck
+  drawDisc(ctx, pd[0], pd[1], PF.PADDLE_R*t.sc, GREEN, u);
+
+  // puck (+ trail while it's actually moving)
   if (play.phase !== "goal" && play.phase !== "over") {
     const up = t.px(play.puck.x, play.puck.y);
-    ctx.fillStyle = "#fff"; ctx.shadowColor = "#fff"; ctx.shadowBlur = 14;
-    ctx.beginPath(); ctx.arc(up[0], up[1], PF.PUCK_R*t.sc, 0, 7); ctx.fill();
-    ctx.shadowBlur = 0;
+    if (play.phase === "rally") {
+      play.trail = play.trail || [];
+      play.trail.push(up);
+      if (play.trail.length > 9) play.trail.shift();
+    } else {
+      play.trail = [];
+    }
+    drawPuck(ctx, up[0], up[1], PF.PUCK_R*t.sc, u, play.trail);
   }
-  // countdown / score overlay
-  ctx.fillStyle = "#cfe3d6"; ctx.font = "bold 22px monospace"; ctx.textAlign="center";
-  ctx.fillText(`${play.score[0]} : ${play.score[1]}`, W/2, 26);
+
+  drawScoreHud(ctx, W, u, play.score[0], play.score[1]);
   if (play.phase === "countdown") {
-    ctx.font = "bold 30px monospace"; ctx.fillStyle = PINK;
-    ctx.fillText(Math.ceil(1.2 - play.tPhase) + "", W/2, H/2);
+    // Centred on the BOARD (not the canvas) with a dark disc behind it, so
+    // the digit reads as a countdown instead of a stray number next to the
+    // puck. It also pulses down each second, which makes "3 · 2 · 1" legible
+    // at a glance while you're looking at the robot, not the screen.
+    const left = PF.COUNTDOWN - play.tPhase;
+    const n = Math.max(1, Math.ceil(left));
+    const frac = 1 - (n - left);                 // 1 -> 0 across each second
+    const cy = t.cy, rad = 30*u;
+    ctx.save();
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    // dim the ice so the digit owns the frame
+    ctx.fillStyle = "rgba(5,7,10,0.45)";
+    roundRect(ctx, board.x, board.y, board.w, board.h, 10*u); ctx.fill();
+    // ring that empties as the second runs out
+    ctx.strokeStyle = "rgba(120,150,135,0.25)"; ctx.lineWidth = 3*u;
+    ctx.beginPath(); ctx.arc(W/2, cy, rad, 0, 7); ctx.stroke();
+    ctx.strokeStyle = GREEN; ctx.lineWidth = 3*u; ctx.lineCap = "round";
+    ctx.shadowColor = GREEN; ctx.shadowBlur = 12*u;
+    ctx.beginPath();
+    ctx.arc(W/2, cy, rad, -Math.PI/2, -Math.PI/2 + Math.PI*2*frac);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    // the digit, popping as each second lands
+    ctx.fillStyle = "#eafff0";
+    ctx.font = `bold ${Math.round((30 + 8*frac)*u)}px monospace`;
+    ctx.fillText(String(n), W/2, cy + 1*u);
+    ctx.restore();
   }
   if (play.phase === "over") {
-    ctx.font = "bold 24px monospace"; ctx.fillStyle = GREEN;
-    ctx.fillText(play.score[1] > play.score[0] ? "VECTOR WINS" : "YOU WIN", W/2, H/2);
+    // Same treatment as the countdown: centred on the BOARD, on a backdrop,
+    // and sized to fit the board width ("VECTOR WINS" at a fixed 24px ran
+    // past the edges on a narrow panel).
+    const vectorWon = play.score[1] > play.score[0];
+    const msg = vectorWon ? "VECTOR WINS" : "YOU WIN";
+    const color = vectorWon ? PINK : GREEN;
+    ctx.save();
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillStyle = "rgba(5,7,10,0.62)";
+    roundRect(ctx, board.x, board.y, board.w, board.h, 10*u); ctx.fill();
+    let size = 26*u;
+    do { ctx.font = `bold ${Math.round(size)}px monospace`; size -= u; }
+    while (size > 12*u && ctx.measureText(msg).width > board.w - 32*u);
+    // banner band behind the words
+    ctx.fillStyle = "rgba(5,7,10,0.85)";
+    ctx.fillRect(board.x, t.cy - 26*u, board.w, 52*u);
+    ctx.strokeStyle = color; ctx.globalAlpha = 0.5; ctx.lineWidth = u;
+    ctx.beginPath();
+    ctx.moveTo(board.x, t.cy - 26*u); ctx.lineTo(board.x + board.w, t.cy - 26*u);
+    ctx.moveTo(board.x, t.cy + 26*u); ctx.lineTo(board.x + board.w, t.cy + 26*u);
+    ctx.stroke(); ctx.globalAlpha = 1;
+    ctx.fillStyle = color; ctx.shadowColor = color; ctx.shadowBlur = 18*u;
+    ctx.fillText(msg, W/2, t.cy);
+    ctx.restore();
   }
 }
 
@@ -1099,11 +1354,41 @@ async function runTest() {
 }
 
 async function connectRobot() {
-  const res = await api("/api/connect", {});
   showTab("dash");
-  if (!res.ok && res.error) {
-    $("dashActions").innerHTML = `<div class="error">${res.error}</div>`;
+  // The attempt can take up to 40 s (connect + control acquisition). Without
+  // this the button looked broken: no feedback while trying, and nothing at
+  // all when it failed. The status poller re-renders this box every second,
+  // so hold it off until we have an answer.
+  window.connectBusy = true;
+  $("dashActions").innerHTML =
+    `<div class="hint"><span class="spin">◌</span> connecting to Vector — `
+    + `this can take up to 40 s…</div>`;
+  let res;
+  try {
+    res = await api("/api/connect", {});
+  } catch (e) {
+    res = {ok: false, error: String(e)};
+  } finally {
+    window.connectBusy = false;
   }
+  if (res.ok) return;                      // the poller shows CONNECTED
+  $("dashActions").innerHTML =
+    `<div class="error">${res.error || "Couldn't connect."}</div>`
+    + (res.kind === "needs_reboot"
+        ? `<button onclick="connectRobot()">I RESTARTED HIM — RETRY →</button>`
+        : res.kind === "cert_rotated"
+        ? `<button onclick="showTab('pair')">RE-PAIR ROBOT →</button>`
+        : `<button onclick="connectRobot()">TRY AGAIN →</button>`);
+}
+
+// Hand Vector back to himself. He stays released until you press CONNECT
+// ROBOT — the link watchdog won't grab him behind your back.
+async function releaseRobot() {
+  window.connectBusy = true;
+  $("dashActions").innerHTML =
+    `<div class="hint"><span class="spin">◌</span> releasing…</div>`;
+  try { await api("/api/release", {}); }
+  finally { window.connectBusy = false; }
 }
 
 /* ---------- BLE onboarding (stock robot) ---------- */
@@ -1454,6 +1739,57 @@ async function bleProvisionOskr(tryLogs) {
     : `<button onclick="bleRestart()">RECONNECT WHEN HE'S BACK (~40s) →</button>`;
 }
 
+// The firmware install is the longest thing this wizard ever does — ~180 MB
+// that the ROBOT pulls over Wi-Fi. A bare "installing… 2.7%" line reads as a
+// stall, so give it a real progress bar with megabytes, rate and an estimate.
+window._flashHist = [];
+function flashBarHtml(s) {
+  const pct = Math.max(0, Math.min(100, s.percent || 0));
+  const now = Date.now() / 1000;
+  const H = window._flashHist;
+  H.push([now, pct]);
+  if (H.length > 40) H.shift();
+  // rate over the window we have, not since the start — the first seconds are
+  // always slow and would poison the estimate for the whole run.
+  let eta = "";
+  if (H.length > 3) {
+    const [t0, p0] = H[0], dP = pct - p0, dT = now - t0;
+    if (dP > 0.05 && dT > 1) {
+      const left = (100 - pct) / (dP / dT);
+      if (left > 1 && left < 3600) {
+        const m = Math.floor(left / 60), sec = Math.round(left % 60);
+        eta = m ? `~${m} min ${sec}s left` : `~${sec}s left`;
+      }
+    }
+  }
+  // The robot counts the UNPACKED image (~590 MB), not the ~170 MB file he
+  // downloads — label it as written so the numbers don't contradict the note
+  // below about the download size.
+  const mb = (n) => (n / 1048576).toFixed(0);
+  const size = (s.expected ? `${mb(s.current)} / ${mb(s.expected)} MB written`
+                           : "");
+  const meta = [size, eta].filter(Boolean).join(" · ");
+  return `
+    <div style="margin:10px 0 6px;display:flex;align-items:baseline;gap:10px">
+      <span style="font-size:26px;font-weight:700;color:var(--green);
+                   text-shadow:0 0 12px rgba(89,255,128,.45)">
+        ${pct.toFixed(1)}%</span>
+      <span style="color:var(--muted);font-size:12px">installing firmware</span>
+    </div>
+    <div style="height:12px;border:1px solid var(--green-dim);border-radius:7px;
+                background:#0a0e13;overflow:hidden;position:relative">
+      <div style="height:100%;width:${pct}%;border-radius:6px;
+                  background:linear-gradient(90deg,#2e7a44,#59ff80);
+                  box-shadow:0 0 14px rgba(89,255,128,.55);
+                  transition:width .4s linear"></div>
+    </div>
+    <div class="hint" style="margin-top:6px">${meta || "starting…"}</div>
+    <div class="hint">Vector downloads the firmware himself over Wi-Fi.
+      <b>Keep him on the charger and don't interrupt.</b> Near the end his
+      Bluetooth link goes quiet — that's him rebooting into the new firmware,
+      not a failure.</div>`;
+}
+
 async function bleFlashEp() {
   $("btnFlash").disabled = true;
   $("provErr").style.display = "none";
@@ -1492,11 +1828,7 @@ async function bleFlashEp() {
     }
     $("flashBar").innerHTML = s.done
       ? `<span class="ok">Firmware installed ✓ Vector is rebooting…</span>`
-      : `<span class="spin">◌</span> installing… ${s.percent}%`
-        + `<div class="hint">Vector downloads the firmware himself over `
-        + `Wi-Fi, so this takes a few minutes. Keep him on the charger. His `
-        + `Bluetooth link may go quiet near the end — that's him rebooting `
-        + `into the new firmware, not a failure.</div>`;
+      : flashBarHtml(s);
     if (s.done) {
       clearInterval(poll);
       $("provBody").innerHTML +=

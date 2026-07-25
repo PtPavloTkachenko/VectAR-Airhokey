@@ -58,6 +58,9 @@ class WebUI:
             web.post("/api/pair", self.api_pair),
             web.post("/api/test", self.api_test),
             web.post("/api/connect", self.api_connect),
+            # Give the robot back to himself (he can't free-roam while an SDK
+            # client holds behavior control).
+            web.post("/api/release", self.api_release),
             # BLE onboarding (Mac-native, Python) — a stock robot from scratch
             web.post("/api/ble/scan", self.api_ble_scan),
             web.post("/api/ble/pair", self.api_ble_pair),
@@ -108,7 +111,15 @@ class WebUI:
     # --- handlers ---
 
     async def index(self, _req):
-        return web.FileResponse(STATIC_DIR / "index.html")
+        # Never cache the console. The whole app is inline in this one file, so
+        # a cached copy means old JavaScript talking to a new server — which
+        # looks like the server is broken and survives even a hard reload
+        # (no Cache-Control at all lets the browser cache heuristically).
+        return web.FileResponse(STATIC_DIR / "index.html", headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        })
 
     async def api_status(self, req):
         b = self.bridge
@@ -116,8 +127,9 @@ class WebUI:
         # A live link means we're actually receiving telemetry — not just that
         # a (possibly half-open) gRPC object exists. Otherwise the dashboard
         # would keep saying CONNECTED after the robot drops off Wi-Fi / resets.
-        alive = bool(b.link and b.link.robot and b.pump
-                     and getattr(b.pump, "fresh", False))
+        # Same definition the connect path uses — they drifted apart once and
+        # produced "already connected" on a dead link (see Bridge.robot_alive).
+        alive = b.robot_alive
         robot = {
             "paired": bool(serial),
             "serial": serial,
@@ -353,11 +365,17 @@ class WebUI:
         host = _lan_ip() or req.host.split(":")[0]
         url = f"http://{host}:{config.WEB_PORT}/api/get_ota/{name}"
 
-        self._flash = {"active": True, "percent": 0.0, "done": False,
-                       "error": "", "state": "starting"}
+        self._flash = {"active": True, "percent": 0.0, "current": 0,
+                       "expected": 0, "done": False, "error": "",
+                       "state": "starting"}
 
         def on_progress(p):
+            # Bytes as well as percent: a 180 MB install is a long stare at a
+            # number, and "104 of 171 MB, ~2 min left" is the difference
+            # between "it's working" and "is it stuck?".
             self._flash.update(percent=round(p["percent"], 1),
+                               current=p.get("current", 0),
+                               expected=p.get("expected", 0),
                                done=p["done"], state="flashing")
 
         async def run():
@@ -680,8 +698,67 @@ class WebUI:
             return web.json_response(
                 {"ok": False,
                  "error": "Server started with --no-robot / --mock-pose."})
+        b.link_paused = False   # an explicit connect cancels a manual release
         ok = await b.connect_robot()
-        return web.json_response({"ok": ok})
+
+        # Two failed presses in a row is the signature of a robot whose
+        # gateway needs a power cycle (it answers the network but stalls every
+        # authenticated call). Rather than let someone press a button that
+        # can't work, say so on the second try. Your idea, 2026-07-25.
+        if ok:
+            self._connect_fails = 0
+        else:
+            self._connect_fails = getattr(self, "_connect_fails", 0) + 1
+            if self._connect_fails >= 2 and \
+                    getattr(b, "last_link_hint_kind", "") != "cert_rotated":
+                b.last_link_hint_kind = "needs_reboot"
+                b.last_link_hint = (
+                    "Two tries in a row didn't get through. Restart Vector "
+                    "once — hold his backpack button ~5 s until he switches "
+                    "off, then put him back on the charger. A robot that has "
+                    "just been set up often needs one power cycle before his "
+                    "control channel answers.")
+
+        # Always say WHY on failure. This used to return a bare {"ok": false},
+        # and the dashboard only rendered an error when `error` was present —
+        # so CONNECT ROBOT looked like a dead button for the whole 40 s the
+        # attempt actually took. The link already classifies the cause
+        # (unreachable / cert_rotated / needs_reboot); pass it through.
+        return web.json_response({
+            "ok": ok,
+            "kind": "" if ok else (getattr(b, "last_link_hint_kind", "") or ""),
+            "error": None if ok else (
+                getattr(b, "last_link_hint", "")
+                or "Couldn't reach Vector. Is he awake and on the same Wi-Fi?"),
+        })
+
+    async def api_release(self, _req):
+        """Hand the robot back to himself, without stopping the server.
+
+        Vector grants behavior control to one client, so while we hold it he
+        can't do his own thing — no roaming, no reacting, and he won't return
+        to the charger on his own. Releasing is also how you free him for
+        another SDK client. `link_paused` keeps the link watchdog from
+        immediately grabbing him again; CONNECT ROBOT clears it.
+        """
+        b = self.bridge
+        b.link_paused = True
+        # The pose pump has no stop(): it lives on robot-state events, so
+        # tearing the link down is what ends it. Dropping the reference after
+        # is enough.
+        try:
+            if b.link:
+                await b.link.disconnect()
+        except Exception as e:
+            logger.warning(f"release: {e}")
+        b.link = None
+        b.pump = None
+        b.commander = None
+        b.last_link_hint = ("Control released — Vector is on his own. Press "
+                            "CONNECT ROBOT to take him back.")
+        b.last_link_hint_kind = "released"
+        logger.info("control released — robot handed back to himself")
+        return web.json_response({"ok": True})
 
     # --- BLE onboarding (a stock robot, from scratch) ---
 
