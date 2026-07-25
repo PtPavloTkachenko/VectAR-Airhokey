@@ -73,6 +73,36 @@ wizard takes the current name from the fresh cert's CN (don't rely on a
 previously saved name). If the on-screen name differs from what's in
 `sdk_config.ini`, that's expected after a reset — re-pair to refresh it.
 
+## 3.5 · When something is off: ask the doctor
+
+One pass over the whole chain — pairing engine, escape-pod mode, firmware
+image, credentials, the robot himself, the sockets — with the fix printed
+under anything red:
+
+```bash
+cd server && python -m game_bridge.doctor     # exit code 1 if anything failed
+```
+
+The dashboard has the same thing behind **RUN DIAGNOSTICS**, and it is also
+served as JSON at `/api/doctor`. Reach for it before reading logs; it answers
+in one line the questions that otherwise cost a round of manual probing
+("is wire-pod in escape-pod mode?", "does he answer at all?", "is the
+certificate still his?").
+
+Note the robot-reachability check probes **three times**: Vector's Wi-Fi radio
+power-saves, and the first packet after an idle spell is spent waking it. A
+single-shot probe reports a wide-awake robot as missing.
+
+## 3.6 · Developing on it
+
+```bash
+python -m game_bridge.main --reload
+```
+
+The server watches its own sources (and the console page) and restarts itself
+on any change; the page notices the new build and reloads. The robot link
+comes back on its own afterwards, so an edit costs about a second.
+
 ## 4 · Networking (the #1 gotcha)
 
 The Mac reaches the robot by **IP on the same subnet**. If the robot joins one

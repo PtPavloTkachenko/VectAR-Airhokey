@@ -21,6 +21,18 @@ logger = logging.getLogger("game-bridge.web")
 STATIC_DIR = Path(__file__).parent / "static"
 
 
+_STARTED_AT = time.time()
+
+
+def _build_id() -> str:
+    """Identifies this server process + this console file."""
+    try:
+        mtime = (STATIC_DIR / "index.html").stat().st_mtime
+    except OSError:
+        mtime = 0.0
+    return f"{int(_STARTED_AT)}-{int(mtime)}"
+
+
 def _lan_ip() -> str:
     """This machine's LAN address (no traffic is sent — UDP connect only
     selects the outbound interface)."""
@@ -85,6 +97,10 @@ class WebUI:
             # Is the pairing engine in escape-pod mode? A stock robot cannot
             # be onboarded without it, so the wizard checks before flashing.
             web.get("/api/wirepod_status", self.api_wirepod_status),
+            # Whole-chain diagnosis in one call (same as `python -m
+            # game_bridge.doctor`), so nobody has to grep the log to find out
+            # which link of the chain is down.
+            web.get("/api/doctor", self.api_doctor),
             # Live stage of an in-flight authorize, so a 60 s wait for the
             # robot's check-in reads as progress instead of a hang.
             web.get("/api/ble/authorize_status", self.api_authorize_status),
@@ -167,6 +183,11 @@ class WebUI:
         # the exact string the player pastes into the lens' GameConfig.WS_URL
         lan_ip = _lan_ip() or req.host.split(":")[0]
         return web.json_response({
+            # Changes whenever the console file or the process does; the page
+            # watches it and reloads itself, so an edit no longer needs a
+            # human to remember to refresh (and can't leave old JavaScript
+            # talking to a new server).
+            "build": _build_id(),
             "server": {
                 "ws_port": config.WS_PORT,
                 "web_port": config.WEB_PORT,
@@ -315,6 +336,12 @@ class WebUI:
         except Exception as e:
             logger.warning(f"get_ota proxy failed: {e}")
             return web.Response(status=502, text=f"proxy failed: {e}")
+
+    async def api_doctor(self, _req):
+        from .. import doctor
+        # Probes block (TCP waits, TLS) — keep them off the game loop.
+        res = await asyncio.to_thread(doctor.run, self.bridge)
+        return web.json_response({"ok": True, **res})
 
     async def api_wirepod_status(self, req):
         """Escape-pod readiness — probed live, not read from config."""

@@ -56,6 +56,14 @@
   .card h2 { font-size: 13px; letter-spacing: 2px; color: var(--pink);
              margin-bottom: 14px; text-transform: uppercase; }
   label { display: block; color: var(--muted); font-size: 12px; margin: 12px 0 4px; }
+  /* The generic `input` rule below is for text fields. A checkbox inheriting
+     width:100% stretched across its whole row and shoved its own label out
+     from under it — which is how "drive the real Vector" ended up sitting on
+     top of the START GAME button. */
+  input[type="checkbox"] {
+    width: 15px; height: 15px; flex: none; padding: 0; margin: 0;
+    accent-color: var(--green); cursor: pointer;
+  }
   input {
     width: 100%; padding: 9px 12px; border-radius: 6px;
     border: 1px solid var(--line); background: #090d11; color: var(--text);
@@ -137,6 +145,13 @@
       <h2>System status</h2>
       <div class="grid" id="statusGrid">loading…</div>
       <div id="dashActions"></div>
+      <!-- One button instead of hunting through the log for which link of the
+           chain is down (pairing engine, firmware image, certificate, token,
+           robot, socket). -->
+      <div style="margin-top:12px;border-top:1px solid var(--line);padding-top:12px">
+        <button class="secondary" onclick="runDoctor()">RUN DIAGNOSTICS</button>
+        <div id="doctorOut" class="hint" style="display:none;margin-top:10px"></div>
+      </div>
     </div>
     <div class="card">
       <div style="display:flex;align-items:baseline;justify-content:space-between;
@@ -144,16 +159,20 @@
         <h2 style="margin:0">Game
           <span id="playScore" style="color:var(--muted);font-weight:400;
             letter-spacing:1px"></span></h2>
-        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-          <!-- nowrap: in the narrow dashboard column this label wrapped to
-               three lines ("drive the / real / Vector") next to the box. -->
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+                    justify-content:flex-end">
+          <!-- nowrap keeps it on one line ("drive the / real / Vector" was
+               three); flex:0 0 auto stops it being squeezed narrower than its
+               own text, which made it spill out UNDER the button instead of
+               wrapping the row. -->
           <label class="hint" style="margin:0;display:flex;align-items:center;
-                 gap:6px;cursor:pointer;white-space:nowrap">
+                 gap:6px;cursor:pointer;white-space:nowrap;flex:0 0 auto">
             <input type="checkbox" id="driveReal" style="flex:none;margin:0">
             <span>drive the real Vector</span>
           </label>
-          <span class="hint" id="playHint" style="margin:0"></span>
-          <button id="btnPlay" onclick="playToggle()" style="margin:0">PLAY ON SCREEN</button>
+          <span class="hint" id="playHint" style="margin:0;flex:0 1 auto"></span>
+          <button id="btnPlay" onclick="playToggle()"
+                  style="margin:0;flex:0 0 auto;white-space:nowrap">PLAY ON SCREEN</button>
         </div>
       </div>
       <div style="display:flex;justify-content:center;margin-top:12px">
@@ -586,6 +605,18 @@ function stat(k, v, cls) {
 async function refreshStatus() {
   try {
     const s = await api("/api/status");
+    // The whole console is one inline file, so a server restart or an edit
+    // leaves this page running old code against a new server — which looks
+    // exactly like the server being broken. Notice and reload. (Never during
+    // an install: interrupting a firmware flash is the one thing worth
+    // protecting a stale page for.)
+    if (s.build) {
+      if (!window._build) window._build = s.build;
+      else if (window._build !== s.build && !window._flashActive) {
+        location.reload();
+        return;
+      }
+    }
     window.lastStatus = s;
     updatePlayAvailability(s);
     // keep the (idle) route chooser fresh so "ready" appears the moment the
@@ -626,7 +657,9 @@ async function refreshStatus() {
     // Actionable reason when the link is down (cert rotated / moved / unreachable).
     if (r.link_hint) {
       const attention = r.link_hint_kind === "cert_rotated"
-                     || r.link_hint_kind === "needs_reboot";
+                     || r.link_hint_kind === "needs_reboot"
+                     || r.link_hint_kind === "unreachable"
+                     || r.link_hint_kind === "asleep";
       $("statusGrid").innerHTML +=
         `<div class="hint" style="grid-column:1/-1;color:${attention ? "#f7b955" : "#9aa"}">`
         + (attention ? "⚠ " : "") + r.link_hint + "</div>";
@@ -639,8 +672,12 @@ async function refreshStatus() {
       act = `<button onclick="showTab('pair')">PAIR YOUR ROBOT →</button>`;
     // A stalled control channel is fixed by restarting the ROBOT, not by
     // re-pairing — offering RE-PAIR here just loops people through the wizard.
-    else if (!r.connected && r.link_hint_kind === "needs_reboot")
-      act = `<button onclick="connectRobot()">I RESTARTED HIM — RETRY →</button>`;
+    else if (!r.connected && (r.link_hint_kind === "needs_reboot"
+                           || r.link_hint_kind === "unreachable"
+                           || r.link_hint_kind === "asleep"))
+      // All three are fixed at the ROBOT (wake him / power-cycle him), never
+      // by re-pairing — so offer the retry, not the wizard.
+      act = `<button onclick="connectRobot()">I WOKE HIM — RETRY →</button>`;
     else if (!r.connected && r.link_hint_kind === "cert_rotated")
       act = `<button onclick="showTab('pair')">RE-PAIR ROBOT →</button>`;
     else if (!r.connected && s.server.use_robot)
@@ -731,12 +768,12 @@ function drawRink(ctx, t, W, H, f) {
     const color = side > 0 ? PINK : GREEN;
     const g1 = t.px(side*hl,  goalHalf), g2 = t.px(side*hl, -goalHalf);
     const gy = g1[1];
-    // crease
+    // crease — a modest arc in front of the mouth, not a half-board dome
     ctx.save();
-    ctx.strokeStyle = color; ctx.globalAlpha = 0.22;
+    ctx.strokeStyle = color; ctx.globalAlpha = 0.20;
     ctx.lineWidth = Math.max(1, u);
     ctx.beginPath();
-    ctx.arc(W/2, gy, Math.abs(g1[0]-g2[0])*0.42, 0, Math.PI, side < 0);
+    ctx.arc(W/2, gy, Math.abs(g1[0]-g2[0])*0.30, 0, Math.PI, side < 0);
     ctx.stroke();
     ctx.restore();
     // mouth
@@ -751,13 +788,14 @@ function drawRink(ctx, t, W, H, f) {
   roundRect(ctx, x, y, w, h, r);
   ctx.strokeStyle = "rgba(46,122,68,0.85)"; ctx.lineWidth = 2*u; ctx.stroke();
 
-  // side labels, inside the board
+  // Side labels hug the left edge: centred they landed inside the crease arc
+  // and read as part of it.
   ctx.save();
-  ctx.textAlign = "center"; ctx.font = `${Math.round(9*u)}px monospace`;
-  ctx.fillStyle = "rgba(242,102,191,0.55)";
-  ctx.fillText("V E C T O R", W/2, y + 15*u);
-  ctx.fillStyle = "rgba(89,255,128,0.55)";
-  ctx.fillText("Y O U", W/2, y + h - 8*u);
+  ctx.textAlign = "left"; ctx.font = `${Math.round(8*u)}px monospace`;
+  ctx.fillStyle = "rgba(242,102,191,0.45)";
+  ctx.fillText("V E C T O R", x + 10*u, y + 14*u);
+  ctx.fillStyle = "rgba(89,255,128,0.45)";
+  ctx.fillText("Y O U", x + 10*u, y + h - 9*u);
   ctx.restore();
 
   return {x, y, w, h};
@@ -923,14 +961,31 @@ pollField();
    SERVER drives the REAL Vector as goalie (exactly like the Spectacles lens).
    Field frame: origin center, +X toward Vector (top), +Y player-left.
    Canvas is vertical: Vector's goal at TOP, you at the BOTTOM.            */
-const PF = {   // field constants (mirror GameConfig / config.py)
+// Field + puck constants, mirrored from the LENS (lens/Assets/Scripts/
+// GameConfig.ts), which is the authoritative game. Screen play had drifted
+// into its own numbers — a faster serve, a much higher ceiling, no floor and
+// no wall damping — so the same rally felt nothing like it does in the
+// glasses, and the puck kept accelerating rally after rally.
+const PF = {
   L: 400, W: 300, PUCK_R: 15, PADDLE_R: 25, BODY_R: 55,
-  SERVE: 150, MAX: 300, WIN: 5,
-  // 3-2-1 before every serve. Not decoration: the REAL Vector has to finish
-  // his goal reaction and drive back across the crease, and 1.2 s (the old
-  // value, which only ever showed "2" and "1") left him still turning when
-  // the puck went live.
-  COUNTDOWN: 3.0,
+  WIN: 5,
+  SERVE: 135,            // PUCK_SERVE_SPEED
+  MIN: 150,              // PUCK_MIN_SPEED  — puck never crawls
+  MAX: 235,              // PUCK_MAX_SPEED  — and never runs away
+  WALL_REST: 0.98,       // WALL_RESTITUTION
+  VEL_TRANSFER: 0.6,     // PADDLE_VEL_TRANSFER — how much of your swing it takes
+  COUNTDOWN: 4.0,        // COUNTDOWN_S — the real Vector needs it to get back
+  EVENT_MIN_GAP: 0.3,    // sendCollision() throttle, see sendEvent below
+  PADDLE_MAX_SWING: 700, // mm/s — a mouse has no such limit, a hand does
+  // Goalie, mirrored from the bridge (game_bridge/config.py) — the same
+  // numbers the REAL robot is driven with, so the screen opponent behaves
+  // like the one on the table.
+  GOALIE_X: 140,         // his post
+  GOALIE_Y_RANGE: 110,   // how far he patrols either side
+  KP: 3.8,               // mm/s of wheel per mm of y error
+  MAX_WHEEL: 218,        // his actual top speed
+  PUCK_MIN_VX: 30,       // slower than this toward goal -> no intercept
+  INTERCEPT_MAX_T: 3.0,  // ignore predictions further out than this
 };
 let play = null;   // active game or null
 
@@ -1031,8 +1086,10 @@ function playStart() {
   play = {
     cv, t, phase: "countdown", tPhase: 0,
     puck: {x: 0, y: 0, vx: 0, vy: 0, live: false},
-    paddle: {x: -140, y: 0},        // player mallet (their half, x<0)
-    robot: {x: PF.L/2*0.7, y: 0, deg: 180},  // rendered from server pose
+    // vx/vy on both: the lens feeds paddle AND robot to the puck as moving
+    // circles, so their speed transfers into the shot.
+    paddle: {x: -140, y: 0, vx: 0, vy: 0, t: 0},   // player mallet (x<0)
+    robot: {x: PF.L/2*0.7, y: 0, deg: 180, vx: 0, vy: 0, t: 0},  // server pose
     score: [0, 0], last: performance.now(), wsSeq: 0,
   };
   $("btnPlay").textContent = "STOP GAME";
@@ -1072,7 +1129,15 @@ function playWSConnect() {
     // server may coalesce several JSON objects in one frame
     for (const part of String(ev.data).split(/(?<=})(?={)/)) {
       let m; try { m = JSON.parse(part); } catch (e) { continue; }
-      if (m.t === "pose") { play.robot = {x: m.x, y: m.y, deg: m.deg}; }
+      if (m.t === "pose") {
+        // Keep his velocity too — a moving Vector should push the puck, same
+        // as your mallet does (the lens passes both as CirclePaddle).
+        const prev = play.robot, now = Date.now() / 1000;
+        const dt = now - (prev.t || now);
+        const vx = dt > 0.004 ? (m.x - prev.x) / dt : (prev.vx || 0);
+        const vy = dt > 0.004 ? (m.y - prev.y) / dt : (prev.vy || 0);
+        play.robot = {x: m.x, y: m.y, deg: m.deg, vx, vy, t: now};
+      }
     }
   };
   ws.onclose = () => { if (play) $("playHint").textContent = "screen-only (no robot)"; };
@@ -1082,10 +1147,34 @@ function wsSend(o) {
   if (play && play.ws && play.ws.readyState === 1) play.ws.send(JSON.stringify(o));
 }
 
+// Where the goalie should stand — the bridge's predict_intercept, mirrored
+// (the lens mirrors the same function in GoaliePredictor.intercept).
+// Straight line to the goal line, folded off the side walls, clamped to his
+// patrol range; if the puck isn't coming at him, drift toward its y.
+function goalieTarget(p) {
+  const clamp = (v) => Math.max(-PF.GOALIE_Y_RANGE,
+                                Math.min(PF.GOALIE_Y_RANGE, v));
+  if (p.vx > PF.PUCK_MIN_VX) {
+    const t = (PF.GOALIE_X - p.x) / p.vx;
+    if (t >= 0 && t <= PF.INTERCEPT_MAX_T) {
+      const h = PF.W/2 - PF.PUCK_R;
+      let y = p.y + p.vy * t;
+      for (let i = 0; i < 8; i++) {          // reflect off the walls
+        if (y > h) y = 2*h - y;
+        else if (y < -h) y = -2*h - y;
+        else break;
+      }
+      return clamp(y);
+    }
+  }
+  return p.vx < 0 ? clamp(p.y * 0.65) : 0;   // light anticipation / home
+}
+
+// Same serve as the lens: dead centre, +-30 degrees, at SERVE speed.
 function serve(dir) {   // dir: +1 toward player(-X), -1 toward Vector(+X)
   const p = play.puck;
-  p.x = 0; p.y = (Math.random()-0.5)*80;
-  const ang = (Math.random()-0.5)*0.8;
+  p.x = 0; p.y = 0;
+  const ang = (Math.random()*60 - 30) * Math.PI/180;
   p.vx = -dir * PF.SERVE * Math.cos(ang);
   p.vy = PF.SERVE * Math.sin(ang);
   p.live = true;
@@ -1100,6 +1189,24 @@ $("playCanvas").addEventListener("mousemove", (e) => {
   let [fx, fy] = play.t.fx(mx, my);
   fx = Math.max(-PF.L/2 + 20, Math.min(-10, fx));   // player half, x in [-180,-10]
   fy = Math.max(-PF.W/2 + 20, Math.min(PF.W/2 - 20, fy));
+  // Mallet VELOCITY, so a swing actually drives the puck (PADDLE_VEL_TRANSFER
+  // in the lens). Without it every return left at the same speed no matter
+  // how you hit it, and the rally had no dynamics at all.
+  const now = Date.now() / 1000, dt = now - (play.paddle.t || now);
+  if (dt > 0.004) {
+    let vx = (fx - play.paddle.x) / dt, vy = (fy - play.paddle.y) / dt;
+    // A mouse can cross the whole rink in one frame — thousands of mm/s —
+    // so an unclamped swing maxed the puck on EVERY touch and the robot had
+    // no chance of getting across in time. A hand in the glasses physically
+    // can't do that, which is why screen play felt unfair and the lens
+    // doesn't. Cap the swing at something a person could actually produce.
+    const sp = Math.hypot(vx, vy);
+    if (sp > PF.PADDLE_MAX_SWING) {
+      const k = PF.PADDLE_MAX_SWING / sp; vx *= k; vy *= k;
+    }
+    play.paddle.vx = vx; play.paddle.vy = vy;
+    play.paddle.t = now;
+  }
   play.paddle.x = fx; play.paddle.y = fy;
 });
 
@@ -1136,36 +1243,52 @@ function playStep(dt) {
   }
   if (play.phase === "over") return;
 
-  // screen-only goalie: move the on-screen Vector to track the puck (the real
-  // robot is driven by the server when 'drive the real Vector' is on)
+  // A mallet that stopped moving must stop pushing: without this the last
+  // swing's velocity kept being added on every later contact.
+  const nowS = Date.now() / 1000;
+  if (nowS - (play.paddle.t || 0) > 0.08) { play.paddle.vx = 0; play.paddle.vy = 0; }
+
+  // Screen-only goalie. Mirrors the bridge's ShowmanGoalie the same way the
+  // lens' GoaliePredictor does: aim at the PREDICTED intercept (not at where
+  // the puck is now), move at KP*dy capped to the robot's real top speed, and
+  // integrate in mm/s * dt. The old version stepped a fixed fraction PER
+  // FRAME toward the puck's current y — frame-rate dependent, always late,
+  // and nothing like the robot you play against in the glasses.
   if (!play.driveReal) {
-    const gx = PF.L/2 - PF.BODY_R*1.3;
-    const target = (p.vx > 0) ? p.y : 0;
-    play.robot.x = gx;
-    play.robot.y += Math.max(-3.5, Math.min(3.5, (target - play.robot.y)*0.12));
+    const prevY = play.robot.y;
+    play.robot.x = PF.GOALIE_X;
+    const yT = goalieTarget(p);
+    const dy = yT - play.robot.y;
+    if (Math.abs(dy) >= 12) {
+      const v = Math.max(-PF.MAX_WHEEL, Math.min(PF.MAX_WHEEL, PF.KP * dy));
+      play.robot.y += v * dt;
+      play.robot.y = Math.max(-PF.GOALIE_Y_RANGE,
+                              Math.min(PF.GOALIE_Y_RANGE, play.robot.y));
+    }
+    play.robot.vx = 0;
+    play.robot.vy = dt > 1e-4 ? (play.robot.y - prevY) / dt : 0;
     play.robot.y = Math.max(-hw + PF.BODY_R, Math.min(hw - PF.BODY_R, play.robot.y));
   }
 
   // integrate
   p.x += p.vx * dt; p.y += p.vy * dt;
-  // side walls (y)
-  if (p.y < -hw + PF.PUCK_R) { p.y = -hw + PF.PUCK_R; p.vy = Math.abs(p.vy); wsSend({t:"event",name:"puck_wall"}); }
-  if (p.y >  hw - PF.PUCK_R) { p.y =  hw - PF.PUCK_R; p.vy = -Math.abs(p.vy); wsSend({t:"event",name:"puck_wall"}); }
+  // side walls — damped, and only when actually heading into the wall
+  // (the old unconditional flip could re-reflect a puck already leaving)
+  const wallY = hw - PF.PUCK_R;
+  if (p.y > wallY && p.vy > 0) {
+    p.y = wallY; p.vy = -p.vy * PF.WALL_REST; sendEvent("puck_wall");
+  } else if (p.y < -wallY && p.vy < 0) {
+    p.y = -wallY; p.vy = -p.vy * PF.WALL_REST; sendEvent("puck_wall");
+  }
   // paddle collision (player mallet)
-  collide(p, play.paddle, PF.PADDLE_R, () => wsSend({t:"event",name:"puck_paddle"}));
+  collide(p, play.paddle, PF.PADDLE_R, () => sendEvent("puck_paddle"));
   // robot collision (real Vector's field pose from server) — he blocks
-  const hit = collide(p, play.robot, PF.BODY_R, () => wsSend({t:"event",name:"vector_block"}));
-  // goals
-  if (p.x >  hl - PF.PUCK_R) {   // reached Vector's goal line -> player scores
-    if (!hit) { play.score[0]++; goal(false); }
-    else { p.x = hl - PF.PUCK_R; p.vx = -Math.abs(p.vx); }
-  }
-  if (p.x < -hl + PF.PUCK_R) {   // player's goal -> Vector scores
-    play.score[1]++; goal(true);
-  }
-  // speed clamp
-  const sp = Math.hypot(p.vx, p.vy);
-  if (sp > PF.MAX) { p.vx *= PF.MAX/sp; p.vy *= PF.MAX/sp; }
+  const hit = collide(p, play.robot, PF.BODY_R, () => sendEvent("vector_block"));
+  // goals — the line is the line, exactly as in the lens (|x| > FIELD_L/2).
+  // Screen play inset it by the puck radius, so a puck that had visually
+  // crossed still counted as in play.
+  if (p.x > hl) { play.score[0]++; goal(false); }
+  else if (p.x < -hl) { play.score[1]++; goal(true); }
 
   // stream puck to the server @30Hz -> real Vector chases it
   _puckAccum += dt;
@@ -1176,19 +1299,42 @@ function playStep(dt) {
 }
 function now8() { return Date.now() / 1000; }
 
+// Straight port of the lens' PuckPhysics.collideCircle: separate, reflect if
+// approaching, take part of the mover's velocity, then clamp into [MIN, MAX].
+// The old version instead multiplied speed by 1.04 on every contact with no
+// ceiling and no floor, so a long rally kept winding the puck up until it was
+// unplayable — the "odd" feeling on screen that the glasses never had.
 function collide(p, o, R, onHit) {
   const dx = p.x - o.x, dy = p.y - o.y;
   const d = Math.hypot(dx, dy), min = R + PF.PUCK_R;
-  if (d < min && d > 0.001) {
-    const nx = dx/d, ny = dy/d;
-    const vn = p.vx*nx + p.vy*ny;
-    if (vn < 0) { p.vx -= 2*vn*nx; p.vy -= 2*vn*ny; }
-    p.x = o.x + nx*min; p.y = o.y + ny*min;
-    p.vx *= 1.04; p.vy *= 1.04;   // slight speed-up on hits
-    onHit && onHit();
-    return true;
+  if (d >= min || d <= 0.001) return false;
+
+  const nx = dx/d, ny = dy/d;
+  p.x = o.x + nx*min; p.y = o.y + ny*min;
+  const vn = p.vx*nx + p.vy*ny;
+  if (vn < 0) { p.vx -= 2*vn*nx; p.vy -= 2*vn*ny; }
+  // your swing (and the robot's drive) pushes the puck
+  p.vx += (o.vx || 0) * PF.VEL_TRANSFER;
+  p.vy += (o.vy || 0) * PF.VEL_TRANSFER;
+  const sp = Math.hypot(p.vx, p.vy);
+  if (sp > 1e-6) {
+    const k = Math.max(PF.MIN, Math.min(PF.MAX, sp)) / sp;
+    p.vx *= k; p.vy *= k;
   }
-  return false;
+  onHit && onHit();
+  return true;
+}
+
+// Collision events drive SOUND on the physical robot. Contact jitter fires
+// them in bursts (the lens measured 5 in 50 ms), and unthrottled they flood
+// the socket and the robot with commands. The lens rate-limits to one every
+// 0.3 s in sendCollision(); screen play sent every single one.
+let _lastEventSent = 0;
+function sendEvent(name, extra) {
+  const now = Date.now() / 1000;
+  if (now - _lastEventSent < PF.EVENT_MIN_GAP) return;
+  _lastEventSent = now;
+  wsSend(Object.assign({t: "event", name: name}, extra || {}));
 }
 
 function goal(byVector) {
@@ -1379,6 +1525,30 @@ async function connectRobot() {
         : res.kind === "cert_rotated"
         ? `<button onclick="showTab('pair')">RE-PAIR ROBOT →</button>`
         : `<button onclick="connectRobot()">TRY AGAIN →</button>`);
+}
+
+// Whole-chain diagnosis on demand — the same checks as `python -m
+// game_bridge.doctor`, each red line carrying the action that fixes it.
+async function runDoctor() {
+  const box = $("doctorOut");
+  box.style.display = "";
+  box.innerHTML = `<span class="spin">◌</span> checking the whole chain…`;
+  let r;
+  try { r = await (await fetch("/api/doctor")).json(); }
+  catch (e) { box.innerHTML = `<div class="error">${e}</div>`; return; }
+  const mark = (ok) => ok === true ? `<span class="ok">ok</span>`
+                     : ok === false ? `<span class="error">FAIL</span>`
+                     : `<span style="opacity:.45">--</span>`;
+  box.innerHTML =
+    `<div style="margin-bottom:8px">${r.ok
+        ? `<span class="ok">everything ready</span>`
+        : `<span class="error">${r.summary}</span>`}</div>`
+    + r.checks.map(c =>
+        `<div style="display:flex;gap:8px;align-items:baseline;margin:4px 0">`
+        + `<span style="min-width:38px">${mark(c.ok)}</span>`
+        + `<span><b>${c.name}</b> — ${c.detail}`
+        + (c.fix ? `<div class="hint" style="margin:2px 0 0">→ ${c.fix}</div>` : "")
+        + `</span></div>`).join("");
 }
 
 // Hand Vector back to himself. He stays released until you press CONNECT
@@ -1796,6 +1966,7 @@ async function bleFlashEp() {
   $("flashBar").style.display = "";
   $("flashBar").innerHTML = `<span class="spin">◌</span> starting…`;
   let started;
+  window._flashActive = true;      // block the auto-reload during the install
   try {
     started = await api("/api/ble/flash_ep", {});
   } catch (e) {
@@ -1820,6 +1991,7 @@ async function bleFlashEp() {
     catch (e) { return; }
     if (s.error) {
       clearInterval(poll);
+      window._flashActive = false;
       $("flashBar").style.display = "none";
       $("btnFlash").disabled = false;
       $("provErr").style.display = "";
@@ -1831,6 +2003,7 @@ async function bleFlashEp() {
       : flashBarHtml(s);
     if (s.done) {
       clearInterval(poll);
+      window._flashActive = false;
       $("provBody").innerHTML +=
         `<div class="ok">Done — the escape-pod firmware is installed.</div>`
         + `<div class="hint">What happens now: Vector reboots (~1 minute) and `

@@ -11,6 +11,7 @@ import argparse
 import asyncio
 import logging
 import time
+from pathlib import Path
 
 from . import config, protocol
 from .transform import RobotFieldTransform
@@ -337,6 +338,57 @@ class Bridge:
         logger.warning("CUBE_ANCHOR requested but unsupported on the "
                        "VectAR Link — ignored (YOLO vision_fix covers it)")
 
+    async def reload_watchdog(self):
+        """Dev only (--reload): restart when our own source changes.
+
+        This session took 23 manual restarts, each one a pkill + relaunch +
+        re-check. Watch the files instead and re-exec in place; the link
+        watchdog reconnects the robot afterwards on its own, so a restart
+        costs nothing but a second.
+        """
+        import os
+        import sys
+        root = Path(__file__).resolve().parent
+        extra = root.parent / "onboarding"
+
+        def stamp() -> float:
+            newest = 0.0
+            for base in (root, extra):
+                if not base.exists():
+                    continue
+                for p in base.rglob("*.py"):
+                    if "__pycache__" in p.parts:
+                        continue
+                    try:
+                        newest = max(newest, p.stat().st_mtime)
+                    except OSError:
+                        pass
+            # the console is one big inline file — reload on it too
+            page = root / "web" / "static" / "index.html"
+            try:
+                newest = max(newest, page.stat().st_mtime)
+            except OSError:
+                pass
+            return newest
+
+        last = stamp()
+        while True:
+            await asyncio.sleep(1.0)
+            now = stamp()
+            if now > last:
+                logger.warning("source changed — restarting")
+                # Give the robot back cleanly; a half-open SDK session would
+                # keep behavior control and lock out the new process.
+                try:
+                    if self.commander:
+                        self.commander.set_wheels(0.0, 0.0)
+                    if self.link:
+                        await self.link.disconnect()
+                except Exception as e:
+                    logger.debug(f"reload cleanup: {e}")
+                os.execv(sys.executable,
+                         [sys.executable, "-m", "game_bridge.main", *sys.argv[1:]])
+
     async def link_watchdog(self):
         """Bring the robot back on his own after HE goes away and returns.
 
@@ -355,7 +407,7 @@ class Bridge:
             await asyncio.sleep(15.0)
             if self.link_paused or not self.use_robot:
                 continue
-            if self.robot_alive:
+            if self.robot_linked:
                 continue
             try:
                 from .robot.sdk.connection import RobotLink, _tcp_open
@@ -364,9 +416,23 @@ class Bridge:
                     continue
                 ip = (ips.split(",")[0] or "").strip()
                 # Only reach for him when he's actually answering — otherwise
-                # every 15 s costs a 40 s connect timeout.
+                # every 15 s costs a 40 s connect timeout. But SAY so: with no
+                # attempt there is no failure, and the dashboard was left
+                # showing OFFLINE with no reason at all.
                 if not ip or not await asyncio.to_thread(_tcp_open, ip):
+                    if not self.last_link_hint:
+                        self.last_link_hint_kind = "asleep"
+                        self.last_link_hint = (
+                            "Vector is on the network but his control port "
+                            "isn't answering — he's most likely asleep. Pat "
+                            "him, lift him, or press his backpack button and "
+                            "he reconnects on his own. If he stays quiet, "
+                            "restart him: hold the backpack button ~5 s until "
+                            "he switches off, then back on the charger.")
                     continue
+                if self.last_link_hint_kind == "asleep":
+                    self.last_link_hint = ""
+                    self.last_link_hint_kind = ""
                 logger.info("link watchdog: robot is back — reconnecting")
                 await self.connect_robot()
             except Exception as e:
@@ -676,18 +742,36 @@ class Bridge:
             except Exception as e:
                 logger.debug(f"battery poll: {e}")
 
+    # Two DIFFERENT questions, and conflating them broke the link:
+    #
+    #   "is telemetry flowing right now?"  -> pose younger than 0.5 s.
+    #      Right for the dashboard light. WRONG as a reconnect trigger: a goal
+    #      animation, a lift, or a Wi-Fi hiccup silences poses for longer than
+    #      that, and treating it as a dead link tore down a perfectly good
+    #      connection every few seconds.
+    #   "do we still have a link at all?"  -> the handle, plus telemetry that
+    #      hasn't been dead for a LONG time. That catches the real failure —
+    #      a handle that survived a robot reboot with nothing behind it.
+    LINK_DEAD_S = 15.0
+
+    @property
+    def pose_age(self) -> float:
+        if not self.pump:
+            return float("inf")
+        try:
+            return time.monotonic() - self.pump.snapshot["mono_ts"]
+        except Exception:
+            return float("inf")
+
+    @property
+    def robot_linked(self) -> bool:
+        """Usable link: handle present and not silent for ages."""
+        return bool(self.link and self.link.robot
+                    and self.pose_age < self.LINK_DEAD_S)
+
     @property
     def robot_alive(self) -> bool:
-        """One definition of "the robot link works", used everywhere.
-
-        Holding a robot HANDLE is not the same as having a live link: after
-        the robot reboots, the old handle survives with dead telemetry. This
-        used to be tested one way here (`link.robot` -> "already connected")
-        and another way on the dashboard (handle AND fresh pose -> ONLINE), so
-        CONNECT ROBOT returned success instantly without reconnecting while
-        the dashboard still said OFFLINE, and no diagnosis was ever produced
-        because no attempt was ever made.
-        """
+        """Linked AND streaming — what the dashboard shows as CONNECTED."""
         return bool(self.link and self.link.robot and self.pump
                     and getattr(self.pump, "fresh", False))
 
@@ -695,7 +779,7 @@ class Bridge:
         """Connect + acquire control over the SDK (gRPC). NON-FATAL: returns
         False when the robot is unpaired or unreachable — the server keeps
         running so the web UI can pair and then retry via /api/connect."""
-        if self.robot_alive:
+        if self.robot_linked:
             return True   # already connected
         if self.link:
             # A stale link would otherwise keep its dead handle and block the
@@ -781,6 +865,8 @@ class Bridge:
                  self.health_task(), self.control_watchdog(),
                  self.link_watchdog(),
                  self.battery_task(), self.cube_anchor_task()]
+        if getattr(self, "auto_reload", False):
+            tasks.append(self.reload_watchdog())
         try:
             await asyncio.gather(*tasks)
         finally:
@@ -799,6 +885,8 @@ def main():
                    help="simulate goalie pose (implies --no-robot)")
     p.add_argument("--no-web", action="store_true",
                    help="disable the web UI (pairing wizard + dashboard)")
+    p.add_argument("--reload", action="store_true",
+                   help="dev: restart automatically when source changes")
     p.add_argument("--log-level", default="INFO")
     args = p.parse_args()
     if args.no_web:
@@ -808,6 +896,7 @@ def main():
         format="%(asctime)s %(name)s %(levelname)s %(message)s")
     bridge = Bridge(use_robot=not (args.no_robot or args.mock_pose),
                     mock_pose=args.mock_pose)
+    bridge.auto_reload = bool(args.reload)
     try:
         asyncio.run(bridge.run())
     except KeyboardInterrupt:

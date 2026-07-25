@@ -9,7 +9,13 @@ import { GameConfig } from "./GameConfig";
 
 const log = new NativeLogger("GoaliePredictor");
 
-// bridge config mirror (game_bridge/config.py)
+// bridge config mirror (game_bridge/config.py) — but deliberately NOT equal
+// to it, and that is not a bug to "fix". These values are what the predicted
+// pose is integrated with, and that pose IS the collision circle the puck
+// bounces off (VectorAvatar.x/y under usePredicted). So they describe the
+// robot as he actually behaves on a table — tread slip, ramp-up, the speeds
+// he really reaches — not the speeds the bridge commands. Tuned on hardware;
+// the lens plays correctly with them. Change only against a real robot.
 const KP = 3.0;
 const MAX_WHEEL = 200.0;
 const ARRIVE_MM = 15.0;

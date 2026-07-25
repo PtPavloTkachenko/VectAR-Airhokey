@@ -12,6 +12,7 @@ import asyncio
 import logging
 import socket
 import subprocess
+import time
 
 from ... import config
 
@@ -31,14 +32,26 @@ _CERT_ROTATED_MARKERS = (
 )
 
 
-def _tcp_open(ip: str, port: int = 443, timeout: float = 2.0) -> bool:
+def _tcp_open(ip: str, port: int = 443, timeout: float = 2.0,
+              tries: int = 3) -> bool:
     """True if <ip>:443 accepts a TCP connection (robot is on this LAN and its
-    gateway is up) — lets us tell 'wrong IP' apart from 'cert/auth problem'."""
-    try:
-        with socket.create_connection((ip, port), timeout=timeout):
-            return True
-    except Exception:
-        return False
+    gateway is up) — lets us tell 'wrong IP' apart from 'cert/auth problem'.
+
+    Retries, because Vector's Wi-Fi radio power-saves: the FIRST packet after
+    an idle spell wakes it and is usually lost, so a single-shot probe reports
+    a wide-awake robot as missing. Measured on hardware: first probe times out
+    and the ping that woke him takes ~180 ms, the next probes connect in 0.0 s.
+    That false "not found" is what made the dashboard insist he was asleep
+    while he was sitting there blinking at us.
+    """
+    for i in range(max(1, tries)):
+        try:
+            with socket.create_connection((ip, port), timeout=timeout):
+                return True
+        except Exception:
+            if i + 1 < tries:
+                time.sleep(0.4)
+    return False
 
 
 def _discover_robot_ip(candidates: list[str], timeout: float = 1.5) -> str | None:
@@ -169,8 +182,12 @@ class RobotLink:
             return await self._try_connect()
         self.last_error_kind = "unreachable"
         self.last_error_msg = (
-            f"{self.name} not found at {self.ip} and not on the LAN via mDNS. "
-            "Same Wi-Fi as the Mac? Robot on the charger and awake?")
+            f"{self.name} isn't answering at {self.ip}, and mDNS doesn't see "
+            "him either. Usually he is simply asleep — pat him, lift him, or "
+            "press his backpack button and he reconnects on his own. If that "
+            "doesn't bring him back, restart him: hold the backpack button "
+            "~5 s until he switches off, then put him on the charger. (Worth "
+            "checking he's on the same Wi-Fi as this Mac, too.)")
         return False
 
     async def _try_connect(self) -> bool:
