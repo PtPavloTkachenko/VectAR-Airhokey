@@ -65,7 +65,21 @@ the stock path needs (see `mint_guid_ble.py`). Once he has handshaked, wire-pod
 holds a session certificate for his serial and pairing mints the SDK guid.
 
 If wire-pod already holds a certificate for that serial from an earlier setup,
-the BLE step can be skipped and pairing goes straight through.
+the BLE step can be skipped and pairing goes straight through — which is what
+`oskr_setup` tries first.
+
+**He answers the network authentication call with an empty guid.** The call
+itself succeeds, so this is easy to mistake for a completed pairing; every
+later connection then fails with a bare 401. The engine minted a real guid and
+its hash is already in his token store, so pairing reads it back from the
+engine (`/api-sdk/get_sdk_info`) rather than trusting the robot's empty answer.
+
+A successful run ends by connecting, so it says what it proved:
+
+```
+paired Vector-XXXX (0dd1dfd4) at 192.168.0.194
+SDK control confirmed: firmware 2.0.1.6091oskr#f61178e, battery 4.12 V
+```
 
 ## Signing your own OTA: no Anki key required
 

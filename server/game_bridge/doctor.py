@@ -87,9 +87,18 @@ def _ota_check() -> Check:
         f"download {config.EP_OTA_NAME} into {config.OTA_CACHE_DIR}/")
 
 
-def _identity_checks() -> tuple[list[Check], str, str]:
+def _paired_serials() -> list[str]:
+    cfg = configparser.ConfigParser(strict=False)
+    try:
+        cfg.read(config.SDK_CONFIG_PATH)
+        return cfg.sections()
+    except Exception:
+        return []
+
+
+def _identity_checks(want: str = "") -> tuple[list[Check], str, str]:
     """Credentials on disk. Returns (checks, serial, ip)."""
-    serial, ips, name = config.read_robot_identity()
+    serial, ips, name = config.read_robot_identity(want)
     ip = (ips.split(",")[0] or "").strip() if ips else ""
     if not serial:
         return ([Check(
@@ -181,9 +190,27 @@ def run(bridge=None) -> dict:
     checks: list[Check] = []
     checks += _wirepod_checks()
     checks.append(_ota_check())
-    ident, serial, ip = _identity_checks()
-    checks += ident
-    checks.append(_robot_reachable(ip))
+    # Every paired robot, not just the first one in the file. With a dev robot
+    # set up alongside a stock one, reporting only the first meant the doctor
+    # could say "1 problem" about a robot that is switched off on purpose while
+    # staying silent about the one being played with.
+    serials = _paired_serials()
+    serial, ip = "", ""
+    for i, s in enumerate(serials or [""]):
+        ident, s_serial, s_ip = _identity_checks(s)
+        if len(serials) > 1:
+            _, _, s_name = config.read_robot_identity(s)
+            tag = f" [{s_name or s_serial or '?'}]"
+            ident = [Check(c.name + tag, c.ok, c.detail, c.fix) for c in ident]
+        checks += ident
+        r = _robot_reachable(s_ip)
+        if len(serials) > 1:
+            _, _, s_name = config.read_robot_identity(s)
+            r = Check(r.name + f" [{s_name or s_serial or '?'}]",
+                      r.ok, r.detail, r.fix)
+        checks.append(r)
+        if i == 0:
+            serial, ip = s_serial, s_ip
     checks.append(_port_check(config.WS_PORT, "lens socket"))
 
     if bridge is not None:
