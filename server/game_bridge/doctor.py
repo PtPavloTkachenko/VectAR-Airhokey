@@ -170,12 +170,25 @@ def run(bridge=None) -> dict:
 
     if bridge is not None:
         linked = bool(getattr(bridge, "robot_linked", False))
-        checks.append(Check(
-            "robot link", linked,
-            "connected, control held" if getattr(bridge, "robot_alive", False)
-            else ("linked but no telemetry" if linked else "not connected"),
-            "" if linked else (getattr(bridge, "last_link_hint", "")
-                               or "Press CONNECT ROBOT on the dashboard.")))
+        alive = bool(getattr(bridge, "robot_alive", False))
+        if alive:
+            checks.append(Check("robot link", True, "connected, control held"))
+        elif linked:
+            # Don't call this ok: the link is up but he isn't sending poses,
+            # and the goalie cannot move without them. Brief gaps are normal
+            # (an animation owns the motors); a persistent one is not.
+            age = getattr(bridge, "pose_age", 0.0)
+            checks.append(Check(
+                "robot link", None,
+                f"connected, but no pose for {age:.0f}s",
+                "Normal for a moment during an animation. If it stays this "
+                "way he is not streaming: press RELEASE CONTROL then CONNECT "
+                "ROBOT, and restart him if that doesn't restore it."))
+        else:
+            checks.append(Check(
+                "robot link", False, "not connected",
+                getattr(bridge, "last_link_hint", "")
+                or "Press CONNECT ROBOT on the dashboard."))
         lens = bool(getattr(bridge.ws, "alive", False))
         checks.append(Check(
             "lens connected", None if not lens else True,

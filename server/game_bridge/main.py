@@ -853,6 +853,16 @@ class Bridge:
             logger.info("--no-robot: WS server only")
 
         await self.ws.start()
+        # Publish <name>.local so a Lens can dial a NAME instead of an address
+        # that DHCP will eventually change under it.
+        self._mdns = None
+        try:
+            from .mdns import Responder
+            from .web.server import _lan_ip
+            self._mdns = Responder(_lan_ip(), config.WS_PORT)
+            await asyncio.to_thread(self._mdns.start)
+        except Exception as e:
+            logger.debug(f"mdns: {e}")
         self.web = None
         if config.WEB_PORT:
             try:
@@ -874,6 +884,8 @@ class Bridge:
                 self.commander.stop()
             if self.link:
                 await self.link.disconnect()
+            if getattr(self, "_mdns", None):
+                self._mdns.stop()   # withdraw the name with the server
             if self.web:
                 await self.web.stop()
 

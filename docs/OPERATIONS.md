@@ -103,6 +103,23 @@ The server watches its own sources (and the console page) and restarts itself
 on any change; the page notices the new build and reloads. The robot link
 comes back on its own afterwards, so an edit costs about a second.
 
+## 3.7 · Let the Lens find the Mac by name
+
+The server publishes itself over mDNS as **`vectar.local`**, so a Lens can be
+built once with
+
+```ts
+WS_URL: "ws://vectar.local:8777",
+```
+
+and keep working after the Mac's address changes, on any network. That beats
+an IP, which goes stale the moment DHCP moves you and then fails silently —
+the glasses simply never connect and nothing says why.
+
+Rename it with `VECTAR_MDNS_NAME=whatever`. If your headset turns out not to
+resolve `.local` names, fall back to the Mac's IP and give the Mac a DHCP
+reservation in your router so it stops moving.
+
 ## 4 · Networking (the #1 gotcha)
 
 The Mac reaches the robot by **IP on the same subnet**. If the robot joins one
