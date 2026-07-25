@@ -115,8 +115,7 @@ pair → PIN → Wi-Fi → escape-pod flash → reboot → pair → Wi-Fi → cl
 
 Two things worth knowing from those runs:
 
-- **The robot's name and TLS certificate rotate on every wipe** (`Vector-B7J4`
-  became `Vector-C6Z4` on the same ESN), which is why pairing keys off the ESN
+- **The robot's name and TLS certificate rotate on every wipe** (the same ESN came back under a different `Vector-XXXX` name), which is why pairing keys off the ESN
   and reads the name back from the certificate.
 - **A clean run needs no extra robot reboot.** The stall that made one
   necessary in run 1 came from minting tokens repeatedly at a robot that had
