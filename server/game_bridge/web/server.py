@@ -47,6 +47,20 @@ def _lan_ip() -> str:
         s.close()
 
 
+def prefer_active(cands: list[dict], active: str) -> list[dict]:
+    """Put the robot this Mac is set to play with at the front of the search.
+
+    In place, and stable — everyone else keeps their discovery order.
+
+    With two robots awake, "found a Vector" is otherwise whoever answered
+    quickest, and the whole wizard then acts on a robot the owner never chose.
+    """
+    active = (active or "").strip().lower()
+    if active:
+        cands.sort(key=lambda c: (c.get("serial") or "").strip().lower() != active)
+    return cands
+
+
 class WebUI:
     def __init__(self, bridge):
         self.bridge = bridge
@@ -67,6 +81,12 @@ class WebUI:
             web.get("/api/game", self.api_game),
             web.post("/api/find_robot", self.api_find_robot),
             web.post("/api/discover", self.api_discover),
+            # The fleet. More than one robot can be set up on this Mac; the
+            # console is where you say which of them the game — and therefore
+            # the Lens — is playing against. The Lens itself never chooses.
+            web.get("/api/robots", self.api_robots),
+            web.post("/api/robots/select", self.api_robots_select),
+            web.post("/api/robots/forget", self.api_robots_forget),
             web.post("/api/pair", self.api_pair),
             web.post("/api/test", self.api_test),
             web.post("/api/connect", self.api_connect),
@@ -242,6 +262,121 @@ class WebUI:
             "lens_role": b.ws.client_role,
         })
 
+    # --- the fleet ---
+
+    def _held_serial(self) -> str:
+        """Serial of the robot the bridge is actually holding right now."""
+        link = getattr(self.bridge, "link", None)
+        return (getattr(link, "serial", "") or "").strip().lower()
+
+    async def api_robots(self, _req):
+        """Every robot this Mac holds credentials for.
+
+        Exactly one carries `lens: true` — that is the robot the game drives
+        and the one the Lens sees. The Lens never picks: it takes whoever the
+        server hands it, which is what keeps it a display-and-input bridge
+        with no decisions of its own. Choosing lives here.
+        """
+        b = self.bridge
+        held, alive = self._held_serial(), b.robot_alive
+        robots = config.list_robots()
+        for r in robots:
+            # Today "the robot the game uses" and "the robot the Lens gets"
+            # are the same robot, because the game is air-hockey and it has
+            # one goalie. When a two-robot experience arrives this is the
+            # field that stops being a mirror of `active`.
+            r["lens"] = r["active"]
+            r["connected"] = bool(alive and held == r["serial"].lower())
+            r["has_control"] = bool(
+                r["connected"] and b.link and b.link.has_control)
+        return web.json_response({"ok": True, "robots": robots,
+                                  "use_robot": b.use_robot})
+
+    async def api_robots_select(self, req):
+        """Hand a different robot to the game.
+
+        A robot that is already set up must NEVER be sent back through
+        onboarding just to be used again — switching is bookkeeping plus a
+        connect. That is the whole handler.
+        """
+        try:
+            body = await req.json()
+        except Exception:
+            body = {}
+        serial = (body.get("serial") or "").strip().lower()
+        b = self.bridge
+        if not config.set_active_robot(serial):
+            return web.json_response(
+                {"ok": False,
+                 "error": "This Mac holds no credentials for that robot."},
+                status=404)
+        # Let go of whoever we were holding first. Vector grants behavior
+        # control to one client, so a robot we keep is a robot that stands
+        # still — he can't roam and he won't take himself back to the charger.
+        if b.link and self._held_serial() != serial:
+            try:
+                await b.link.disconnect()
+            except Exception as e:
+                logger.debug(f"select: dropping the old link: {e}")
+            b.link = None
+            b.pump = None
+            b.commander = None
+        b.link_paused = False   # choosing a robot is asking for him
+        if not b.use_robot:
+            return web.json_response({"ok": True, "serial": serial,
+                                      "connected": False, "error": ""})
+        ok = await b.connect_robot()
+        # Selection succeeded either way: the choice is recorded and survives.
+        # Whether he answered is a separate fact, and the console says so
+        # rather than presenting a silent robot as a failed switch.
+        return web.json_response({
+            "ok": True,
+            "serial": serial,
+            "connected": ok,
+            "kind": "" if ok else (getattr(b, "last_link_hint_kind", "") or ""),
+            "error": "" if ok else (
+                getattr(b, "last_link_hint", "")
+                or "Switched, but he isn't answering. Is he awake and on this Wi-Fi?"),
+        })
+
+    async def api_robots_forget(self, req):
+        """Drop a robot's credentials from this Mac.
+
+        This throws away his certificate and control token — the robot himself
+        is untouched and still points at the pairing engine, so adding him back
+        is the wizard's short path (authorize), not the whole setup again.
+        """
+        try:
+            body = await req.json()
+        except Exception:
+            body = {}
+        serial = (body.get("serial") or "").strip().lower()
+        b = self.bridge
+        if self._held_serial() == serial and b.link:
+            # Hand him back before erasing the credential we're holding him
+            # with, or he stays under our control with nothing left to
+            # release him.
+            try:
+                await b.link.disconnect()
+            except Exception as e:
+                logger.debug(f"forget: releasing him first: {e}")
+            b.link = None
+            b.pump = None
+            b.commander = None
+        if not config.forget_robot(serial):
+            return web.json_response(
+                {"ok": False,
+                 "error": "This Mac holds no credentials for that robot."},
+                status=404)
+        logger.info(f"forgot robot {serial} (credentials dropped on this Mac)")
+        # Whoever is left inherits the game. The link watchdog would find him
+        # within 15 s anyway; reaching now just means the console doesn't sit
+        # on OFFLINE for a quarter minute after a deletion.
+        if b.use_robot and config.list_robots():
+            b.link_paused = False
+            asyncio.create_task(b.connect_robot())
+        return web.json_response({"ok": True, "robots": config.list_robots()})
+
     async def api_find_robot(self, _req):
         """Is a Vector already on Wi-Fi? Progressive onboarding uses this to
         SKIP the Bluetooth/Wi-Fi steps when the robot is already online.
@@ -289,6 +424,9 @@ class WebUI:
         for c in cands:
             if c["name"] and not c["serial"]:
                 c["serial"] = config.identity_for(name=c["name"]).get("serial", "")
+
+        fleet = config.list_robots()
+        prefer_active(cands, fleet[0]["serial"] if fleet else "")
 
         for c in cands:
             if await port_open(c["ip"]):

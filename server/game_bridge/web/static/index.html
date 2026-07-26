@@ -110,6 +110,26 @@
     margin-top: 8px; cursor: pointer;
   }
   .robot-item:hover { border-color: var(--green-dim); }
+  /* one row per robot this Mac knows */
+  .fleet-row { display: flex; align-items: center; gap: 14px;
+    border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px;
+    margin-top: 8px; }
+  .fleet-row.lens { border-color: var(--green-dim);
+    box-shadow: 0 0 10px rgba(89,255,128,.10) inset; }
+  .fleet-row label { margin: 0; display: flex; align-items: center; cursor: pointer; }
+  .fleet-id { flex: 1 1 auto; min-width: 0; }
+  .fleet-name { font-size: 15px; color: var(--text); }
+  .fleet-meta { color: var(--muted); font-size: 11px; letter-spacing: .5px; }
+  .fleet-state { font-size: 11px; letter-spacing: 1px; text-align: right;
+    flex: 0 0 auto; color: var(--muted); }
+  .fleet-state.on { color: var(--green); text-shadow: 0 0 8px rgba(89,255,128,.4); }
+  .badge { font-size: 10px; letter-spacing: 1px; padding: 1px 6px;
+    border: 1px solid var(--line); border-radius: 4px; color: var(--muted);
+    margin-left: 6px; vertical-align: middle; }
+  .xbtn { margin: 0; padding: 4px 9px; font-size: 13px; line-height: 1;
+    border-color: var(--line); color: var(--muted); background: transparent; }
+  .xbtn:hover:not(:disabled) { border-color: var(--err); color: var(--err);
+    background: transparent; box-shadow: none; }
   .progress-step { display: flex; gap: 10px; align-items: center; margin: 8px 0; }
   .progress-step .mark { width: 16px; text-align: center; }
   .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -151,6 +171,24 @@
       <div style="margin-top:12px;border-top:1px solid var(--line);padding-top:12px">
         <button class="secondary" onclick="runDoctor()">RUN DIAGNOSTICS</button>
         <div id="doctorOut" class="hint" style="display:none;margin-top:10px"></div>
+      </div>
+    </div>
+    <!-- ============ THE FLEET ============
+         More than one Vector can be set up on this Mac. The checked one is the
+         robot the game drives and the one the Lens plays against — the Lens
+         never picks a robot, it takes whoever the server hands it. -->
+    <div class="card" id="fleetCard" style="display:none">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;
+                  gap:12px;flex-wrap:wrap">
+        <h2 style="margin:0">Your robots</h2>
+        <span class="hint" style="margin:0">the checked robot is the one that
+          plays — in the game and through the glasses</span>
+      </div>
+      <div id="fleetList" style="margin-top:12px"></div>
+      <div id="fleetMsg" class="hint" style="display:none;margin-top:10px"></div>
+      <div class="hint" style="margin-top:10px">
+        Adding another one? <a href="#" onclick="addAnotherRobot();return false">Run
+        the wizard again</a> — it sets up the new robot without disturbing this one.
       </div>
     </div>
     <div class="card">
@@ -422,7 +460,12 @@ function renderRoute() {
       + stat("Robot", r.name || r.serial, "on")
       + `<div class="hint">Connected and under control — open the lens and play.</div>`
       + `<button onclick="showTab('dash')">GO TO DASHBOARD →</button>`
-      + `<button class="secondary" onclick="onboardStart()">SET UP A ROBOT</button>`;
+      // Adding a SECOND robot always starts at Bluetooth, so go straight
+      // there. Sending it through onboardStart() found the robot who is
+      // already connected and bounced you back to the dashboard — there was
+      // no way to add another one from here at all.
+      + `<button class="secondary" onclick="addAnotherRobot()">`
+      + `SET UP ANOTHER ROBOT</button>`;
   } else {
     html = `<h2>Connect your Vector</h2>`
       + `<div class="hint">One flow, from any starting point: we find Vector, `
@@ -455,6 +498,15 @@ function renderRoute() {
       + `is when asked.</div>`;
   }
   $("routeCard").innerHTML = html;
+}
+
+// Adding a robot to the fleet. Always the full Bluetooth flow: a robot we have
+// never seen can't be found any other way, and the flow skips whatever he
+// turns out to have done already.
+function addAnotherRobot() {
+  showTab("pair");
+  chooseRoute("ble");
+  bleStep(0);
 }
 
 // The single entry point. It only skips steps it can PROVE are done: without
@@ -502,6 +554,22 @@ async function onboardStartInner() {
     return;
   }
   if (f.on_wifi && f.gateway) {
+    // He is up AND we already hold a token for him: there is nothing to set
+    // up, so don't. Re-authorizing mints a second token at a robot who is
+    // already answering — which is how running the wizard on a robot you had
+    // simply switched away from ended up sitting on "0 s left". Just take him.
+    const known = (await fetchFleet()).find(
+      x => x.serial === (f.serial || "").toLowerCase() && x.has_token);
+    if (known) {
+      $("routeCard").innerHTML = `<h2>${who} is already set up ✓</h2>`
+        + `<div class="hint"><span class="spin">◌</span> connecting to him…</div>`;
+      const sel = await api("/api/robots/select", {serial: known.serial});
+      if (sel.ok && sel.connected) { showTab("dash"); return; }
+      // He holds a token but didn't answer. It may genuinely be stale — so
+      // fall through to the real setup path rather than insisting.
+      $("routeCard").innerHTML += `<div class="hint" style="color:#f7b955">`
+        + `He didn't answer, so we'll set him up properly.</div>`;
+    }
     // already online + ready — skip straight to authorize
     chooseRoute("ble"); bleStep(3);
     $("bleDoneMsg").innerHTML = `${who} is already on Wi-Fi at <b>${f.ip}</b> ✓`;
@@ -542,6 +610,114 @@ function stat(k, v, cls) {
   return `<div class="stat"><div class="k">${k}</div>` +
          `<div class="v ${cls||""}">${v}</div></div>`;
 }
+function esc(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g,
+    c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+
+/* ---------- the fleet ----------
+   Which robot plays is decided HERE, on the server. The Lens is handed one
+   robot and never chooses — it stays a display-and-input bridge. Today the
+   game is air-hockey and it has exactly one goalie, so the checkbox behaves
+   as a switch; when a two-robot experience arrives the same checkbox marks
+   several and the Lens protocol starts carrying a robot id. */
+async function fetchFleet() {
+  try {
+    const f = await api("/api/robots");
+    if (f.robots) window.lastFleet = f.robots;
+  } catch (e) {}
+  return window.lastFleet || [];
+}
+
+async function refreshFleet() {
+  // A click owns this list until it answers — the 1 Hz poller would otherwise
+  // wipe the spinner and un-check the box the moment you press it.
+  if (window.fleetBusy) return;
+  const robots = await fetchFleet();
+  $("fleetCard").style.display = robots.length ? "" : "none";
+  if (!robots.length) return;
+  $("fleetList").innerHTML = robots.map(r => {
+    const armed = window.fleetForget === r.serial;
+    const state = r.connected
+      ? (r.has_control ? "CONNECTED" : "NO CONTROL")
+      : (r.has_token ? "offline" : "no token");
+    const kind = r.build_type ? `<span class="badge">${esc(r.build_type)}</span>` : "";
+    return `<div class="fleet-row ${r.lens ? "lens" : ""}">
+      <label title="${r.lens ? "This is the robot that plays"
+                            : "Play with this robot instead"}">
+        <input type="checkbox" ${r.lens ? "checked" : ""}
+               onchange="selectRobot('${esc(r.serial)}')"></label>
+      <div class="fleet-id">
+        <div class="fleet-name">${esc(r.name || r.serial)}${kind}</div>
+        <div class="fleet-meta">${esc(r.serial)}${r.ip ? " · " + esc(r.ip) : ""}</div>
+      </div>
+      <div class="fleet-state ${r.connected && r.has_control ? "on" : ""}">${state}</div>
+      ${armed
+        ? `<button class="xbtn" style="border-color:var(--err);color:var(--err)"
+                   onclick="forgetRobot('${esc(r.serial)}', true)">FORGET</button>
+           <button class="xbtn" onclick="window.fleetForget='';refreshFleet()">keep</button>`
+        : `<button class="xbtn" title="Forget this robot"
+                   onclick="window.fleetForget='${esc(r.serial)}';refreshFleet()">✕</button>`}
+    </div>` + (armed
+      ? `<div class="hint" style="color:#f7b955;margin-top:6px">Forgetting drops
+         his certificate and control token <b>from this Mac</b>. The robot
+         himself is untouched and still points here, so adding him back is just
+         the wizard's <b>Authorize</b> step — not the whole setup again.</div>`
+      : "");
+  }).join("");
+}
+
+async function selectRobot(serial) {
+  const cur = (window.lastFleet || []).find(r => r.lens);
+  if (cur && cur.serial === serial) {   // un-checking the only one plays nothing
+    refreshFleet();
+    return;
+  }
+  window.fleetBusy = true;
+  window.fleetForget = "";
+  $("fleetMsg").style.display = "";
+  $("fleetMsg").style.color = "";
+  // Reaching a robot who is awake takes about a second; one who is asleep or
+  // switched off costs the full ~40 s connect timeout. Say so, or the spinner
+  // reads as a hang. (Measured: 1 s awake, 36 s to a powered-off robot.)
+  $("fleetMsg").innerHTML = `<span class="spin">⟳</span> switching… `
+    + `<span style="opacity:.7">if he's asleep this takes up to 40 s</span>`;
+  try {
+    const r = await api("/api/robots/select", {serial});
+    if (!r.ok) {
+      $("fleetMsg").style.color = "var(--err)";
+      $("fleetMsg").textContent = r.error || "Couldn't switch.";
+    } else if (r.connected) {
+      $("fleetMsg").style.display = "none";
+    } else {
+      // Switched, but he didn't answer. Say both halves — the choice IS saved.
+      $("fleetMsg").style.color = "#f7b955";
+      $("fleetMsg").innerHTML = "⚠ Switched. " + esc(r.error || "");
+    }
+  } finally {
+    window.fleetBusy = false;
+    refreshFleet();
+  }
+}
+
+async function forgetRobot(serial, confirmed) {
+  if (!confirmed) { window.fleetForget = serial; return refreshFleet(); }
+  window.fleetBusy = true;
+  window.fleetForget = "";
+  try {
+    const r = await api("/api/robots/forget", {serial});
+    if (!r.ok) {
+      $("fleetMsg").style.display = "";
+      $("fleetMsg").style.color = "var(--err)";
+      $("fleetMsg").textContent = r.error || "Couldn't forget that robot.";
+    } else {
+      $("fleetMsg").style.display = "none";
+    }
+  } finally {
+    window.fleetBusy = false;
+    refreshFleet();
+  }
+}
 async function refreshStatus() {
   try {
     const s = await api("/api/status");
@@ -565,8 +741,14 @@ async function refreshStatus() {
         && $("routeCard").style.display !== "none"
         && !window.onboardBusy) renderRoute();   // don't clobber a click in flight
     const r = s.robot;
+    if ($("view-dash").style.display !== "none") refreshFleet();
+    const fleet = window.lastFleet || [];
     let html = "";
-    html += stat("Saved robot", r.paired ? (r.name || r.serial) : "none",
+    // With two robots set up, "Saved robot" was ambiguous about which one the
+    // game is actually using. Name the one that plays, and let the fleet card
+    // below show the rest.
+    html += stat(fleet.length > 1 ? "Playing robot" : "Saved robot",
+                 r.paired ? (r.name || r.serial) : "none",
                  r.paired ? "on" : "off");
     html += stat("Robot link", r.connected ?
                  (r.has_control ? "CONNECTED" : "no control") : "OFFLINE",

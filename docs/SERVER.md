@@ -66,14 +66,45 @@ YOLO vision fixes (from the lens) absorb what's left.
   the lens' `GameConfig.WS_URL`, plus a **screen game** you can play with the
   mouse when no Spectacles are connected (leave "drive the real Vector"
   unchecked for a pure on-screen match).
+- **Your robots** — the fleet, when this Mac has been set up with more than
+  one Vector (see below).
 - **Pair robot** — the wizard ([PAIRING.md](PAIRING.md)).
-- JSON API: `GET /api/status`, `POST /api/discover`, `POST /api/pair`,
+- JSON API: `GET /api/status`, `GET /api/robots`, `POST /api/robots/select`,
+  `POST /api/robots/forget`, `POST /api/discover`, `POST /api/pair`,
   `POST /api/test`, `POST /api/connect` — all trivial to script against.
+
+## More than one robot
+
+Run the wizard again and the second Vector joins the first — credentials live
+side by side in `~/.anki_vector/sdk_config.ini`, one section per robot, and
+setting one up never disturbs another.
+
+The **Your robots** card on the dashboard is where you say which of them
+plays. The checked robot is the one the goalie logic drives and the one the
+Lens plays against; switching is a click, and it hands the previous robot back
+to himself first (Vector grants behavior control to a single client, so a
+robot nobody releases just stands there). A robot that is already set up is
+never sent through onboarding again to be used — switching is bookkeeping plus
+a connect.
+
+**The Lens never picks a robot.** It takes whoever the server hands it, which
+is what keeps it a display-and-input bridge with no decisions of its own — the
+same reason it holds no game state. Air-hockey has exactly one goalie, so the
+checkbox behaves as a switch; when a two-robot experience arrives, the same
+checkbox marks several and the Lens protocol starts carrying a robot id.
+
+**✕ forgets a robot** — it drops his certificate and control token *from this
+Mac*. The robot himself is untouched and still points at the pairing engine,
+so adding him back is the wizard's Authorize step, not the whole setup again.
+
+Which robot is "first" in the ini is the whole mechanism: everything that asks
+"which robot?" without naming one resolves to the first section. Selecting a
+robot moves him there.
 
 ## Tests & robot-only testing
 
 ```bash
-python -m pytest tests -q                  # 47 unit tests, no hardware needed
+python -m pytest tests -q                  # 77 unit tests, no hardware needed
 python sdk_smoke.py                        # careful live check: connect, say, small moves
 python -m game_bridge.sim.fake_puck --volleys 6 --speed 200   # scripted volleys, no lens
 ```
