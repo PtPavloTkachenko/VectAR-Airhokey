@@ -22,14 +22,14 @@ from test_web_api import _StubBridge
 TWO_ROBOTS = """\
 [00e20100]
 cert = /tmp/vectar-test-00e20100.cert
-ip = 192.168.0.194
-name = Vector-R3H7
+ip = 10.0.0.7
+name = Vector-A1B2
 guid = aaaaaaaaaaaaaaaa
 
 [00e20200]
 cert = /tmp/vectar-test-00e20200.cert
-ip = 192.168.0.205
-name = Vector-V6M2
+ip = 10.0.0.8
+name = Vector-C3D4
 guid = bbbbbbbbbbbbbbbb
 """
 
@@ -58,8 +58,8 @@ def test_the_first_section_is_the_active_robot(two_robots):
     robots = config.list_robots()
     assert [r["serial"] for r in robots] == ["00e20100", "00e20200"]
     assert [r["active"] for r in robots] == [True, False]
-    assert robots[0]["name"] == "Vector-R3H7"
-    assert robots[0]["ip"] == "192.168.0.194"
+    assert robots[0]["name"] == "Vector-A1B2"
+    assert robots[0]["ip"] == "10.0.0.7"
     assert robots[0]["has_token"] is True
 
 
@@ -70,8 +70,8 @@ def test_selecting_a_robot_moves_him_to_the_front(two_robots):
     # and the OTHER robot survives the rewrite intact — losing his cert path
     # or his token here would silently un-pair him
     other = robots[1]
-    assert other["name"] == "Vector-R3H7"
-    assert other["ip"] == "192.168.0.194"
+    assert other["name"] == "Vector-A1B2"
+    assert other["ip"] == "10.0.0.7"
     assert other["has_token"] is True
 
 
@@ -100,8 +100,8 @@ def test_read_robot_identity_answers_for_the_robot_asked_for(two_robots):
     # address, which then reads as "he isn't answering".
     serial, ips, name = config.read_robot_identity("00e20200")
     assert serial == "00e20200"
-    assert ips.split(",")[0] == "192.168.0.205"
-    assert name == "Vector-V6M2"
+    assert ips.split(",")[0] == "10.0.0.8"
+    assert name == "Vector-C3D4"
 
 
 # --- the web API ---
@@ -279,8 +279,8 @@ def test_the_search_looks_for_the_playing_robot_first():
     """Whoever answers a ping fastest must not become the robot you play."""
     from game_bridge.web.server import prefer_active
 
-    cands = [{"ip": "192.168.0.205", "serial": "00e20200", "name": "Vector-V6M2"},
-             {"ip": "192.168.0.194", "serial": "00e20100", "name": "Vector-R3H7"}]
+    cands = [{"ip": "10.0.0.8", "serial": "00e20200", "name": "Vector-C3D4"},
+             {"ip": "10.0.0.7", "serial": "00e20100", "name": "Vector-A1B2"}]
     prefer_active(cands, "00e20100")
     assert [c["serial"] for c in cands] == ["00e20100", "00e20200"]
 

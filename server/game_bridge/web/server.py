@@ -384,7 +384,7 @@ class WebUI:
                 return False
 
         # Candidates carry WHO they are, not just an address. With more than
-        # one robot around, "found a Vector at 192.168.0.194" is a guess the
+        # one robot around, "found a Vector at 10.0.0.7" is a guess the
         # rest of the wizard then acts on -- it minted for one robot and
         # connected to another, and every screen after that blamed the robot.
         cands: list[dict] = []

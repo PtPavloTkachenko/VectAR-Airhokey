@@ -12,7 +12,7 @@
 > **its "to do" items are done.**
 
 What actually happens when you point the wizard at a Vector in each real-world
-state. Field-verified 2026-07-20 on ESN `0dd1dfd4`. The headline **at the time**:
+state. Field-verified 2026-07-20 on ESN `<esn>`. The headline **at the time**:
 our wire-pod pairing needs the robot's cloud pointed at wire-pod, and a
 bit-stock robot points at Anki's cloud (ddl.io), so our pairing could not mint a
 GUID. Pointing him at wire-pod is now part of the wizard.
@@ -41,7 +41,7 @@ from a logged-in official-app account — our dummy token is rejected.
 
 ## Identity facts (verified across a factory reset)
 
-- **ESN / serial is fused and stable** — stayed `0dd1dfd4`.
+- **ESN / serial is fused and stable** — stayed `<esn>`.
 - **The `Vector-XXXX` name ROTATES on factory reset** — was `Vector-X6X8`, became
   `Vector-B2G5`. Do not treat the name as identity; key off the ESN. The TLS
   **cert rotates too** (self-signed, CN = the new name), which is why a reset

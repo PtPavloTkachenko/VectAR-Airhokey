@@ -82,7 +82,7 @@ engine (`/api-sdk/get_sdk_info`) rather than trusting the robot's empty answer.
 A successful run ends by connecting, so it says what it proved:
 
 ```
-paired Vector-XXXX (0dd1dfd4) at 192.168.0.194
+paired Vector-XXXX (<esn>) at <robot-ip>
 SDK control confirmed: firmware 2.0.1.6091oskr#f61178e, battery 4.12 V
 ```
 

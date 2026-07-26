@@ -1,7 +1,7 @@
 # #86 deep-dive — stock robot → local SDK auth (session log 2026-07-21)
 
-Hours of RE getting a factory-firmware Vector (ESN `0dd1dfd4`, name rotates —
-now `Vector-X1W8`) to accept a locally-minted SDK guid so the game bridge can
+Hours of RE getting a factory-firmware Vector (ESN `<esn>`, name rotates —
+now `Vector-XXXX`) to accept a locally-minted SDK guid so the game bridge can
 connect. This records exactly what's proven, fixed, and still open, so it's
 never re-derived.
 
@@ -20,7 +20,7 @@ fetch_cert → mint_guid → robot has vic.AppTokens → SDK connects`.
    only populated during a JDOCS handshake the robot never did → HTTP 404 →
    `fetch_cert` fails. **Fix:** grab the robot's live gateway cert straight off
    its `:443` (`openssl s_client`) and drop it at
-   `chipper/session-certs/0dd1dfd4`. Then `fetch_cert`→200 and
+   `chipper/session-certs/<esn>`. Then `fetch_cert`→200 and
    `pairing.pair` runs → robot shows **PAIRED** on the dashboard.
 3. **gRPC channel only comes up after a full REBOOT.** Restarting vic-gateway
    leaves `:443` doing TLS (openssl sees the cert) but the gRPC channel never
@@ -36,7 +36,7 @@ fetch_cert → mint_guid → robot has vic.AppTokens → SDK connects`.
    / `accounts.api.anki.com` / `jdocs.api.anki.com` / `chipper.api.anki.com` /
    `session-certs.token.global.anki-services.com`, which still **resolve to a
    dead Anki server `52.152.249.185`**. **Fix applied:** appended those hosts →
-   `192.168.0.118` in the robot's `/etc/hosts` (survives reboot). Confirmed
+   `<mac-ip>` in the robot's `/etc/hosts` (survives reboot). Confirmed
    effective at BOTH glibc (`ping`) AND connmand DNS (`nslookup`) → `.118`.
 6. **wire-pod cert lacked the Anki hostnames in SAN — FIXED.** Regenerated
    `certs/cert.crt` (same key, self-signed) with SAN = wirepod.local,
@@ -99,8 +99,8 @@ ONE double-press during the scan → PIN appears live → read it then. The robo
 also began power-cycling under the load of many reboots — let it charge.
 
 ## Key facts
-- ESN `0dd1dfd4`; SSH key `~/.vectar/keys/id_rsa_Vector-X1W8`; robot `.194`.
-- Robot :443 gateway cert fingerprint `63:EE:1E:81:DA:C8:E6:45:61:B1:5F:8B:9F:6C:1F:27:ED:60:00:FF` (CN=Vector-X1W8, self-signed, valid to 2125).
+- ESN `<esn>`; SSH key `~/.vectar/keys/id_rsa_Vector-XXXX`; robot `<robot-ip>`.
+- Robot :443 gateway cert fingerprint `<sha1-fingerprint>` (CN=Vector-XXXX, self-signed, valid to 2125).
 - SESSION_TOKEN wire-pod accepts: `2vMhFgktH3Jrbemm2WHkfGN`.
 - `session.cloud_auth()` is the guid-mint that the wizard's `api_ble_authorize`
   does NOT call (it drops BLE + does the network mint instead — that's why the
@@ -119,7 +119,7 @@ Answer: it IS documented — `docs/vector-provisioning.md` (Vector project), LIV
 `server_config` names, over TLS it already trusts."** So provisioning = BE that server.
 
 My three errors (all now understood):
-1. **Provisioned to an IP** (`host_mode=ip` → 192.168.0.118). The robot trusts
+1. **Provisioned to an IP** (`host_mode=ip` → <mac-ip>). The robot trusts
    `CN=wirepod.local` and server_config must name **`wirepod.local`** (an mDNS
    NAME) — with an IP the TLS/name check never matches.
 2. **Hand-WROTE `vic.AppTokens` to the robot's local file** → the robot doesn't
@@ -128,7 +128,7 @@ My three errors (all now understood):
 
 ## Applied the correct config (all verified working)
 - Robot `server_config` → `wirepod.local:443` (jdocs/tms/chipper).
-- Robot `/etc/hosts`: `192.168.0.118 wirepod.local` (survives reboot; resolves at
+- Robot `/etc/hosts`: `<mac-ip> wirepod.local` (survives reboot; resolves at
   glibc AND connmand).
 - Robot trusts wire-pod cert (`CN=wirepod.local`, pushed to `/anki/etc/wirepod-cert.crt`).
 - **Robot→wire-pod TLS VERIFIED**: `openssl s_client` from the robot → `Verify
