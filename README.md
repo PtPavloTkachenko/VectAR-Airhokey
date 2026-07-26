@@ -80,13 +80,13 @@ first version of VectAR OS** (the wider robot + AR + AI system it grew alongside
 The goalie drove, blocked, and talked; the AR field and the robot ran as one
 game. That capability isn't the open question.
 
-What's in progress is deliberate and different. The test robot was
-**factory-reset on purpose** to build the *out-of-the-box* path — what someone
-setting up a robot from scratch actually goes through. The goal is to
-**automate that onboarding**: turn a day of manual SSH, certs, cloud config and
-token wrangling into a few clicks, so this and future robot projects can get a
-Vector online in minutes. This repo is where that automation is being built, and
-the wipe is what exposes the remaining rough edge.
+The recent work was **automating the setup**. Two robots were **factory-reset on
+purpose** to build the *out-of-the-box* path — what someone setting up a robot
+from scratch actually goes through — and turn a day of manual SSH, certs, cloud
+config and token wrangling into a few clicks, so this and future robot projects
+can get a Vector online in minutes. **Both kinds of robot now go from a factory
+reset to SDK control through the console alone**, and nothing in the flow needs
+a terminal.
 
 Where each piece stands today:
 
@@ -127,10 +127,13 @@ brand new) never re-mints one just by sitting on Wi-Fi — `vic-cloud` has to be
 *told* to sign in, and that trigger is a Bluetooth message the wizard now sends
 during Authorize. Background: [PAIRING_86_DEEPDIVE](docs/PAIRING_86_DEEPDIVE.md).
 
-**Context:** this was originally built against a single OSKR Vector that was
-already running on wire-pod, so the from-scratch stock path was the newer,
-less-proven half. That half is now closed; the dev-unit half is the one still
-owed a fresh hardware run.
+**More than one robot.** Run the wizard again and the second Vector joins the
+first; the dashboard's **Your robots** card is where you say which one plays,
+and switching is a click, not another setup. The Lens never picks a robot — it
+takes whoever the server hands it, which is what keeps it a display-and-input
+bridge with no decisions of its own. Telemetry from several robots at once is
+the next thing being built. Details: [SERVER → More than one
+robot](docs/SERVER.md#more-than-one-robot).
 
 Details and the risk notes worth reading before you flash anything:
 [SETUP_ROBOT → Status & risks](docs/SETUP_ROBOT.md#status--risks-read-before-you-start).

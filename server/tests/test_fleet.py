@@ -297,6 +297,41 @@ def test_the_search_looks_for_the_playing_robot_first():
     assert [c["ip"] for c in mixed] == ["5.6.7.8", "1.2.3.4"]
 
 
+def test_a_link_that_just_came_up_is_not_dead():
+    """A one-millisecond-old link must not read as silent-for-ever.
+
+    `mono_ts` is 0 until the first pose event lands, and reading that literally
+    made every fresh connection look 15 s stale — so the link watchdog tore
+    down connections it had just built. Switching robots showed it plainly:
+    connect, grab control, drop, connect again, grab control again.
+    """
+    import time
+    from game_bridge.main import Bridge
+
+    age = Bridge.pose_age.fget
+
+    class _Pump:
+        def __init__(self, ts, started):
+            self.snapshot = {"mono_ts": ts}
+            self.started_at = started
+
+    class _B:
+        pump = None
+
+    b = _B()
+    assert age(b) == float("inf")                    # no pump at all
+
+    now = time.monotonic()
+    b.pump = _Pump(0.0, now)                         # subscribed, no pose yet
+    assert age(b) < 1.0
+
+    b.pump = _Pump(0.0, now - 30)                    # subscribed, silent 30 s
+    assert age(b) > Bridge.LINK_DEAD_S               # correctly dead
+
+    b.pump = _Pump(now - 0.2, now - 30)              # poses arriving
+    assert age(b) < 1.0
+
+
 def test_forgetting_an_unknown_robot_is_a_404(two_robots):
     async def go():
         bridge, client = _client()

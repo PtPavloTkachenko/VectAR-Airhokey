@@ -772,7 +772,17 @@ class Bridge:
         if not self.pump:
             return float("inf")
         try:
-            return time.monotonic() - self.pump.snapshot["mono_ts"]
+            ts = self.pump.snapshot["mono_ts"]
+            if not ts:
+                # Subscribed, but the first pose hasn't landed yet. Age it from
+                # when we started listening — `mono_ts` is 0 here, and reading
+                # that literally made a link one millisecond old look silent
+                # forever. The watchdog then tore down connections it had just
+                # built: switching robots reconnected twice in a row, and both
+                # times the robot was grabbed and dropped. After 15 s of real
+                # silence this still reads as dead, which is correct.
+                return time.monotonic() - (self.pump.started_at or 0.0)
+            return time.monotonic() - ts
         except Exception:
             return float("inf")
 
@@ -788,6 +798,34 @@ class Bridge:
         return bool(self.link and self.link.robot and self.pump
                     and getattr(self.pump, "fresh", False))
 
+    async def drop_link(self) -> None:
+        """Let the robot go: disconnect, and stop the commander that drives him.
+
+        The ONE way to put a link down. Every caller used to null the three
+        fields by hand and leave `run_queue()` awaiting a command for a robot
+        that no longer exists — asyncio then logged "Task was destroyed but it
+        is pending" on every teardown, and the orphan lived until the process
+        did. Switching robots made that routine instead of rare.
+        """
+        task = getattr(self, "_commander_task", None)
+        if task and not task.done():
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+            except Exception as e:
+                logger.debug(f"commander stopped: {e}")
+        self._commander_task = None
+        if self.link:
+            try:
+                await self.link.disconnect()
+            except Exception as e:
+                logger.debug(f"dropping link: {e}")
+        self.link = None
+        self.pump = None
+        self.commander = None
+
     async def connect_robot(self) -> bool:
         """Connect + acquire control over the SDK (gRPC). NON-FATAL: returns
         False when the robot is unpaired or unreachable — the server keeps
@@ -801,13 +839,7 @@ class Bridge:
         if self.link:
             # A stale link would otherwise keep its dead handle and block the
             # reconnect below forever.
-            try:
-                await self.link.disconnect()
-            except Exception as e:
-                logger.debug(f"dropping stale link: {e}")
-            self.link = None
-            self.pump = None
-            self.commander = None
+            await self.drop_link()
         from .robot.sdk.connection import RobotLink
         from .robot.sdk.pose_pump import PosePump
         from .robot.sdk.commander import RobotCommander

@@ -1,9 +1,21 @@
 # QA — pairing across Vector conditions
 
+> ⚠️ **Historical (2026-07-20). The gap this page describes has since been
+> closed** — a bit-stock Vector was taken from the box to SDK control through
+> the wizard alone on 2026-07-25, and a factory-reset OSKR unit on 2026-07-26.
+> The wizard now repoints a stock robot's cloud by installing the escape-pod
+> firmware over Bluetooth, and a dev robot's over SSH; the missing trigger was
+> a BLE `RtsCloudSessionRequest`, not a network state. Read
+> [SETUP_ROBOT.md](SETUP_ROBOT.md) for what happens today, and
+> [PAIRING_86_DEEPDIVE.md](PAIRING_86_DEEPDIVE.md) for how it was solved. This
+> page is kept for the condition matrix and the reasoning that got us there —
+> **its "to do" items are done.**
+
 What actually happens when you point the wizard at a Vector in each real-world
-state. Field-verified 2026-07-20 on ESN `0dd1dfd4`. The headline: **our wire-pod
-pairing needs the robot's cloud pointed at wire-pod. A bit-stock robot points at
-Anki's cloud (ddl.io) and our pairing cannot mint a GUID.**
+state. Field-verified 2026-07-20 on ESN `0dd1dfd4`. The headline **at the time**:
+our wire-pod pairing needs the robot's cloud pointed at wire-pod, and a
+bit-stock robot points at Anki's cloud (ddl.io), so our pairing could not mint a
+GUID. Pointing him at wire-pod is now part of the wizard.
 
 ## The trust chain (why the condition matters)
 

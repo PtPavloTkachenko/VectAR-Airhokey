@@ -44,6 +44,17 @@ class _StubBridge:
         self.connect_calls += 1
         return False
 
+    async def drop_link(self):
+        # Mirrors Bridge.drop_link: the one way a link goes down.
+        if self.link:
+            try:
+                await self.link.disconnect()
+            except Exception:
+                pass
+        self.link = None
+        self.pump = None
+        self.commander = None
+
 
 @pytest.fixture
 def client_factory(monkeypatch):

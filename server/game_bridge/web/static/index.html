@@ -225,7 +225,8 @@
       <h2>How to play</h2>
       <div class="hint">
         1 · Pair your Vector (tab above) — the Bluetooth path sets it up, no typing.<br>
-        2 · Put Vector on a table with ~1 m of free space, robot connected (green).<br>
+        2 · Put Vector on a table with ~1 m of free space, robot connected (green).
+            More than one robot set up? The checked one in <b>Your robots</b> plays.<br>
         3 · Open the lens in Lens Studio and send it to Spectacles — no address
             to set, it finds this Mac by name. (Only if your headset can't
             resolve <code>.local</code>: put the literal address from the
@@ -240,14 +241,15 @@
         <b>The full chain — Spectacles → this server → a real Vector driving —
         has been demonstrated end-to-end in two earlier builds: this air-hockey
         game, and the first version of VectAR OS</b> (the wider robot + AR + AI
-        system it grew alongside). The goalie drove, blocked and talked. That
-        capability isn't the open question.<br><br>
-        What's in progress is deliberate: the test robot was
+        system it grew alongside). The goalie drove, blocked and talked.<br><br>
+        The recent work was <b>automating the setup</b>. Two robots were
         <span class="key">factory-reset on purpose</span> to build the
-        out-of-the-box path — what setting up a robot from scratch actually looks
-        like. The goal is to <b>automate that onboarding</b>: turn a day of manual
-        SSH, certs, cloud config and token wrangling into a few clicks, so this
-        and future robot projects get a Vector online in minutes.<br><br>
+        out-of-the-box path — what someone unboxing a Vector actually goes
+        through — and turn a day of manual SSH, certificates, cloud config and
+        token wrangling into a few clicks.
+        <span class="ok">Both kinds of robot now go from a factory reset to
+        SDK control through this console alone, and nothing here needs a
+        terminal.</span><br><br>
         <b>Spectacles ↔ this server</b> — verified live on device: surface
         calibration, AR field, puck physics, scoring.<br>
         <b>Stock robot, out of the box → authorized</b> — <span class="ok">verified
@@ -259,12 +261,18 @@
         · <span class="key">Stock</span> — verified end-to-end, as above. The
           firmware install is a real OTA: he downloads ~180 MB himself and
           reboots — keep him on the charger and don't interrupt.<br>
-        · <span class="key">OSKR / dev</span> — verified end-to-end too. He
-          needs no firmware: his own SSH key comes off him over Bluetooth in
-          about half a minute, his cloud is repointed over SSH, and one reboot
-          later he is minted and answering.<br><br>
-        Details: <code>docs/STOCK_ONBOARDING_PLAN.md</code> (how the stock path
-        works) and <code>docs/SETUP_ROBOT.md</code> → Status &amp; risks.
+        · <span class="key">OSKR / dev</span> — <span class="ok">verified
+          end-to-end too (2026-07-26)</span>, from a factory reset. He needs no
+          firmware: his own SSH key comes off him over Bluetooth in about half
+          a minute, his cloud is repointed over SSH, and one reboot later he is
+          minted and answering.<br><br>
+        <b>More than one robot</b> — set up as many as you like; the
+        <span class="key">Your robots</span> card above is where you say which
+        one plays. The lens never picks a robot: it takes whoever this server
+        hands it. Two-robot experiences (telemetry from several at once) are
+        the next thing being built.<br><br>
+        Details: <code>docs/SETUP_ROBOT.md</code> (what the wizard does for each
+        robot type, plus the risk notes) and <code>docs/SERVER.md</code>.
       </div>
     </div>
   </div>

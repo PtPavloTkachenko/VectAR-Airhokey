@@ -314,13 +314,7 @@ class WebUI:
         # control to one client, so a robot we keep is a robot that stands
         # still — he can't roam and he won't take himself back to the charger.
         if b.link and self._held_serial() != serial:
-            try:
-                await b.link.disconnect()
-            except Exception as e:
-                logger.debug(f"select: dropping the old link: {e}")
-            b.link = None
-            b.pump = None
-            b.commander = None
+            await b.drop_link()
         b.link_paused = False   # choosing a robot is asking for him
         if not b.use_robot:
             return web.json_response({"ok": True, "serial": serial,
@@ -356,13 +350,7 @@ class WebUI:
             # Hand him back before erasing the credential we're holding him
             # with, or he stays under our control with nothing left to
             # release him.
-            try:
-                await b.link.disconnect()
-            except Exception as e:
-                logger.debug(f"forget: releasing him first: {e}")
-            b.link = None
-            b.pump = None
-            b.commander = None
+            await b.drop_link()
         if not config.forget_robot(serial):
             return web.json_response(
                 {"ok": False,
@@ -1006,16 +994,8 @@ class WebUI:
         b = self.bridge
         b.link_paused = True
         # The pose pump has no stop(): it lives on robot-state events, so
-        # tearing the link down is what ends it. Dropping the reference after
-        # is enough.
-        try:
-            if b.link:
-                await b.link.disconnect()
-        except Exception as e:
-            logger.warning(f"release: {e}")
-        b.link = None
-        b.pump = None
-        b.commander = None
+        # tearing the link down is what ends it.
+        await b.drop_link()
         b.last_link_hint = ("Control released — Vector is on his own. Press "
                             "CONNECT ROBOT to take him back.")
         b.last_link_hint_kind = "released"

@@ -19,7 +19,14 @@ Open **http://localhost:8780** → **PAIR ROBOT** → **CONNECT VECTOR**.
 
 The wizard is progressive — it skips whatever is already done. A stock,
 never-configured Vector walks the full path; a Vector already on your Wi-Fi
-jumps straight to authorization.
+jumps straight to authorization, and one this Mac already holds a token for is
+simply connected to rather than authorized again.
+
+**A second robot?** Run it again — credentials sit side by side, one section
+per robot in `~/.anki_vector/sdk_config.ini`, and setting one up never
+disturbs another. Which of them plays is a checkbox on the dashboard, not a
+re-run of this wizard: [SERVER → More than one
+robot](SERVER.md#more-than-one-robot).
 
 ## Why a "cloud" is involved at all
 

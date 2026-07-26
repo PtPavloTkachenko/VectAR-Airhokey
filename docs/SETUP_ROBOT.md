@@ -95,8 +95,6 @@ you, and vice versa.
 
 ### Stock (consumer) Vector — the normal case
 
-| Step | State |
-|---|---|
 **Verified end-to-end on a brand-new stock robot, 2026-07-25** — a unit that had
 never been signed into the official app.
 
@@ -134,8 +132,14 @@ waiting. You never need the Vector app.
 
 ### OSKR / dev Vector
 
+**Verified end-to-end from a factory reset, 2026-07-26.**
+
 | Step | State |
 |---|---|
+| His SSH key taken off him over Bluetooth (55 KB in 26 s) | **verified on hardware** |
+| Cloud repointed over SSH, one reboot | **verified on hardware** |
+| His sign-in to the pairing engine → session certificate | **verified on hardware** |
+| Mint this Mac's SDK control token | **verified on hardware** |
 | Mac already has SSH access → auto-provision | **verified** |
 | Log-archive drop → key detected, robot found on the LAN, provisioned | **verified end-to-end** |
 | Paste-the-key route | **verified** |
@@ -155,9 +159,9 @@ over the live BLE session and the pairing engine gets the robot's session
 certificate a second later; the SDK token mint then just works. The wizard does
 this automatically inside **Authorize**.
 
-Proven on a from-zero stock robot (2026-07-25). The same mechanism should
-rescue a wiped OSKR unit, since RTS is present on every firmware — but that
-specific case has not been re-run on hardware yet. Background:
+Proven on a from-zero stock robot (2026-07-25), and on a factory-reset OSKR
+unit the next day (2026-07-26) — RTS is present on every firmware, so the same
+message rescues both. Background:
 [PAIRING_86_DEEPDIVE.md](PAIRING_86_DEEPDIVE.md).
 - The wizard **rewrites the robot's cloud config** (`server_config.json`) and
   installs a CA cert. The original is backed up on the robot (`.bak`) so it's
@@ -179,16 +183,26 @@ console.
 
 That history is why the "robot is already provisioned" paths are the well-trodden
 ones — and why the from-scratch path needed deliberate attention. So the test
-robot was **factory-reset on purpose**, to build the *out-of-the-box* experience
-a new owner actually gets instead of assuming it.
+robots were **factory-reset on purpose**, to build the *out-of-the-box*
+experience a new owner actually gets instead of assuming it.
 
-**The point of the current work is automation.** Getting that robot online used
-to mean a day of manual SSH, cert juggling, cloud-config edits and token
-wrangling. The goal is to compress that into a few clicks in the wizard, so this
-project — and the next robot project after it — starts with a Vector online in
-minutes. The wipe is what exposes the last rough edge (re-establishing the SDK
-control token), and that's what's being finished in the open rather than claimed
-done.
+**The point of that work was automation.** Getting a robot online used to mean a
+day of manual SSH, cert juggling, cloud-config edits and token wrangling. It is
+now a few clicks in the wizard — both robot types, from a factory reset — so
+this project, and the next robot project after it, starts with a Vector online
+in minutes.
 
 Nothing here needs a terminal. If a step ever tells you to run a command, that's
 a bug — please report it.
+
+## More than one robot
+
+Run the wizard again and the second Vector joins the first — setting one up
+never disturbs another. The dashboard's **Your robots** card is where you say
+which of them plays; the checked robot is the one the goalie logic drives and
+the one the Lens plays against. Switching is a click, not another setup, and it
+hands the previous robot back to himself first (Vector answers to one
+controlling client at a time, so a robot nobody releases just stands there).
+**✕** forgets a robot: it drops his certificate and token from this Mac only —
+he still points at the pairing engine, so adding him back is the Authorize step
+alone. Details in [SERVER → More than one robot](SERVER.md#more-than-one-robot).

@@ -27,9 +27,15 @@ class PosePump:
         self._held_since: float | None = None
         self._gyro_deg: float | None = None   # B6.4 gyro-fused heading (deg)
         self._gyro_last: float | None = None
+        # When we started listening. Until the first pose arrives, "how old is
+        # our telemetry?" has to be measured from here — `mono_ts` is still 0,
+        # which reads as infinitely old and makes a one-millisecond-old link
+        # look dead. See Bridge.pose_age.
+        self.started_at: float | None = None
 
     def start(self):
         from anki_vector.events import Events
+        self.started_at = time.monotonic()
         self._robot.events.subscribe(self._on_robot_state, Events.robot_state)
         logger.info("PosePump subscribed to robot_state")
 
