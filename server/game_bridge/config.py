@@ -134,6 +134,74 @@ def known_build_type(*ids: str) -> str:
     return ""
 
 
+def list_robots() -> list[dict]:
+    """Every robot we hold credentials for, active one first.
+
+    "Active" is simply the first section: that is what everything asking
+    "which robot?" without naming one resolves to. Keeping the definition in
+    one place stops the rest of the code inventing its own.
+    """
+    import configparser
+    out: list[dict] = []
+    try:
+        cfg = configparser.ConfigParser(strict=False)
+        cfg.read(SDK_CONFIG_PATH)
+    except Exception:
+        return out
+    for i, sect in enumerate(cfg.sections()):
+        out.append({
+            "serial": sect,
+            "name": cfg[sect].get("name", ""),
+            "ip": cfg[sect].get("ip", ""),
+            "has_token": bool(cfg[sect].get("guid")),
+            "build_type": known_build_type(sect, cfg[sect].get("name", "")),
+            "active": i == 0,
+        })
+    return out
+
+
+def set_active_robot(serial: str) -> bool:
+    """Move this robot to the front of sdk_config.ini. False if unknown."""
+    import configparser
+    serial = (serial or "").strip().lower()
+    try:
+        cfg = configparser.ConfigParser(strict=False)
+        cfg.read(SDK_CONFIG_PATH)
+        if not cfg.has_section(serial):
+            return False
+        ordered = configparser.ConfigParser(strict=False)
+        ordered[serial] = dict(cfg[serial])
+        for s in cfg.sections():
+            if s != serial:
+                ordered[s] = dict(cfg[s])
+        with open(SDK_CONFIG_PATH, "w") as f:
+            ordered.write(f)
+        return True
+    except Exception:
+        return False
+
+
+def forget_robot(serial: str) -> bool:
+    """Drop a robot from sdk_config.ini (his certificate file goes too)."""
+    import configparser
+    import os
+    serial = (serial or "").strip().lower()
+    try:
+        cfg = configparser.ConfigParser(strict=False)
+        cfg.read(SDK_CONFIG_PATH)
+        if not cfg.has_section(serial):
+            return False
+        cert = cfg[serial].get("cert", "")
+        cfg.remove_section(serial)
+        with open(SDK_CONFIG_PATH, "w") as f:
+            cfg.write(f)
+        if cert and os.path.isfile(cert):
+            os.remove(cert)
+        return True
+    except Exception:
+        return False
+
+
 def identity_for(ip: str = "", name: str = "") -> dict:
     """Which paired robot is this address / name? {} if we don't know him.
 

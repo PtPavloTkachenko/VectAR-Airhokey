@@ -25,7 +25,7 @@ practice field (you against a simulated goalie, for testing without the robot):
 
 | Thing | Notes |
 |---|---|
-| Anki / DDL **Vector** robot (1.0 or 2.0) | the pairing wizard onboards him for you, built on [wire-pod](https://github.com/kercre123/wire-pod) (the community standard since the official cloud shut down). A **stock** robot is verified end-to-end, out of the box; the OSKR/dev route is not yet re-verified — see [Project status](#project-status) |
+| Anki / DDL **Vector** robot (1.0 or 2.0) | the pairing wizard onboards him for you, built on [wire-pod](https://github.com/kercre123/wire-pod) (the community standard since the official cloud shut down). **Stock** and **OSKR/dev** robots are both verified end-to-end from a factory reset — see [Project status](#project-status) |
 | **Snap Spectacles (2024)** | + [Lens Studio 5.15](https://ar.snap.com/download) on your Mac |
 | A **Mac** | Python 3.12; runs the game server |
 | One **Wi-Fi network** | Mac + robot + Spectacles all on the same LAN |
@@ -35,12 +35,20 @@ practice field (you against a simulated goalie, for testing without the robot):
 **1 · Server**
 
 ```bash
+git lfs install && git lfs pull      # the robot firmware images (~355 MB)
 cd server
 python3.12 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 export PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
 python -m game_bridge.main
 ```
+
+> The firmware images ship with the repo through **Git LFS**, so a stock robot
+> can be flashed over your own LAN with nothing to download by hand. Skipping
+> `git lfs pull` leaves 130-byte pointer files behind — the server refuses to
+> serve those as firmware, and `python -m game_bridge.doctor` says so. Without
+> them the install still works by streaming from the Internet Archive, just
+> slower and only while that stays up.
 
 Open **http://localhost:8780** → **PAIR ROBOT** → **CONNECT VECTOR**. One
 progressive wizard finds your robot over Bluetooth, points him at the bundled
@@ -100,11 +108,19 @@ The onboarding automation splits into two independent tracks:
 
 - **Stock (consumer) Vector** — **verified end-to-end**, as above. Budget ~10
   minutes, most of it waiting on the firmware install and one reboot.
-- **OSKR / dev Vector** — SSH auto-detect and the log-archive route (drop the
-  archive from Anki's setup app; the wizard finds the SSH key inside it and
-  locates the robot on your LAN) are implemented and worked on the original dev
-  unit, but are **not yet re-verified on current hardware** — this is the
-  remaining open track.
+- **OSKR / dev Vector** — **verified end-to-end too**, from a factory reset. He
+  needs no firmware at all: the wizard takes his own SSH key off him over
+  Bluetooth (measured: 55 KB in 26 s), repoints his cloud over SSH, and one
+  reboot later he is minted and answering. Shorter than the stock path, since
+  there is no 180 MB install.
+
+> **Recovery mode is a dead end, and it does not announce itself.** Holding his
+> backpack button ~15 s puts him in recovery; ~5 s is the plain power-off. In
+> recovery he reports neither his build type nor his serial, so nothing can tell
+> a dev robot from a stock one; he has no `/data/ssh` and none of his services,
+> so there is nothing to set up; and his own build-type gate refuses the
+> escape-pod image (error 214). Take him out of recovery first — anything set up
+> before that has to be done again, including Wi-Fi.
 
 **The old open item is closed.** A robot with no SDK control token (wiped, or
 brand new) never re-mints one just by sitting on Wi-Fi — `vic-cloud` has to be

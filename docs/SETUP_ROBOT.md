@@ -50,26 +50,31 @@ points him at wire-pod for good.
 An OSKR (developer-unlocked) robot. These can't take the escape-pod firmware, so
 the wizard uses **SSH** instead — no flashing. **SET UP THIS ROBOT** then:
 
-- **If this Mac already has SSH access** (most OSKR owners) — it just works, no
-  input from you.
-- **Otherwise, drop his log archive** — the wizard's *OSKR — set up from archive*
-  screen. Get the archive from Anki's own setup app
+- **Normally there is nothing to do.** His own SSH key lives inside his logs,
+  and the wizard downloads them over Bluetooth and takes it out by itself —
+  measured on a live robot at 55 KB in 26 s. **Verified end-to-end from a
+  factory reset.**
+- **Only if that comes back empty, drop his log archive** — the wizard's *set up
+  from archive* screen. Get it from Anki's own setup app
   ([vector-web-setup.anki.bot](https://vector-web-setup.anki.bot/#) in Chrome →
   **Save Logs**, downloads a `vector-logs-….tar.bz2`), then drop that file in.
-  The wizard finds the SSH key inside it, locates the robot on your Wi-Fi by
-  itself, and provisions him. **Verified end-to-end.**
 - **Already extracted the key?** Paste it instead (the
   `data/ssh/id_rsa_Vector-XXXX` file from that same archive). It stays on this Mac.
 
 > **The log archive contains your robot's private SSH key.** It never leaves this
 > Mac — but don't post the archive publicly or attach it to a bug report.
 
-> Lost your OSKR key after a **Clear User Data** wipe? The wipe makes the robot
-> generate a *new* key, so any key you saved before the wipe no longer matches —
-> and his name changes too (e.g. `Vector-X6X8` → `Vector-X1W8`). Download a fresh
-> log bundle (Anki's setup app → *Save Logs*) to get the new one. Note that a
-> wiped robot also loses its control token — see
-> [Status & risks](#status--risks-read-before-you-start) below.
+> **Don't set him up from recovery mode.** Holding the back button ~15 s enters
+> recovery; ~5 s is the plain power-off. Recovery is a separate minimal system:
+> he reports neither his build type nor his serial there, has no `/data/ssh` and
+> none of his services, and refuses the escape-pod image on his own build-type
+> gate (error 214). The Wi-Fi you give him in recovery does NOT carry over
+> either — so take him out first, then run the wizard once, start to finish.
+
+> A **Clear User Data** wipe regenerates his SSH key and changes his name, so a
+> key saved before the wipe no longer matches. That is fine: the wizard fetches
+> the new one the same way. His control token goes too, and gets re-minted
+> during Authorize.
 
 ## Troubleshooting
 
