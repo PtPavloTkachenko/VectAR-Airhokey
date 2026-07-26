@@ -1059,6 +1059,20 @@ class WebUI:
             # stays 404 forever, which reads as "wire-pod is broken" when in
             # fact nothing ever triggered the handshake.
             # Verified missing on the live stock robot, 2026-07-25.
+            # If the engine is still holding a certificate issued to a DIFFERENT
+            # name for this serial, it predates a factory reset: his serial is
+            # fused, his name and certificate are not. The engine only writes a
+            # new one when there is nothing there, so clear it before asking him
+            # to sign in -- otherwise pairing keeps rejecting a certificate that
+            # nothing will ever replace. (Cost an hour on the dev robot.)
+            if esn and name:
+                try:
+                    stale = await asyncio.to_thread(pairing.fetch_cert, pod, esn)
+                    if pairing._cert_common_name(stale) != name:
+                        await asyncio.to_thread(pairing.forget_cert, esn)
+                except Exception:
+                    pass   # no certificate at all is the normal fresh case
+
             cloud_err = ""
             for attempt in range(1, 4):
                 self._set_auth("cloud", "Asking Vector to sign in to the "

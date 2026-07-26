@@ -282,6 +282,31 @@ def mint_guid(cert: bytes, ip: str, name: str) -> bytes:
     return response.client_token_guid
 
 
+def forget_cert(serial: str) -> bool:
+    """Drop the engine's stored certificate for this serial. True if removed.
+
+    His serial is fused and survives a factory reset; his NAME and certificate
+    do not. So the engine's per-serial store keeps serving the certificate from
+    before the reset, pairing rejects it as belonging to someone else, and no
+    amount of signing in replaces it -- the engine writes a new one only when
+    there is nothing there. Removing it first is what makes a re-onboarded
+    robot work, and it costs nothing when he is genuinely new.
+
+    Local engine only; a remote one keeps its own files and is left alone.
+    """
+    from .. import config as gconfig
+    path = (gconfig.OTA_REPO_DIR.parent / "wire-pod" / "chipper" /
+            "session-certs" / serial.strip().lower())
+    try:
+        if path.is_file():
+            path.unlink()
+            logger.info(f"dropped the engine's stale certificate for {serial}")
+            return True
+    except Exception as e:
+        logger.debug(f"could not drop the stored certificate: {e}")
+    return False
+
+
 def pod_guid(pod: str, serial: str) -> bytes:
     """The guid the pairing engine issued for this robot, or b''.
 
