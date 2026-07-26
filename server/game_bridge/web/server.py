@@ -532,27 +532,47 @@ class WebUI:
                               "refuses it. Is sshd running and is this the same "
                               "robot?"})
 
-        # 2) point the robot's cloud at wire-pod, then reboot
-        try:
-            status = await asyncio.to_thread(
-                prov.provision, ip, str(key),
-                body.get("host_mode", "ip"), True)
-        except SystemExit as e:
-            return web.json_response({"ok": False, "step": "provision",
-                                      "error": str(e)})
-        except Exception as e:
-            return web.json_response(
-                {"ok": False, "step": "provision",
-                 "error": f"{type(e).__name__}: {e}"})
-        if status == "already":
-            msg = ("Vector is already set up for wire-pod — no reboot needed. "
-                   "Open the Dashboard and play.")
-        else:
-            msg = ("Cloud pointed at wire-pod. Vector is rebooting (~40 s), "
-                   "then pairing will complete.")
+        # 2) point his cloud at wire-pod and carry him through to SDK control.
+        # BLE is dropped first: the reboot would kill the link anyway, and the
+        # mint needs the gRPC path, not this one.
+        await self._drop_ble()
         return web.json_response(
-            {"ok": True, "ip": ip, "already": status == "already",
-             "message": msg})
+            await self._finish_oskr(ip, str(key), body.get("pod", "")))
+
+    async def _finish_oskr(self, ip: str, key: str, pod: str = "") -> dict:
+        """Repoint a dev robot and carry him all the way to SDK control.
+
+        Both dev routes (a live BLE session, or his log archive) end here, and
+        they end on the same code the terminal runs. Stopping at "provisioned,
+        rebooting" was its own trap: the robot came back pointed at the right
+        place with no token, which every later screen reported as some other
+        problem.
+        """
+        from onboarding import oskr_setup
+
+        def log(msg: str):
+            self._set_auth("provision", msg)
+
+        try:
+            res = await asyncio.to_thread(
+                oskr_setup.setup, ip, key, pod or config.WIREPOD_URL,
+                "auto", False, log)
+        except SystemExit as e:
+            return {"ok": False, "step": "provision", "error": str(e)}
+        except Exception as e:
+            return {"ok": False, "step": "provision",
+                    "error": f"{type(e).__name__}: {e}"}
+
+        if res.get("verified"):
+            msg = (f"{res['name']} is set up and answering — open the "
+                   "Dashboard and play.")
+        else:
+            msg = (f"{res['name']} is set up and has his key, but hasn't "
+                   "answered yet. He is often a few seconds behind; open the "
+                   "Dashboard and press CONNECT ROBOT.")
+        return {"ok": True, "ip": res.get("ip", ip), "name": res.get("name", ""),
+                "serial": res.get("serial", ""),
+                "verified": bool(res.get("verified")), "message": msg}
 
     async def api_provision_oskr_archive(self, req):
         """Set up an OSKR robot from his OFFICIAL log archive — the public path.
@@ -573,11 +593,6 @@ class WebUI:
         archive = b""
         pasted_key = ""
         ip = ""
-        # Pin this Mac's LAN IP by default: on repeater/mesh Wi-Fi the robot
-        # can't resolve escapepod.local over mDNS, so gameplay needs the literal
-        # IP (project memory DECISIONS #86). Portable networks can pass
-        # host_mode=escapepod.
-        host_mode = "ip"
         async for part in reader:
             if part.name == "archive":
                 archive = await part.read(decode=False)
@@ -585,8 +600,6 @@ class WebUI:
                 pasted_key = (await part.text()).strip()
             elif part.name == "ip":
                 ip = (await part.text()).strip()
-            elif part.name == "host_mode":
-                host_mode = (await part.text()).strip() or "ip"
 
         # A pasted key is used verbatim; otherwise detect it inside the archive.
         robot_code = None
@@ -651,25 +664,7 @@ class WebUI:
                  "error": f"Found the key and Vector at {ip}, but he refused it. "
                           "Is this the same robot the archive came from? (his "
                           "name and key both change after a factory reset.)"})
-        try:
-            status = await asyncio.to_thread(
-                prov.provision, ip, str(key), host_mode, True)
-        except SystemExit as e:
-            return web.json_response(
-                {"ok": False, "step": "provision", "error": str(e)})
-        except Exception as e:
-            return web.json_response(
-                {"ok": False, "step": "provision",
-                 "error": f"{type(e).__name__}: {e}"})
-        who = robot_code or ip
-        if status == "already":
-            msg = (f"Vector ({who}) is already set up for wire-pod — no reboot "
-                   "needed. Open the Dashboard and play.")
-        else:
-            msg = (f"Key accepted, cloud pointed at wire-pod. Vector ({who}) is "
-                   "rebooting (~40 s), then he's ready to play.")
-        return web.json_response(
-            {"ok": True, "ip": ip, "already": status == "already", "message": msg})
+        return web.json_response(await self._finish_oskr(ip, str(key)))
 
     async def api_pair(self, req):
         body = await req.json()

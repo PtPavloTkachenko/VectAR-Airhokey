@@ -1524,7 +1524,6 @@ async function archiveProvision(usePasted) {
     btn.disabled = false;
     return;
   }
-  if (!res.already) window.rebootingUntil = Date.now() + 80000;
   bar.innerHTML = `<span class="ok">Done ✓ ${res.message}</span>`
     + `<div style="margin-top:12px"><button onclick="showTab('dash')">`
     + `GO TO DASHBOARD →</button></div>`;
@@ -1579,11 +1578,12 @@ async function bleOskrArchive() {
     $("btnOskr").disabled = false;
     return;
   }
-  if (!res.already) window.rebootingUntil = Date.now() + 80000;
+  // Setup already waited out his reboot and minted his key, so there is
+  // nothing left to reconnect for — going back to Bluetooth here just made
+  // people redo a step that had already happened.
   $("oskrBar").innerHTML = `<span class="ok">Done ✓ ${res.message}</span>`;
-  $("provBody").innerHTML += res.already
-    ? `<button onclick="showTab('dash')">GO TO DASHBOARD →</button>`
-    : `<button onclick="bleRestart()">RECONNECT WHEN HE'S BACK (~40s) →</button>`;
+  $("provBody").innerHTML +=
+    `<button onclick="showTab('dash')">GO TO DASHBOARD →</button>`;
 }
 
 // ---- provisioning: make the robot's cloud point at wire-pod ---------------
@@ -1709,7 +1709,6 @@ async function bleProvisionOskr(tryLogs) {
   try {
     res = await api("/api/ble/provision_oskr", {
       ip: window.foundIp || "",
-      host_mode: "escapepod",
       ssh_key: box ? box.value : "",
       try_logs: tryLogs === true,
     });
@@ -1781,11 +1780,12 @@ async function bleProvisionOskr(tryLogs) {
     }
     return;
   }
-  if (!res.already) window.rebootingUntil = Date.now() + 80000;
+  // Setup already waited out his reboot and minted his key, so there is
+  // nothing left to reconnect for — going back to Bluetooth here just made
+  // people redo a step that had already happened.
   $("oskrBar").innerHTML = `<span class="ok">Done ✓ ${res.message}</span>`;
-  $("provBody").innerHTML += res.already
-    ? `<button onclick="showTab('dash')">GO TO DASHBOARD →</button>`
-    : `<button onclick="bleRestart()">RECONNECT WHEN HE'S BACK (~40s) →</button>`;
+  $("provBody").innerHTML +=
+    `<button onclick="showTab('dash')">GO TO DASHBOARD →</button>`;
 }
 
 // The firmware install is the longest thing this wizard ever does — ~180 MB
@@ -1883,6 +1883,9 @@ async function bleFlashEp() {
     if (s.done) {
       clearInterval(poll);
       window._flashActive = false;
+      // This is the reboot the dashboard banner exists for: the robot goes
+      // dark for a minute and OFFLINE alone reads like something broke.
+      window.rebootingUntil = Date.now() + 90000;
       $("provBody").innerHTML +=
         `<div class="ok">Done — the escape-pod firmware is installed.</div>`
         + `<div class="hint">What happens now: Vector reboots (~1 minute) and `
