@@ -71,6 +71,31 @@ def ssh_public_key() -> str:
     return pub.read_text().strip()
 
 
+def identity_for(ip: str = "", name: str = "") -> dict:
+    """Which paired robot is this address / name? {} if we don't know him.
+
+    Needed the moment there is more than one robot: discovery hands back an
+    address, and everything downstream needs to know WHOSE it is before it
+    mints anything or points a certificate at it.
+    """
+    import configparser
+    ip = (ip or "").strip()
+    name = (name or "").strip().lower().replace(" ", "-")
+    if not ip and not name:
+        return {}
+    try:
+        cfg = configparser.ConfigParser(strict=False)
+        cfg.read(SDK_CONFIG_PATH)
+    except Exception:
+        return {}
+    for sect in cfg.sections():
+        s_ip = cfg[sect].get("ip", "").strip()
+        s_name = cfg[sect].get("name", "").strip()
+        if (ip and s_ip == ip) or (name and s_name.lower() == name):
+            return {"serial": sect, "ip": s_ip, "name": s_name}
+    return {}
+
+
 def read_robot_identity(want: str = "") -> tuple[str, str, str]:
     """(serial, ips, name) — env overrides win, else sdk_config.ini.
 

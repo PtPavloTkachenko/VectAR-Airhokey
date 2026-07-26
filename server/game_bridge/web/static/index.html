@@ -474,16 +474,21 @@ async function onboardStartInner() {
   let f = {on_wifi: false};
   try { f = await api("/api/find_robot", {}); } catch (e) {}
   window.foundIp = f.ip || "";
+  // WHO we found, not just where. With two robots around, acting on an address
+  // alone means minting for one and connecting to the other.
+  window.foundName = f.name || "";
+  window.foundSerial = f.serial || "";
+  const who = f.name ? `<b>${f.name}</b>` : "Vector";
   if (f.on_wifi && f.gateway) {
     // already online + ready — skip straight to authorize
     chooseRoute("ble"); bleStep(3);
-    $("bleDoneMsg").innerHTML = `Vector is already on Wi-Fi at <b>${f.ip}</b> ✓`;
+    $("bleDoneMsg").innerHTML = `${who} is already on Wi-Fi at <b>${f.ip}</b> ✓`;
     $("bleAuthMsg").innerHTML = "Authorizing…";
     bleAuthorize();
   } else if (f.on_wifi) {
     // on Wi-Fi but its control port isn't up yet (finishing activation)
     chooseRoute("ble"); bleStep(3);
-    $("bleDoneMsg").innerHTML = `Vector is on Wi-Fi at <b>${f.ip}</b>, finishing activation ✓`;
+    $("bleDoneMsg").innerHTML = `${who} is on Wi-Fi at <b>${f.ip}</b>, finishing activation ✓`;
     $("bleAuthMsg").innerHTML = "Give it a few seconds, then authorize:";
   } else {
     // not on Wi-Fi -> full Bluetooth onboarding
@@ -2066,8 +2071,14 @@ async function bleAuthorize() {
 
   let res;
   try {
-    res = await api("/api/ble/authorize",
-                    window.foundIp ? {ip: window.foundIp} : {});
+    // Send WHO as well as where. Without the serial the server falls back to
+    // whichever robot is first in sdk_config.ini, which is how credentials got
+    // minted for one robot while the link was opened to another.
+    res = await api("/api/ble/authorize", {
+      ...(window.foundIp ? {ip: window.foundIp} : {}),
+      ...(window.foundSerial ? {serial: window.foundSerial} : {}),
+      ...(window.foundName ? {name: window.foundName} : {}),
+    });
   } finally {
     clearInterval(tick);
   }

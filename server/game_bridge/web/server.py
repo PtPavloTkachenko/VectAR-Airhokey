@@ -259,31 +259,49 @@ class WebUI:
             except Exception:
                 return False
 
-        # candidate IPs: mDNS + env override + last-known from sdk_config
-        cands: list[str] = []
+        # Candidates carry WHO they are, not just an address. With more than
+        # one robot around, "found a Vector at 192.168.0.194" is a guess the
+        # rest of the wizard then acts on -- it minted for one robot and
+        # connected to another, and every screen after that blamed the robot.
+        cands: list[dict] = []
+
+        def add(ip: str, name: str = "", serial: str = ""):
+            ip = (ip or "").strip()
+            if ip and not any(c["ip"] == ip for c in cands):
+                cands.append({"ip": ip, "name": name, "serial": serial})
+
         try:
             for r in await discovery.discover(4.0):
-                if r.get("ip"):
-                    cands.append(r["ip"])
+                add(r.get("ip", ""), r.get("name", ""), r.get("serial", ""))
         except Exception:
             pass
         _s, ips, _n = config.read_robot_identity()
         for ip in (ips or "").split(","):
-            if ip.strip() and ip.strip() not in cands:
-                cands.append(ip.strip())
-        for ip in cands:
-            if await port_open(ip):
+            add(ip, _n, _s)
+
+        # Fill in the identity we already hold for that address, and vice versa.
+        for c in cands:
+            if c["name"] and c["serial"]:
+                continue
+            known = config.identity_for(ip=c["ip"], name=c["name"])
+            c["name"] = c["name"] or known.get("name", "")
+            c["serial"] = c["serial"] or known.get("serial", "")
+
+        for c in cands:
+            if await port_open(c["ip"]):
                 return web.json_response(
-                    {"on_wifi": True, "ip": ip, "gateway": True})
+                    {"on_wifi": True, "ip": c["ip"], "gateway": True,
+                     "name": c["name"], "serial": c["serial"]})
         # reachable but gateway down?
-        for ip in cands:
+        for c in cands:
             try:
                 proc = await _a.create_subprocess_exec(
-                    "ping", "-c1", "-W1500", ip,
+                    "ping", "-c1", "-W1500", c["ip"],
                     stdout=_a.subprocess.DEVNULL, stderr=_a.subprocess.DEVNULL)
                 if await proc.wait() == 0:
                     return web.json_response(
-                        {"on_wifi": True, "ip": ip, "gateway": False})
+                        {"on_wifi": True, "ip": c["ip"], "gateway": False,
+                         "name": c["name"], "serial": c["serial"]})
             except Exception:
                 pass
         return web.json_response({"on_wifi": False})
