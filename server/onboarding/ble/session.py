@@ -347,13 +347,13 @@ class RtsSession:
         try:
             from game_bridge import config as _gc
             if state == m.STATE_RECOVERY_PROD:
-                if _gc.known_build_type(esn, addr, nm) == "dev":
+                if _gc.known_build_type(esn, nm) == "dev":
                     state = m.STATE_RECOVERY_DEV
                     logger.info("known dev robot — recovery reclassified")
             elif state == m.STATE_FIRMWARE_DEV:
-                _gc.remember_build_type("dev", esn, addr, nm)
+                _gc.remember_build_type("dev", esn, nm)
             elif state in (m.STATE_FIRMWARE_EP, m.STATE_FIRMWARE_NONEP):
-                _gc.remember_build_type("stock", esn, addr, nm)
+                _gc.remember_build_type("stock", esn, nm)
         except Exception as e:
             logger.debug(f"build-type memory failed: {e}")
         return {"state": state, "firmware": fw, "ble_address": addr,

@@ -409,7 +409,7 @@ class WebUI:
         esn = getattr(self._ble, "esn", "") or ""
         addr = getattr(getattr(self._ble, "ble", None), "address", "") or ""
         nm = getattr(self._ble, "name", "") or ""
-        config.remember_build_type(kind, esn, addr, nm)
+        config.remember_build_type(kind, esn, nm)
         logger.info(f"owner says this robot is {kind} ({addr or esn or '?'})")
         return web.json_response({"ok": True, "build_type": kind,
                                   "remembered_as": addr or esn})
@@ -476,7 +476,7 @@ class WebUI:
                     addr = getattr(getattr(self._ble, "ble", None),
                                    "address", "") or ""
                     nm = getattr(self._ble, "name", "") or ""
-                    config.remember_build_type("dev", esn, addr, nm)
+                    config.remember_build_type("dev", esn, nm)
                     logger.info(f"recorded as a dev robot (214 gate) {addr}")
                     msg = (
                         "He is a dev (OSKR) robot, so he does not need this "
@@ -938,14 +938,37 @@ class WebUI:
             res = await self._ble.wifi_connect(
                 body["ssid"], body.get("password", ""),
                 int(body.get("auth", 6)), bool(body.get("hidden", False)))
+            # Judge him by whether he actually got an address, not by the code
+            # he answers with. Asking once, immediately, called it a failure
+            # while his face was still showing the Wi-Fi screen and he was
+            # mid-connect -- so the wizard told people to restart a robot who
+            # was about to succeed. Association plus DHCP takes a while,
+            # especially on the first join after a wipe.
             ip = ""
-            if res.get("result") == 0:
+            deadline = time.monotonic() + float(body.get("wait", 45.0))
+            while True:
                 try:
-                    ip = await self._ble.wifi_ip()
-                except Exception:
-                    pass
-            return web.json_response({"ok": res.get("result") == 0,
-                                      "result": res, "ip": ip})
+                    ip = (await self._ble.wifi_ip() or "").strip()
+                except Exception as e:
+                    logger.debug(f"wifi_ip poll: {e}")
+                if ip and ip != "0.0.0.0":
+                    break
+                if time.monotonic() >= deadline:
+                    break
+                self._flash.update(state="waiting for Wi-Fi")
+                await asyncio.sleep(2.0)
+
+            if ip and ip != "0.0.0.0":
+                return web.json_response({"ok": True, "result": res, "ip": ip})
+            code = res.get("result")
+            return web.json_response(
+                {"ok": False, "result": res, "ip": "",
+                 "error": "Vector took the password but never got an address "
+                          f"(status {code}). Usually the password is wrong, or "
+                          "it's a 5 GHz-only network — he is 2.4 GHz. His face "
+                          "shows the Wi-Fi screen while he tries, so give him "
+                          "a moment and press CONNECT again before restarting "
+                          "him."})
         except Exception as e:
             return web.json_response({"ok": False, "error": str(e)})
 

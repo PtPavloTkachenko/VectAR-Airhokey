@@ -433,13 +433,12 @@ function renderRoute() {
       + `reboots → pair again → authorize. Around 10 minutes, most of it `
       + `waiting. You'll never need the Vector app.</div>`
       + `<button onclick="onboardStart()">CONNECT VECTOR →</button>`
-      + `<div class="hint" style="margin-top:16px;opacity:.8">Fallback for an `
-      + `<span class="key">OSKR / dev</span> Vector already on Wi-Fi: set him `
-      + `up from his log archive (the official app's <b>Save Logs</b>), with no `
-      + `Bluetooth at all. Normally you don't need this — CONNECT VECTOR takes `
-      + `his key over Bluetooth by itself.</div>`
-      + `<button class="secondary" onclick="chooseRoute('archive')">`
-      + `OSKR ROBOT — SET UP FROM ARCHIVE →</button>`
+      + `<div class="hint" style="margin-top:14px;opacity:.75">`
+      + `<span class="key">Dev / OSKR</span> robots go through the same button `
+      + `— he needs no firmware, and his SSH key comes off him over Bluetooth `
+      + `in about half a minute. `
+      + `<a href="#" onclick="chooseRoute('archive');return false">Set up from `
+      + `his log archive instead</a> only if Bluetooth isn't an option.</div>`
       // Honest per-track status, right where the choice is made.
       + `<div class="hint" style="margin-top:20px;border-top:1px solid var(--line);`
       + `padding-top:14px;opacity:.85"><b>Where each path stands</b><br>`
@@ -1675,22 +1674,26 @@ async function bleProvision() {
     // Offer the install, but say plainly that a dev robot must not take it —
     // otherwise the only way to find out is a rejected flash (die 214).
     $("provBody").innerHTML =
-      `<div class="ok">He's in recovery mode — ready to install.</div>`
-      + `<div class="hint">This installs the <span class="key">escape-pod `
-      + `firmware</span>: Vector downloads it from this Mac over Wi-Fi and `
-      + `flashes himself. A few minutes — keep him on the charger and don't `
-      + `touch him. Afterwards he talks to the pairing engine on any Wi-Fi.`
-      + `<br><br>Then he reboots into his own setup screen (cloud, then "get `
-      + `the Vector app") — that's expected; you come back here, pair again `
-      + `and authorize, and this wizard clears it.</div>`
+      `<div class="ok">He's in recovery mode.</div>`
+      + `<div class="hint">In recovery Vector reports neither his build type `
+      + `nor his serial, so <b>nothing here can tell us which robot this is</b> `
+      + `— and the two need opposite things. Pick the one you own:</div>`
+      + `<div class="vec-step" style="margin-top:12px"><span class="numdot">A`
+      + `</span><span><b>Stock Vector</b> — the one sold in shops. He needs the `
+      + `<span class="key">escape-pod firmware</span> once: he downloads ~180 MB `
+      + `from this Mac himself and reboots. Keep him on the charger and don't `
+      + `touch him. Afterwards he reaches the pairing engine on any Wi-Fi.`
+      + `</span></div>`
       + `<div id="flashBar" class="hint" style="display:none"></div>`
-      + `<button onclick="bleFlashEp()" id="btnFlash">INSTALL FIRMWARE →</button>`
-      + `<div class="hint" style="margin-top:14px">In recovery Vector doesn't `
-      + `say which build he runs, so we can't tell a <span class="key">dev / `
-      + `OSKR</span> robot from a stock one here. A dev robot must NOT take `
-      + `this firmware — his own build type refuses it.</div>`
+      + `<button onclick="bleFlashEp()" id="btnFlash">`
+      + `STOCK — INSTALL FIRMWARE →</button>`
+      + `<div class="vec-step" style="margin-top:16px"><span class="numdot">B`
+      + `</span><span><b>Dev / OSKR Vector</b> — unlocked, usually bought that `
+      + `way or converted. He needs <b>no firmware at all</b>; his own build `
+      + `type refuses this image. He is set up over SSH instead, and he has to `
+      + `leave recovery first.</span></div>`
       + `<button class="secondary" onclick="markDevRobot()">`
-      + `THIS IS A DEV / OSKR ROBOT →</button>`;
+      + `DEV / OSKR — NO FIRMWARE →</button>`;
   } else if (st.state === "in_recovery_dev") {
     // A dev robot in RECOVERY can't be set up at all: recovery is a minimal OS
     // with no /data/ssh and none of his services, so the SSH path has nothing
@@ -1701,12 +1704,17 @@ async function bleProvision() {
       + `and he's sitting in <b>recovery mode</b>. He needs no firmware — his `
       + `own build type refuses the escape-pod image — but recovery has none of `
       + `his services running either, so there's nothing here to set up yet.</div>`
+      + `<div class="hint" style="margin-top:8px"><b>Stop here — don't do the `
+      + `Wi-Fi step yet.</b> Recovery is a separate system: the Wi-Fi you give `
+      + `him now does NOT carry over, so anything set up before he leaves `
+      + `recovery has to be done again.</div>`
       + `<div class="vec-step" style="margin-top:10px"><span class="numdot">1</span>`
       + `<span>Restart him out of recovery: hold his backpack button ~5 s until `
-      + `he switches off, then put him back on the charger.</span></div>`
+      + `he switches off, then put him back on the charger and let him boot to `
+      + `his normal face (eyes, not a menu).</span></div>`
       + `<div class="vec-step"><span class="numdot">2</span><span>Double-press `
-      + `the backpack again and pair — this wizard then sets him up over SSH, `
-      + `no firmware involved.</span></div>`
+      + `the backpack and run this wizard once, start to finish: pair → Wi-Fi → `
+      + `set up. No firmware at any point.</span></div>`
       + `<button onclick="bleRestart()">PAIR AGAIN (once he's up) →</button>`;
   } else if (st.state === "in_firmware_dev") {
     // OSKR/dev: no flash needed — we take his SSH key over this same BLE
@@ -2078,7 +2086,11 @@ function blePickWifi(ssidEnc, auth) {
 async function bleWifiConnect() {
   $("bleWifiErr").style.display = "none"; $("bleWifiOk").style.display = "none";
   $("btnBleWifi").disabled = true;
-  $("bleWifiOk").style.display = ""; $("bleWifiOk").innerHTML = '<span class="spin">◌</span> connecting Vector to Wi-Fi…';
+  $("bleWifiOk").style.display = "";
+  $("bleWifiOk").innerHTML = '<span class="spin">◌</span> connecting Vector to '
+    + 'Wi-Fi…<div class="hint">His face shows the Wi-Fi screen while he joins. '
+    + 'This takes up to about a minute on the first join after a reset — the '
+    + 'wizard waits for him to actually get an address, so leave it be.</div>';
   const res = await api("/api/ble/wifi_connect", {
     ssid: $("bleWifiSsid").value, password: $("bleWifiPw").value,
     auth: parseInt($("bleWifiAuth").value)});
