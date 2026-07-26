@@ -221,9 +221,10 @@
         · <span class="key">Stock</span> — verified end-to-end, as above. The
           firmware install is a real OTA: he downloads ~180 MB himself and
           reboots — keep him on the charger and don't interrupt.<br>
-        · <span class="key">OSKR / dev</span> — the SSH and log-archive routes
-          are implemented but <b>not yet re-verified</b> on current hardware;
-          this is the remaining open track.<br><br>
+        · <span class="key">OSKR / dev</span> — verified end-to-end too. He
+          needs no firmware: his own SSH key comes off him over Bluetooth in
+          about half a minute, his cloud is repointed over SSH, and one reboot
+          later he is minted and answering.<br><br>
         Details: <code>docs/STOCK_ONBOARDING_PLAN.md</code> (how the stock path
         works) and <code>docs/SETUP_ROBOT.md</code> → Status &amp; risks.
       </div>
@@ -276,6 +277,13 @@
         <div class="error" id="blePinErr" style="display:none"></div>
         <button onclick="blePin()" id="btnBlePin" disabled>CONFIRM PIN</button>
         <button class="secondary" onclick="bleRestart()">← START OVER</button>
+        <div class="hint" style="margin-top:14px">
+          <b>No PIN on his face?</b> He sometimes accepts the Bluetooth
+          connection without ever entering pairing mode, and then no PIN
+          appears — waiting doesn't help. Restart him: hold the backpack button
+          ~5 s until he switches off, put him back on the charger, wait for his
+          eyes, then double-press the backpack and press START OVER here.
+        </div>
       </div>
 
       <!-- bP: provisioning — make the robot's cloud point at wire-pod.
@@ -425,9 +433,11 @@ function renderRoute() {
       + `reboots → pair again → authorize. Around 10 minutes, most of it `
       + `waiting. You'll never need the Vector app.</div>`
       + `<button onclick="onboardStart()">CONNECT VECTOR →</button>`
-      + `<div class="hint" style="margin-top:16px;opacity:.8">Have an `
-      + `<span class="key">OSKR / dev</span> Vector already on Wi-Fi? Set him up `
-      + `from his log archive — no Bluetooth needed.</div>`
+      + `<div class="hint" style="margin-top:16px;opacity:.8">Fallback for an `
+      + `<span class="key">OSKR / dev</span> Vector already on Wi-Fi: set him `
+      + `up from his log archive (the official app's <b>Save Logs</b>), with no `
+      + `Bluetooth at all. Normally you don't need this — CONNECT VECTOR takes `
+      + `his key over Bluetooth by itself.</div>`
       + `<button class="secondary" onclick="chooseRoute('archive')">`
       + `OSKR ROBOT — SET UP FROM ARCHIVE →</button>`
       // Honest per-track status, right where the choice is made.
@@ -437,8 +447,13 @@ function renderRoute() {
       + `on hardware</span>: pairing, PIN, Wi-Fi, the escape-pod firmware `
       + `install and authorization. Expect one firmware install (~180 MB, he `
       + `downloads it himself) and one reboot — keep him on the charger.<br>`
-      + `<span class="key">OSKR / dev</span> — SSH and the archive route are `
-      + `implemented but <b>not yet re-verified</b> on current hardware.</div>`;
+      + `<span class="key">OSKR / dev</span> — <span class="ok">verified `
+      + `end-to-end on hardware</span>: no firmware at all. His key comes off `
+      + `him over Bluetooth (~26 s), his cloud is repointed over SSH, and one `
+      + `reboot later he is minted and answering. In <b>recovery mode</b> he `
+      + `reports neither his build nor his serial, so nothing can tell him from `
+      + `a stock robot there — take him out of recovery first, or say which he `
+      + `is when asked.</div>`;
   }
   $("routeCard").innerHTML = html;
 }

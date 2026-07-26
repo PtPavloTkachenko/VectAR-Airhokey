@@ -408,7 +408,8 @@ class WebUI:
                 status=400)
         esn = getattr(self._ble, "esn", "") or ""
         addr = getattr(getattr(self._ble, "ble", None), "address", "") or ""
-        config.remember_build_type(kind, esn, addr)
+        nm = getattr(self._ble, "name", "") or ""
+        config.remember_build_type(kind, esn, addr, nm)
         logger.info(f"owner says this robot is {kind} ({addr or esn or '?'})")
         return web.json_response({"ok": True, "build_type": kind,
                                   "remembered_as": addr or esn})
@@ -474,7 +475,8 @@ class WebUI:
                     esn = getattr(self._ble, "esn", "") or ""
                     addr = getattr(getattr(self._ble, "ble", None),
                                    "address", "") or ""
-                    config.remember_build_type("dev", esn, addr)
+                    nm = getattr(self._ble, "name", "") or ""
+                    config.remember_build_type("dev", esn, addr, nm)
                     logger.info(f"recorded as a dev robot (214 gate) {addr}")
                     msg = (
                         "He is a dev (OSKR) robot, so he does not need this "

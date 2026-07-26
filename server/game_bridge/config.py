@@ -91,9 +91,18 @@ def remember_build_type(kind: str, *ids: str) -> None:
     a dev robot from a stock one, and guessing wrong sends him to install
     firmware his own build-type gate rejects (die 214).
 
-    Hence several ids: his Bluetooth address is hardware and survives a factory
-    reset (his name does not), so it is the one thing we can still recognise
-    him by in recovery. The ESN is recorded too, for when he is booted normally.
+    Hence several ids, recorded together and matched on any one of them:
+
+      esn          the real identity, but EMPTY while he is in recovery
+      ble address  on macOS this is a per-host UUID, not a hardware MAC, and it
+                   does rotate -- observed changing between two sessions with
+                   the same robot, so it is a hint, not an anchor
+      name         his advertised name; stable until the next factory reset,
+                   which is exactly the window where the ESN is unavailable
+
+    None of them is reliable alone. Together they cover the common cases, and
+    when they all miss, the owner is asked once more -- which is cheap, and
+    honest about what we actually know.
     """
     import json
     if kind not in ("dev", "stock"):
