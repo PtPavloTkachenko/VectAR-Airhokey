@@ -1692,8 +1692,9 @@ async function bleProvision() {
       + `way or converted. He needs <b>no firmware at all</b>; his own build `
       + `type refuses this image. He is set up over SSH instead, and he has to `
       + `leave recovery first.</span></div>`
-      + `<button class="secondary" onclick="markDevRobot()">`
-      + `DEV / OSKR — NO FIRMWARE →</button>`;
+      // Both are real choices and we genuinely cannot tell them apart, so
+      // neither gets to look like the quiet secondary option.
+      + `<button onclick="markDevRobot()">DEV / OSKR — NO FIRMWARE →</button>`;
   } else if (st.state === "in_recovery_dev") {
     // A dev robot in RECOVERY can't be set up at all: recovery is a minimal OS
     // with no /data/ssh and none of his services, so the SSH path has nothing
