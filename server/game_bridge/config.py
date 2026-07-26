@@ -37,6 +37,9 @@ WIREPOD_URL = os.getenv("WIREPOD_URL", "http://localhost:8080")
 EP_OTA_NAME = os.getenv("EP_OTA_NAME", "vicos-2.0.1.6076ep.ota")
 OTA_CACHE_DIR = Path(os.getenv(
     "OTA_CACHE_DIR", str(Path.home() / ".vectar" / "ota")))
+# Shipped with the repo via Git LFS, so a fresh clone can flash a robot with
+# nothing to download by hand and no dependency on archive.org staying up.
+OTA_REPO_DIR = Path(__file__).resolve().parent.parent / "onboarding" / "ota"
 
 # --- OSKR/dev-robot provisioning ---
 # Its SSH key is ours to manage: generated on first use, installed on the robot

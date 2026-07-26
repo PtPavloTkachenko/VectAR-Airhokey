@@ -336,9 +336,15 @@ class WebUI:
         name = req.match_info["name"]
         if "/" in name or ".." in name or not name.endswith(".ota"):
             return web.Response(status=400, text="bad ota name")
-        local = config.OTA_CACHE_DIR / name
-        if local.is_file():
-            return web.FileResponse(local)
+        # Personal cache first, then what ships with the repo (Git LFS), then
+        # the Internet Archive. A fresh clone therefore flashes without
+        # downloading anything by hand, and without archive.org having to be
+        # up -- and the dev-robot repair image isn't on archive.org at all
+        # (that URL 404s), so shipping it is the only way it exists for anyone
+        # but us.
+        for local in (config.OTA_CACHE_DIR / name, config.OTA_REPO_DIR / name):
+            if local.is_file() and local.stat().st_size > 1_000_000:
+                return web.FileResponse(local)
         import aiohttp
         url = f"https://archive.org/download/vector-pod-firmware/{name}"
         resp = web.StreamResponse()

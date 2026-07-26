@@ -76,15 +76,25 @@ def _wirepod_checks() -> list[Check]:
 
 
 def _ota_check() -> Check:
-    p = Path(config.OTA_CACHE_DIR) / config.EP_OTA_NAME
-    if p.is_file():
+    for p in (Path(config.OTA_CACHE_DIR) / config.EP_OTA_NAME,
+              Path(config.OTA_REPO_DIR) / config.EP_OTA_NAME):
+        if not p.is_file():
+            continue
         mb = p.stat().st_size / 1048576
-        return Check("firmware image cached", True, f"{p} ({mb:.0f} MB)")
+        if p.stat().st_size < 1_000_000:
+            # A Git LFS pointer, not the image. Serving it would hand the robot
+            # 130 bytes of text and fail somewhere far away from the cause.
+            return Check(
+                "firmware image", False,
+                f"{p} is a Git LFS pointer, not the image ({p.stat().st_size} B)",
+                "Fetch it: git lfs install && git lfs pull")
+        return Check("firmware image", True, f"{p} ({mb:.0f} MB)")
     return Check(
-        "firmware image cached", None,
-        f"{p} not present — it will be streamed from the Internet Archive",
-        "Optional, but a local copy makes the install fast and offline: "
-        f"download {config.EP_OTA_NAME} into {config.OTA_CACHE_DIR}/")
+        "firmware image", None,
+        "not on disk — it will be streamed from the Internet Archive",
+        "Works, but slower and only while archive.org is up. For a local copy: "
+        "git lfs pull, or drop the .ota into "
+        f"{config.OTA_CACHE_DIR}/")
 
 
 def _paired_serials() -> list[str]:
