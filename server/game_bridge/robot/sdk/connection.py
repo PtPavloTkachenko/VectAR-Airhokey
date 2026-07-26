@@ -85,14 +85,18 @@ async def _mdns_find_ip(name: str, serial: str) -> str | None:
         return None
     ser = (serial or "").lower()
     nm = (name or "").lower()
-    # prefer an exact serial/name match; fall back to the sole robot on the LAN
+    # Identity match ONLY. There used to be a "if there's just one robot on the
+    # LAN, assume it's him" fallback, which was fine while one robot existed
+    # and is destructive now: with his robot switched off and a DIFFERENT one
+    # awake, it handed back the other robot's address AND persisted it into
+    # sdk_config.ini. The result was one robot's certificate pointed at another
+    # robot's IP, a storm of failed TLS handshakes, and a console too starved
+    # to answer. Not finding him is the honest answer.
     for r in found:
         rid = f"{r.get('serial','')}{r.get('name','')}".lower()
         if (ser and ser in rid) or (nm and nm in rid):
             if r.get("ip"):
                 return r["ip"]
-    if len(found) == 1 and found[0].get("ip"):
-        return found[0]["ip"]
     return None
 
 

@@ -548,18 +548,29 @@ class WebUI:
         """
         from onboarding import oskr_setup
 
+        # Both dev screens poll flash_status, so progress has to land there.
+        # This step can run for two minutes across his reboot; a spinner with
+        # nothing behind it is indistinguishable from a hang.
+        self._flash = {"active": True, "percent": 0.0, "done": False,
+                       "error": "", "state": "setting him up"}
+
         def log(msg: str):
             self._set_auth("provision", msg)
+            self._flash.update(state=msg.strip() or "setting him up")
 
         try:
             res = await asyncio.to_thread(
                 oskr_setup.setup, ip, key, pod or config.WIREPOD_URL,
                 "auto", False, log)
         except SystemExit as e:
+            self._flash.update(active=False, state="failed", error=str(e))
             return {"ok": False, "step": "provision", "error": str(e)}
         except Exception as e:
+            self._flash.update(active=False, state="failed", error=str(e))
             return {"ok": False, "step": "provision",
                     "error": f"{type(e).__name__}: {e}"}
+        finally:
+            self._flash["active"] = False
 
         if res.get("verified"):
             msg = (f"{res['name']} is set up and answering — open the "

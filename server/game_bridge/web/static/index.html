@@ -1562,6 +1562,17 @@ async function bleOskrArchive() {
   $("oskrBar").innerHTML = `<span class="spin">◌</span> reading the archive & `
     + `setting up…<div class="hint">Detecting his key, then one reboot — keep `
     + `him on the charger.</div>`;
+  // Setup runs across his reboot, which is a long time to show a spinner with
+  // nothing behind it. The server reports each step through flash_status.
+  const tick = setInterval(async () => {
+    try {
+      const s = await (await fetch("/api/ble/flash_status")).json();
+      if (s.state && !s.error) {
+        $("oskrBar").innerHTML = `<span class="spin">◌</span> ${s.state}`
+          + `<div class="hint">Keep him on the charger and don't touch him.</div>`;
+      }
+    } catch (e) {}
+  }, 2000);
   const fd = new FormData();
   fd.append("archive", f, f.name);
   if (window.foundIp) fd.append("ip", window.foundIp);
@@ -1572,6 +1583,7 @@ async function bleOskrArchive() {
     try { res = JSON.parse(t); }
     catch { res = {ok:false, error:`server error (${r.status}): ${t.slice(0,160)}`}; }
   } catch (e) { res = {ok:false, error:String(e)}; }
+  clearInterval(tick);
   if (!res.ok) {
     $("oskrBar").style.display = "none";
     $("provErr").style.display = ""; $("provErr").textContent = res.error;

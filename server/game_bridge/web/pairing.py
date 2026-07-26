@@ -313,12 +313,22 @@ def write_config(serial: str, cert_file: str, ip: str, name: str,
     except configparser.ParsingError:
         if os.path.exists(config_file):
             os.rename(config_file, config_file + "-error")
-    config[serial] = {
+    entry = {
         "cert": cert_file,
         "ip": ip,
         "name": name,
         "guid": guid.decode("utf-8"),
     }
+    # The robot you just set up goes FIRST. Anything that asks "which robot?"
+    # without naming one takes the first section, so appending left the bridge
+    # driving whichever robot was paired longest ago -- switched off, most
+    # likely, since you were busy setting up a different one.
+    rest = {s: dict(config[s]) for s in config.sections() if s != serial}
+    ordered = configparser.ConfigParser(strict=False)
+    ordered[serial] = entry
+    for s, values in rest.items():
+        ordered[s] = values
+    config = ordered
     temp_file = config_file + "-temp"
     if os.path.exists(config_file):
         os.rename(config_file, temp_file)

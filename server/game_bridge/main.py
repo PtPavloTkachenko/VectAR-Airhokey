@@ -74,6 +74,11 @@ class Bridge:
         self._busy_stopped = False
         self.battery = None  # (x, y) power cell the goalie should hunt
         self.link = None
+        # One connect at a time. The startup connect, the link watchdog and the
+        # dashboard's CONNECT button can all fire together; the SDK object is
+        # not built for that, and two overlapping attempts leave half-awaited
+        # coroutines behind and wedge the link.
+        self._connect_lock = asyncio.Lock()
         # Last link failure reason — survives link teardown so the dashboard can
         # explain a down link (cert rotated / robot moved / unreachable).
         self.last_link_hint = ""
@@ -787,6 +792,10 @@ class Bridge:
         """Connect + acquire control over the SDK (gRPC). NON-FATAL: returns
         False when the robot is unpaired or unreachable — the server keeps
         running so the web UI can pair and then retry via /api/connect."""
+        async with self._connect_lock:
+            return await self._connect_robot_locked()
+
+    async def _connect_robot_locked(self) -> bool:
         if self.robot_linked:
             return True   # already connected
         if self.link:
@@ -855,9 +864,7 @@ class Bridge:
         if self.mock_pose:
             self.pump = MockPosePump()
             logger.info("MOCK POSE mode — simulated goalie, no robot")
-        elif self.use_robot:
-            await self.connect_robot()   # non-fatal; web UI can retry
-        else:
+        elif not self.use_robot:
             logger.info("--no-robot: WS server only")
 
         await self.ws.start()
@@ -879,6 +886,14 @@ class Bridge:
                 await self.web.start()
             except Exception as e:
                 logger.warning(f"Web UI failed to start (continuing): {e}")
+
+        # Reach for the robot only once the console is up, and never block on
+        # him. Awaiting this first meant a robot who was switched off held the
+        # whole start hostage -- so the one page you would use to set him up
+        # never appeared, and the server looked hung.
+        if self.use_robot and not self.mock_pose:
+            asyncio.create_task(self.connect_robot())
+
         tasks = [self.pose_task(), self.goalie_task(), self.status_task(),
                  self.health_task(), self.control_watchdog(),
                  self.link_watchdog(),
