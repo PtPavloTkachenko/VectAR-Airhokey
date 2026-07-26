@@ -133,12 +133,19 @@ def setup(ip: str = "", key: str = "", pod: str = "", host_mode: str = "auto",
                               on_wait=on_wait)
     except pairing.PairingError as e:
         if e.step != pairing.STEP_CERT or not use_ble:
-            # This message is read in a browser as often as in a terminal, so
-            # it names the thing to do rather than a command-line flag.
-            hint = ("" if e.step != pairing.STEP_CERT else
-                    " Nothing has asked him to sign in yet — connect to him "
-                    "over Bluetooth once (double-press his backpack), then set "
-                    "him up again.")
+            # Both no-certificate and stale-certificate end the same way: the
+            # robot has to be ASKED to sign in, and that ask is a Bluetooth
+            # message. This text is read in a browser as often as in a
+            # terminal, so it names the thing to do, not a command-line flag.
+            hint = ""
+            if isinstance(e, pairing.StaleCertError):
+                hint = (" His cloud is set up correctly — this is the last "
+                        "step. Double-press his backpack, pair again, and "
+                        "press AUTHORIZE: that signs him in and replaces the "
+                        "old certificate.")
+            elif e.step == pairing.STEP_CERT:
+                hint = (" Nothing has asked him to sign in yet — double-press "
+                        "his backpack, pair again, and press AUTHORIZE.")
             raise SystemExit(f"{e.message}{hint}")
         log("no certificate for him yet — asking him to sign in over BLE")
         _ble_mint(serial, name)

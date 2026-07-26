@@ -190,6 +190,10 @@ def fetch_cert(pod: str, serial: str, wait: float = 0.0,
         "against THIS wire-pod.")
 
 
+class StaleCertError(PairingError):
+    """The engine's stored certificate predates the robot's factory reset."""
+
+
 def validate_cert_name(cert: bytes, robot_name: str) -> None:
     from cryptography import x509
     from cryptography.hazmat.backends import default_backend
@@ -198,10 +202,17 @@ def validate_cert_name(cert: bytes, robot_name: str) -> None:
     for field in parsed.subject:
         if "commonName" in str(field.oid):
             if field.value != robot_name:
-                raise PairingError(
+                # Not a mismatched name/serial pair -- almost always the SAME
+                # robot after a factory reset. His serial is fused and never
+                # changes, so the engine's per-serial store keeps handing back
+                # the certificate minted under his OLD name. He has to be asked
+                # to sign in again, which replaces it.
+                raise StaleCertError(
                     STEP_CERT,
-                    f"The certificate belongs to '{field.value}', not "
-                    f"'{robot_name}'. Check the robot name / serial pair.")
+                    f"The pairing engine still holds {field.value}'s "
+                    f"certificate for this serial, but he is now "
+                    f"{robot_name} — it was minted before his factory reset. "
+                    "He has to sign in once more so it gets replaced.")
             return
 
 

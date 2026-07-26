@@ -644,7 +644,17 @@ class WebUI:
                 "auto", False, log)
         except SystemExit as e:
             self._flash.update(active=False, state="failed", error=str(e))
-            return {"ok": False, "step": "provision", "error": str(e)}
+            # "He still has to sign in" is not an error the owner can act on by
+            # reading it -- it is one physical step. Flag it so the wizard can
+            # just ask for that step instead of explaining certificates.
+            msg = str(e)
+            if "sign in" in msg or "certificate" in msg:
+                return {"ok": False, "step": "signin", "needs_signin": True,
+                        "error": "Almost there — he needs to say hello to the "
+                                 "pairing engine once. Double-press his "
+                                 "backpack button and enter the PIN from his "
+                                 "face; that finishes it."}
+            return {"ok": False, "step": "provision", "error": msg}
         except Exception as e:
             self._flash.update(active=False, state="failed", error=str(e))
             return {"ok": False, "step": "provision",
@@ -978,12 +988,21 @@ class WebUI:
         except Exception as e:
             return web.json_response({"ok": False, "error": str(e)})
 
-    def _is_provisioned(self) -> bool:
-        """sdk_config.ini has a section with a real guid (not just an env serial)."""
+    def _is_provisioned(self, serial: str = "") -> bool:
+        """Does sdk_config.ini hold a real guid for THIS robot?
+
+        Asking "is any robot provisioned" was the same global-instead-of-
+        per-robot mistake as reading the identity without a serial: with a
+        second robot already set up, a failed mint reported success and the
+        wizard printed "credentials written" for a robot it had written
+        nothing for.
+        """
         import configparser
         try:
             c = configparser.ConfigParser(strict=False)
             c.read(config.SDK_CONFIG_PATH)
+            if serial:
+                return bool(c.has_section(serial) and c[serial].get("guid"))
             return any(c[s].get("guid") for s in c.sections())
         except Exception:
             return False
@@ -1102,7 +1121,7 @@ class WebUI:
                 self._set_auth("mint", "Minting this Mac's key…")
                 minted = True
             except pairing.PairingError as e:
-                if not self._is_provisioned():
+                if not self._is_provisioned(esn):
                     # An unprovisioned robot fails the mint because wire-pod has
                     # no cert for it — that's a setup problem, not a user error.
                     ready = await asyncio.to_thread(pairing.wirepod_status, pod)
@@ -1111,10 +1130,26 @@ class WebUI:
                          "wirepod": ready, "error": e.message})
                 # already provisioned -> mint optional, fall through to connect
             except Exception as e:
-                if not self._is_provisioned():
+                if not self._is_provisioned(esn):
                     return web.json_response({"ok": False, "error": str(e)})
 
-        if not self._is_provisioned() and not minted:
+        # The sign-in that creates his certificate only travels over Bluetooth.
+        # Without a session there is nothing to wait for, so say what to do
+        # instead of spending a minute polling and then blaming the setup.
+        #
+        # Only for a robot who has never been minted, though: one who already
+        # holds credentials and just lost his link needs RETRY, not a lecture
+        # about pairing. (That distinction is why this asks about THIS robot's
+        # serial rather than whether any robot is set up.)
+        if not minted and self._ble is None and not self._is_provisioned(esn):
+            return web.json_response(
+                {"ok": False, "step": "signin", "needs_signin": True,
+                 "error": "He hasn't said hello to the pairing engine yet, and "
+                          "that only goes over Bluetooth. Double-press his "
+                          "backpack button, enter the PIN from his face, and "
+                          "this finishes on its own."})
+
+        if not self._is_provisioned(esn) and not minted:
             # Two different causes, and blaming Wi-Fi (the old message) was
             # wrong in both. `needs_setup` lets the UI offer the fix without
             # pattern-matching English.

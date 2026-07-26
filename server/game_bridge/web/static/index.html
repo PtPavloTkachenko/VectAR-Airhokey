@@ -1810,6 +1810,16 @@ async function bleProvisionOskr(tryLogs) {
       chooseRoute("archive");
       return;
     }
+    // His cloud is set up; all that's left is one hello over Bluetooth. That
+    // is a physical step, not something to read about — put him back on the
+    // pairing screen with the one instruction and no protocol talk.
+    if (res.needs_signin) {
+      bleRestart();
+      $("blePairMsg").innerHTML =
+        `<b>Last step.</b> Double-press his backpack button and enter the PIN `
+        + `from his face — that finishes the setup.`;
+      return;
+    }
     $("provErr").style.display = "";
     $("provErr").textContent = res.error;
     if (res.needs_key) {
