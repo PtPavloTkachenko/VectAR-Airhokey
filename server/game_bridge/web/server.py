@@ -484,16 +484,12 @@ class WebUI:
                               "(his name changes after a factory reset, so an "
                               "older key won't match)"})
 
-        # Nothing to go on: offer the key box first, and only scrape the logs
-        # when explicitly asked — the full bundle is ~149k BLE packets.
+        # Nothing to go on: take his key off him over Bluetooth. A dev robot
+        # ships his own private key inside his log bundle, and that bundle is
+        # small -- measured on a live unit, 55 KB in 26 s. We used to ask the
+        # user to fetch an archive by hand instead, because a progress counter
+        # was reading BYTES as packets and made this look like a day's work.
         if not await asyncio.to_thread(prov.ssh_reachable, ip, str(key)):
-            if not body.get("try_logs"):
-                return web.json_response(
-                    {"ok": False, "step": "ssh_key", "needs_key": True,
-                     "error": "Vector is a dev (OSKR) robot — drop his log "
-                              "archive below (from the official app's Save Logs) "
-                              "and we'll detect his key, or paste the key if you "
-                              "have it."})
             self._flash = {"active": True, "percent": 0.0, "done": False,
                            "error": "", "state": "downloading logs"}
 
@@ -503,25 +499,27 @@ class WebUI:
                 self._flash.update(percent=round(p.get("percent", 0.0), 1),
                                    state=f"downloading logs ({kb} KB)")
 
+            bundle, found = b"", ""
             try:
                 bundle = await self._ble.download_logs(
                     progress_cb=_logs_progress,
                     mode=int(body.get("log_mode", 0)),
                     filters=body.get("log_filters") or None)
+                found = await asyncio.to_thread(prov.extract_ssh_key, bundle)
             except Exception as e:
                 self._flash.update(active=False, state="failed", error=str(e))
-                return web.json_response(
-                    {"ok": False, "step": "logs",
-                     "error": f"could not download Vector's logs over "
-                              f"Bluetooth ({e}). They carry his SSH key, which "
-                              "is how a dev robot grants access."})
-            found = await asyncio.to_thread(prov.extract_ssh_key, bundle)
+                logger.warning(f"BLE log download failed: {e}")
             if not found:
+                # Only now is it worth making this the user's problem.
+                self._flash.update(active=False, state="")
+                why = ("his logs came down but carry no SSH key"
+                       if bundle else
+                       "his logs wouldn't come down over Bluetooth")
                 return web.json_response(
-                    {"ok": False, "step": "logs",
-                     "error": "Vector's logs downloaded, but they contain no "
-                              "SSH private key — this build may not ship one in "
-                              "/data/ssh."})
+                    {"ok": False, "step": "ssh_key", "needs_key": True,
+                     "error": f"Vector is a dev (OSKR) robot and {why}. Drop "
+                              "his log archive below (the official app's Save "
+                              "Logs), or paste his key if you have it."})
             key = await asyncio.to_thread(
                 prov.save_ssh_key, found, config.ROBOT_SSH_KEY)
             logger.info(f"recovered Vector's SSH key from his logs -> {key}")
@@ -580,9 +578,12 @@ class WebUI:
         The user downloads his logs with the official Vector setup web app
         (vector-web-setup.anki.bot -> Save Logs, a .tar.bz2), then drops that
         file here. We detect the SSH key inside it, find the robot on the LAN by
-        the name in the archive, and point his cloud at wire-pod over SSH. This
-        sidesteps our Python BLE log download, which stalls on long transfers
-        (Chrome's BLE stack doesn't) — see docs/BLE_PROTOCOL_OFFICIAL.md.
+        the name in the archive, and point his cloud at wire-pod over SSH.
+
+        This is the FALLBACK. The BLE route takes his key off him in about half
+        a minute with nothing to download by hand, and is what the wizard tries
+        first; this path is for a robot who won't hand his logs over, or an
+        owner who already has the key.
         """
         from onboarding import oskr_provision as prov
         try:

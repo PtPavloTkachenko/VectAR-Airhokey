@@ -1,5 +1,8 @@
-"""Recover THIS robot's own SSH key from its logs over BLE, using a narrowed
-request so we don't pull the whole ~149k-packet bundle.
+"""Recover THIS robot's own SSH key from its logs over BLE.
+
+(The narrowing this once tried to do is unnecessary: the full bundle measures
+55 KB / 26 s on a live dev unit. The "~149k packets" it was avoiding was a byte
+count misread as packets.)
 
 The robot trusts two keys: its own /data/ssh/id_rsa_Vector-XXXX (regenerated on
 every Clear User Data) and DDL's dev key (whose private half DDL never

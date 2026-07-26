@@ -115,8 +115,13 @@ class VectorBLE:
 
         def cb(dev, adv):
             name = adv.local_name or (dev.name or "")
-            # Vector's name is often None on macOS CoreBluetooth, so match on
-            # the RTS service UUID (fee3) — that's what the Go lib keys on too.
+            # His CUBE also advertises, and it is called "Vector Cube" — so a
+            # plain "starts with Vector" match offers it as a robot, and
+            # connecting to it dies on a missing characteristic. The robot is
+            # "Vector-XXXX" (or nameless on macOS CoreBluetooth, which is why
+            # the service UUID match has to stay).
+            if "cube" in name.lower():
+                return
             svcs = [str(u).lower() for u in (adv.service_uuids or [])]
             is_vector = name.startswith("Vector") or any(
                 "fee3" in u for u in svcs)
@@ -135,7 +140,10 @@ class VectorBLE:
         await scanner.start()
         await asyncio.sleep(timeout)
         await scanner.stop()
-        return sorted(found.values(), key=lambda r: -r["rssi"])
+        # A robot who is actually in pairing mode outranks a stronger signal
+        # from one who isn't: the flag is what says "he is waiting for you".
+        return sorted(found.values(),
+                      key=lambda r: (not r["pairing"], -r["rssi"]))
 
     async def connect(self, address: str, name: str | None = None) -> None:
         self._loop = asyncio.get_running_loop()

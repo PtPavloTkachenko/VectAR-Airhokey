@@ -1,5 +1,9 @@
 """Probe the robot's BLE log request to find a mode/filter that returns a SMALL
-bundle (we only want /data/ssh out of it — the full bundle is ~149k packets).
+bundle.
+
+Kept for the record; it is no longer needed. The premise was that the full
+bundle is ~149k packets, which was PacketTotal (a byte count) misread as
+packets. Measured for real: 55 KB in 26 s.
 
 For each (mode, filters) we send RtsLogRequest, then read only the FIRST
 RtsFileDownload packet, whose PacketTotal tells us how big that bundle would be

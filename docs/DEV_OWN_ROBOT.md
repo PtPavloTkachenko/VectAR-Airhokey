@@ -11,18 +11,23 @@ python -m onboarding.oskr_provision --ip <robot-ip> --key ~/.vectar/id_rsa_robot
 
 ## The one thing you need: his SSH key
 
-That's what makes a unit OSKR — the owner has a key. It comes from the robot's
-own log archive: he generates a keypair in `/data/ssh` and ships the private
-half inside his logs. Three ways to get it, best first:
+That's what makes a unit OSKR — the owner has a key. He generates a keypair in
+`/data/ssh` and ships the private half inside his own logs, and we can ask him
+for those logs over Bluetooth. Nobody has to fetch anything:
 
 | Route | Cost | Notes |
 |---|---|---|
+| **BLE log download** | **~26 s** | What the wizard does by itself. Measured on a live unit: 55 718 bytes, 2.1 KB/s, key inside |
 | Paste the key you already have | seconds | An OSKR owner has one |
-| Official log archive | a minute | Vector's setup web app → Save Logs → drop the `.tar.bz2` into the wizard |
-| Our BLE log download | slow, flaky | Kept as a fallback; long transfers stall |
+| Official log archive | a minute | Fallback: Vector's setup web app → Save Logs → drop the `.tar.bz2` in |
+
+> The archive step used to be the headline route because a progress counter
+> read `PacketTotal` — a **byte** count — as a packet count, which turned a
+> 55 KB transfer into "~149k packets, about a day". Nothing was wrong with the
+> download.
 
 A Clear User Data wipe does not lock you out — it just regenerates the pair, so
-pull a fresh archive and you have the new key. The robot's name changes at the
+pull the logs again and you have the new key. The robot's name changes at the
 same time, which is why an older key stops working: it belongs to the old name.
 
 ## What provisioning writes
@@ -107,9 +112,25 @@ The rest of what the script settles:
 | Rule | Detail |
 |---|---|
 | Build type | `ankidev` OS installs only `ankidev` images, and vice versa (die 214) — symmetric, and about the manifest field, not the version string |
-| Version suffixes | the accepted set is `d`, `ud`, `oskr`, `ep`, `epdev` — which is why classification keys off `oskr`, not `ankidev` |
+| Version suffixes | the accepted set is `d`, `ud`, `oskr`, `ep`, `epdev` |
 | Encryption | fixed passphrase file `/anki/etc/ota.pas`; images are `aes-256-ctr` |
 | Downgrade | allowed on a dev robot via `UPDATE_ENGINE_ALLOW_DOWNGRADE` |
+
+## How he identifies himself over Bluetooth
+
+Classification reads one string and nothing else. Captured from a live dev unit:
+
+```
+v2.0.1.6091-f61178e_os2.0.1.6091oskr-14ae740-202509231819-ankidev
+```
+
+It carries **both** markers, `oskr` and `ankidev`, so either match routes him
+correctly — `in_firmware_dev`, straight to SSH, no firmware install. Worth
+knowing because the on-disk files disagree: `/etc/os-version` is
+`2.0.1.6091oskr` and the word `ankidev` appears nowhere under `/etc` or
+`/anki/etc`. It is appended when the status message is assembled, and it is a
+manifest field for OTAs. We match either marker, so a build that reports only
+one of them is still read correctly.
 
 ## When he will not mint: fault 923
 

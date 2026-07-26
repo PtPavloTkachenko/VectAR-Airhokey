@@ -60,3 +60,14 @@ def test_a_stock_robot_on_normal_firmware_needs_the_install():
 
 def test_an_already_escape_pod_robot_goes_straight_to_pairing():
     assert m.classify_robot(STOCK_EP) == m.STATE_FIRMWARE_EP
+
+
+# Captured from a live dev unit over BLE, 2026-07-26. It carries BOTH markers;
+# the on-disk files carry only `oskr`, so this is the string that settles it.
+LIVE_OSKR_BLE = "v2.0.1.6091-f61178e_os2.0.1.6091oskr-14ae740-202509231819-ankidev"
+
+
+def test_the_string_a_real_dev_robot_sends_over_ble():
+    assert m.is_dev_robot(LIVE_OSKR_BLE)
+    assert not m.is_recovery(LIVE_OSKR_BLE)
+    assert m.classify_robot(LIVE_OSKR_BLE) == m.STATE_FIRMWARE_DEV

@@ -235,9 +235,12 @@ class RtsSession:
         Wire flow: RtsLogRequest -> RtsLogResponse{exit_code,file_id} -> a
         stream of RtsFileDownload chunks that we reassemble in packet order.
         """
-        # An unfiltered request bundles EVERY log the robot has — measured at
-        # ~149k BLE packets (≈a day at observed throughput), so mode/filters
-        # matter: we only want /data/ssh out of it.
+        # An unfiltered request bundles every log the robot has, and that is
+        # fine: measured on a live dev unit at 55 KB in 26 s. The old note here
+        # said ~149k packets and "about a day" -- that came from reading
+        # PacketTotal, which is a BYTE count, as a packet count. The mistake
+        # cost us the whole automatic path: we sent people off to fetch a log
+        # archive by hand instead.
         await self._send(m.log_request(mode=mode, filters=filters,
                                        version=self.version))
         loop = asyncio.get_event_loop()

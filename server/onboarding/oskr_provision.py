@@ -341,15 +341,35 @@ def quiet_cloud_uploaders(ip: str, key: str) -> str:
     if (queued.strip() or "0") != "0":
         ssh(ip, key, "rm -f /data/fault-reports/*")
         changed.append(f"cleared {queued.strip()} queued fault report(s)")
+    # Mask, not disable: these units are pulled in by anki-robot.target, so
+    # `disable` leaves them startable.
+    #
+    # Masking writes a symlink into /etc/systemd/system, which lives on the
+    # READ-ONLY rootfs. Without opening a write window the command reports
+    # success, changes nothing, and the units come back enabled after every
+    # reboot — which is exactly what we saw: "masked" printed on every run and
+    # fault 923 returning anyway.
+    todo = []
     for unit in ("vic-log-uploader", "vic-crashuploader"):
-        # Mask, not disable: these units are pulled in by anki-robot.target, so
-        # `disable` leaves them startable and `is-enabled` keeps reporting
-        # "static" — which read as "still needs doing" on every single run.
         _, state = ssh(ip, key, f"systemctl is-enabled {unit} 2>/dev/null")
         if "masked" not in state:
-            ssh(ip, key, f"systemctl stop {unit} 2>/dev/null; "
-                         f"systemctl mask {unit} 2>/dev/null")
-            changed.append(f"masked {unit}")
+            todo.append(unit)
+    if todo:
+        _, out = ssh(ip, key, "mount -o remount,rw / && echo RW_OK")
+        if "RW_OK" not in out:
+            changed.append("could not mask the uploaders (rootfs read-only)")
+        else:
+            try:
+                for unit in todo:
+                    ssh(ip, key, f"systemctl stop {unit} 2>/dev/null; "
+                                 f"systemctl mask {unit} 2>/dev/null")
+                    _, state = ssh(ip, key,
+                                   f"systemctl is-enabled {unit} 2>/dev/null")
+                    changed.append(
+                        f"masked {unit}" if "masked" in state
+                        else f"FAILED to mask {unit} ({state.strip()})")
+            finally:
+                ssh(ip, key, "mount -o remount,ro /")
     _, alive = ssh(ip, key, "pgrep vic-cloud >/dev/null && echo UP || echo DOWN")
     if "DOWN" in alive:
         ssh(ip, key, "systemctl reset-failed vic-cloud; systemctl start vic-cloud")

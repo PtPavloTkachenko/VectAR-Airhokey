@@ -1728,9 +1728,9 @@ async function bleProvisionOskr(tryLogs) {
     $("provErr").style.display = "";
     $("provErr").textContent = res.error;
     if (res.needs_key) {
-      // Reliable OSKR route: drop his log archive from the official Save Logs
-      // (Chrome sustains that full download; our BLE one stalls on long
-      // transfers — see docs/BLE_PROTOCOL_OFFICIAL.md). We detect the key inside.
+      // Fallback only: we reach this after the BLE log download has already
+      // been tried and didn't yield a key. Normally it does, in about half a
+      // minute, and nobody has to fetch anything.
       $("provBody").innerHTML =
         `<div class="hint">This is a <span class="key">dev (OSKR)</span> Vector — `
         + `he grants access with his own SSH key, which lives inside his logs.</div>`
