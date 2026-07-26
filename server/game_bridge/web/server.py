@@ -82,6 +82,7 @@ class WebUI:
             web.post("/api/ble/authorize", self.api_ble_authorize),
             web.post("/api/ble/disconnect", self.api_ble_disconnect),
             web.post("/api/ble/state", self.api_ble_state),
+            web.post("/api/ble/mark_build_type", self.api_ble_mark_build_type),
             web.post("/api/ble/flash_ep", self.api_ble_flash_ep),
             web.get("/api/ble/flash_status", self.api_ble_flash_status),
             web.post("/api/ble/provision_oskr", self.api_ble_provision_oskr),
@@ -279,19 +280,22 @@ class WebUI:
         for ip in (ips or "").split(","):
             add(ip, _n, _s)
 
-        # Fill in the identity we already hold for that address, and vice versa.
+        # Fill in the serial for a robot a LIVE source has named. Never name a
+        # robot from his address alone: an address is reused, and a stale entry
+        # then christens a stranger. It did exactly that -- a freshly wiped
+        # robot (new name, no token) answered a ping on the address the old one
+        # used, so the wizard greeted him by the old name and skipped the whole
+        # setup as though he were already done.
         for c in cands:
-            if c["name"] and c["serial"]:
-                continue
-            known = config.identity_for(ip=c["ip"], name=c["name"])
-            c["name"] = c["name"] or known.get("name", "")
-            c["serial"] = c["serial"] or known.get("serial", "")
+            if c["name"] and not c["serial"]:
+                c["serial"] = config.identity_for(name=c["name"]).get("serial", "")
 
         for c in cands:
             if await port_open(c["ip"]):
                 return web.json_response(
                     {"on_wifi": True, "ip": c["ip"], "gateway": True,
-                     "name": c["name"], "serial": c["serial"]})
+                     "name": c["name"], "serial": c["serial"],
+                     "identified": bool(c["name"])})
         # reachable but gateway down?
         for c in cands:
             try:
@@ -301,7 +305,8 @@ class WebUI:
                 if await proc.wait() == 0:
                     return web.json_response(
                         {"on_wifi": True, "ip": c["ip"], "gateway": False,
-                         "name": c["name"], "serial": c["serial"]})
+                         "name": c["name"], "serial": c["serial"],
+                         "identified": bool(c["name"])})
             except Exception:
                 pass
         return web.json_response({"on_wifi": False})
@@ -380,6 +385,34 @@ class WebUI:
             return web.json_response(
                 {"ok": False, "error": f"{type(e).__name__}: {e}"}, status=500)
 
+    async def api_ble_mark_build_type(self, req):
+        """The owner tells us what this robot is, when he cannot tell us.
+
+        In recovery he reports no build marker and no ESN, so a dev robot and a
+        stock one are genuinely indistinguishable. Guessing costs a rejected
+        firmware install; asking costs one click, and we only ever ask once —
+        his Bluetooth address survives factory resets.
+        """
+        if not self._ble:
+            return web.json_response(
+                {"ok": False, "error": "no BLE session — pair over BLE first"},
+                status=409)
+        try:
+            body = await req.json()
+        except Exception:
+            body = {}
+        kind = body.get("build_type", "")
+        if kind not in ("dev", "stock"):
+            return web.json_response(
+                {"ok": False, "error": "build_type must be 'dev' or 'stock'"},
+                status=400)
+        esn = getattr(self._ble, "esn", "") or ""
+        addr = getattr(getattr(self._ble, "ble", None), "address", "") or ""
+        config.remember_build_type(kind, esn, addr)
+        logger.info(f"owner says this robot is {kind} ({addr or esn or '?'})")
+        return web.json_response({"ok": True, "build_type": kind,
+                                  "remembered_as": addr or esn})
+
     async def api_ble_flash_ep(self, req):
         """Flash the escape-pod firmware over the live BLE session."""
         if not self._ble:
@@ -430,8 +463,29 @@ class WebUI:
                                    state="rebooting")
                 logger.info("escape-pod firmware flashed — robot rebooting")
             except Exception as e:
-                self._flash.update(active=False, error=f"{type(e).__name__}: {e}",
-                                   state="failed")
+                # A 214 rejection is not a failure to work around: it is the
+                # robot telling us what he is. His build-type gate only refuses
+                # this image because he runs a dev (ankidev/OSKR) build, which
+                # his RECOVERY version string cannot say. Record it so he is
+                # never offered firmware again, and point at the path he
+                # actually needs.
+                msg = f"{type(e).__name__}: {e}"
+                if "214" in str(e):
+                    esn = getattr(self._ble, "esn", "") or ""
+                    addr = getattr(getattr(self._ble, "ble", None),
+                                   "address", "") or ""
+                    config.remember_build_type("dev", esn, addr)
+                    logger.info(f"recorded as a dev robot (214 gate) {addr}")
+                    msg = (
+                        "He is a dev (OSKR) robot, so he does not need this "
+                        "firmware at all — his own build-type gate refused it "
+                        "(214). Restart him out of recovery (hold the backpack "
+                        "button ~5 s, then put him on the charger), pair again, "
+                        "and this wizard will set him up over SSH instead. He "
+                        "is remembered now, so the firmware step won't be "
+                        "offered again.")
+                self._flash.update(active=False, error=msg, state="failed",
+                                   needs_dev_path="214" in str(e))
                 logger.warning(f"ep flash failed: {e}")
 
         asyncio.create_task(run())

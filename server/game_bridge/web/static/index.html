@@ -479,6 +479,14 @@ async function onboardStartInner() {
   window.foundName = f.name || "";
   window.foundSerial = f.serial || "";
   const who = f.name ? `<b>${f.name}</b>` : "Vector";
+  // The shortcut is for a robot we can NAME. Something merely answering at an
+  // address we used before is not an identification -- after a factory reset
+  // that is a different robot with a new name and no token, and skipping
+  // setup for him leaves you at "authorize" forever.
+  if (!f.identified) {
+    chooseRoute("ble"); bleStep(0);
+    return;
+  }
   if (f.on_wifi && f.gateway) {
     // already online + ready — skip straight to authorize
     chooseRoute("ble"); bleStep(3);
@@ -1607,6 +1615,18 @@ async function bleOskrArchive() {
 // Runs right after the BLE PIN, when we can read the firmware string. A stock
 // robot needs the escape-pod firmware flashed (one time, then any Wi-Fi works);
 // an OSKR robot is provisioned over SSH instead; an already-ep robot skips it.
+// He can't tell us in recovery, so the owner can. Remembered against his
+// Bluetooth address, which survives a factory reset — asked once, ever.
+async function markDevRobot() {
+  try {
+    await api("/api/ble/mark_build_type", {build_type: "dev"});
+  } catch (e) {
+    $("provErr").style.display = ""; $("provErr").textContent = String(e);
+    return;
+  }
+  bleProvision();   // re-reads his state, now classified as a dev robot
+}
+
 async function bleProvision() {
   bleStepShow("Prov");
   $("provErr").style.display = "none";
@@ -1635,9 +1655,10 @@ async function bleProvision() {
       `<div class="ok">Already set up for wire-pod — nothing to install.</div>`
       + `<button onclick="bleStep(3)">CONTINUE →</button>`;
   } else if (st.state === "in_recovery_prod") {
-    // Recovery on a PRODUCTION robot: the state wire-pod flashes from. (A dev
-    // robot in recovery is still ankidev and would fail with 214, so it falls
-    // through to the dev branch below.)
+    // Recovery, and we could NOT tell what he is: in this mode he reports no
+    // build marker and no ESN, so a dev robot looks exactly like a stock one.
+    // Offer the install, but say plainly that a dev robot must not take it —
+    // otherwise the only way to find out is a rejected flash (die 214).
     $("provBody").innerHTML =
       `<div class="ok">He's in recovery mode — ready to install.</div>`
       + `<div class="hint">This installs the <span class="key">escape-pod `
@@ -1648,9 +1669,32 @@ async function bleProvision() {
       + `the Vector app") — that's expected; you come back here, pair again `
       + `and authorize, and this wizard clears it.</div>`
       + `<div id="flashBar" class="hint" style="display:none"></div>`
-      + `<button onclick="bleFlashEp()" id="btnFlash">INSTALL FIRMWARE →</button>`;
-  } else if (st.state === "in_firmware_dev" || st.state === "in_recovery_dev") {
-    // OSKR/dev: no flash needed — we install our SSH key over this same BLE
+      + `<button onclick="bleFlashEp()" id="btnFlash">INSTALL FIRMWARE →</button>`
+      + `<div class="hint" style="margin-top:14px">In recovery Vector doesn't `
+      + `say which build he runs, so we can't tell a <span class="key">dev / `
+      + `OSKR</span> robot from a stock one here. A dev robot must NOT take `
+      + `this firmware — his own build type refuses it.</div>`
+      + `<button class="secondary" onclick="markDevRobot()">`
+      + `THIS IS A DEV / OSKR ROBOT →</button>`;
+  } else if (st.state === "in_recovery_dev") {
+    // A dev robot in RECOVERY can't be set up at all: recovery is a minimal OS
+    // with no /data/ssh and none of his services, so the SSH path has nothing
+    // to talk to — and the firmware path is refused by his own build-type gate
+    // (214). He simply has to leave recovery first.
+    $("provBody").innerHTML =
+      `<div class="hint">This is an <span class="key">OSKR / dev</span> robot, `
+      + `and he's sitting in <b>recovery mode</b>. He needs no firmware — his `
+      + `own build type refuses the escape-pod image — but recovery has none of `
+      + `his services running either, so there's nothing here to set up yet.</div>`
+      + `<div class="vec-step" style="margin-top:10px"><span class="numdot">1</span>`
+      + `<span>Restart him out of recovery: hold his backpack button ~5 s until `
+      + `he switches off, then put him back on the charger.</span></div>`
+      + `<div class="vec-step"><span class="numdot">2</span><span>Double-press `
+      + `the backpack again and pair — this wizard then sets him up over SSH, `
+      + `no firmware involved.</span></div>`
+      + `<button onclick="bleRestart()">PAIR AGAIN (once he's up) →</button>`;
+  } else if (st.state === "in_firmware_dev") {
+    // OSKR/dev: no flash needed — we take his SSH key over this same BLE
     // session and write the cloud config. One button, no terminal.
     $("provBody").innerHTML =
       `<div class="hint">This is an <span class="key">OSKR / dev</span> robot — `

@@ -71,6 +71,56 @@ def ssh_public_key() -> str:
     return pub.read_text().strip()
 
 
+ROBOT_FACTS = Path(os.getenv(
+    "VECTAR_ROBOT_FACTS", str(Path.home() / ".vectar" / "robots.json")))
+
+
+def _facts() -> dict:
+    import json
+    try:
+        return json.loads(ROBOT_FACTS.read_text())
+    except Exception:
+        return {}
+
+
+def remember_build_type(kind: str, *ids: str) -> None:
+    """Record that this robot is a dev (OSKR) or a stock one, under every id.
+
+    His RECOVERY OS reports `v0.9.3.0_os0.9.3.0-...`, carries no build marker,
+    AND returns an empty ESN -- so while he sits there nothing he says can tell
+    a dev robot from a stock one, and guessing wrong sends him to install
+    firmware his own build-type gate rejects (die 214).
+
+    Hence several ids: his Bluetooth address is hardware and survives a factory
+    reset (his name does not), so it is the one thing we can still recognise
+    him by in recovery. The ESN is recorded too, for when he is booted normally.
+    """
+    import json
+    if kind not in ("dev", "stock"):
+        return
+    keys = [i.strip().lower() for i in ids if i and i.strip()]
+    if not keys:
+        return
+    facts = _facts()
+    for k in keys:
+        facts.setdefault(k, {})["build_type"] = kind
+    try:
+        ROBOT_FACTS.parent.mkdir(parents=True, exist_ok=True)
+        ROBOT_FACTS.write_text(json.dumps(facts, indent=2))
+    except Exception:
+        pass
+
+
+def known_build_type(*ids: str) -> str:
+    """'dev' | 'stock' | '' — what we learned about any of these ids before."""
+    facts = _facts()
+    for i in ids:
+        i = (i or "").strip().lower()
+        if i and (facts.get(i) or {}).get("build_type"):
+            return facts[i]["build_type"]
+    return ""
+
+
 def identity_for(ip: str = "", name: str = "") -> dict:
     """Which paired robot is this address / name? {} if we don't know him.
 
@@ -88,11 +138,19 @@ def identity_for(ip: str = "", name: str = "") -> dict:
         cfg.read(SDK_CONFIG_PATH)
     except Exception:
         return {}
-    for sect in cfg.sections():
-        s_ip = cfg[sect].get("ip", "").strip()
-        s_name = cfg[sect].get("name", "").strip()
-        if (ip and s_ip == ip) or (name and s_name.lower() == name):
-            return {"serial": sect, "ip": s_ip, "name": s_name}
+    # Name first, address second. A name identifies a robot; an address is
+    # borrowed from DHCP and gets handed to whoever is next, so matching on it
+    # first would answer with the previous tenant. (His ESN never changes, but
+    # his NAME does -- a factory reset gives him a new one.)
+    for key, want in (("name", name), ("ip", ip)):
+        if not want:
+            continue
+        for sect in cfg.sections():
+            have = cfg[sect].get(key, "").strip()
+            if have.lower() == want.lower():
+                return {"serial": sect,
+                        "ip": cfg[sect].get("ip", "").strip(),
+                        "name": cfg[sect].get("name", "").strip()}
     return {}
 
 

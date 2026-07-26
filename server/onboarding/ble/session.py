@@ -335,8 +335,28 @@ class RtsSession:
                 ip = await self.wifi_ip()
             except Exception as e:
                 logger.debug(f"wifi_ip lookup failed: {e}")
-        return {"state": m.classify_robot(fw), "firmware": fw,
-                "esn": st.get("esn", ""), "wifi_state": st.get("wifi_state"),
+        esn = st.get("esn", "")
+        addr = getattr(self.ble, "address", "") or ""
+        state = m.classify_robot(fw)
+        # In recovery he reports no build marker AND no ESN, so his version
+        # string cannot tell a dev robot from a stock one -- and offering the
+        # production escape-pod image to a dev robot ends in die 214. His
+        # Bluetooth address is the only stable thing left, so what we learned
+        # under it before outranks the guess.
+        try:
+            from game_bridge import config as _gc
+            if state == m.STATE_RECOVERY_PROD:
+                if _gc.known_build_type(esn, addr) == "dev":
+                    state = m.STATE_RECOVERY_DEV
+                    logger.info("known dev robot — recovery reclassified")
+            elif state == m.STATE_FIRMWARE_DEV:
+                _gc.remember_build_type("dev", esn, addr)
+            elif state in (m.STATE_FIRMWARE_EP, m.STATE_FIRMWARE_NONEP):
+                _gc.remember_build_type("stock", esn, addr)
+        except Exception as e:
+            logger.debug(f"build-type memory failed: {e}")
+        return {"state": state, "firmware": fw, "ble_address": addr,
+                "esn": esn, "wifi_state": st.get("wifi_state"),
                 "ip": ip}
 
     async def ota_flash(self, url: str, progress_cb=None,
