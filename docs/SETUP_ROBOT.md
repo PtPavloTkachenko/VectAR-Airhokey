@@ -45,6 +45,9 @@ points him at wire-pod for good.
   **hold the back button ~15 seconds** until his face shows `anki.com/v`, then
   start over. Recovery accepts the install.
 
+This install changes his everyday life in ways worth knowing before you start —
+see [What the firmware install changes](#what-the-firmware-install-changes).
+
 ### OSKR / dev Vector
 
 An OSKR (developer-unlocked) robot. These can't take the escape-pod firmware, so
@@ -75,6 +78,87 @@ the wizard uses **SSH** instead — no flashing. **SET UP THIS ROBOT** then:
 > key saved before the wipe no longer matches. That is fine: the wizard fetches
 > the new one the same way. His control token goes too, and gets re-minted
 > during Authorize.
+
+## What the firmware install changes
+
+Only stock robots are flashed. On an OSKR / dev robot nothing here applies — the
+wizard edits two files over SSH and both are trivially reversible.
+
+### What stays exactly the same
+
+The escape-pod image is **Digital Dream Labs' own production 2.x firmware with
+one setting changed**, not custom software. Everything he does by himself is the
+same code it always was: roaming your desk, his eyes and animations, mapping and
+navigation, finding his charger, recognising faces, petting, the cube, the
+timer, edge detection. Nobody replaces his personality.
+
+### What changes: his cloud is now your Mac
+
+The one changed setting points his cloud — sign-in, settings sync, and voice
+requests — at `escapepod.local` instead of Anki's servers. In practice:
+
+- **Cloud voice stops answering unless something is serving it.** "Hey Vector,
+  what's the weather" is a cloud request, and it now arrives at your Mac. With
+  the pairing engine not running, those requests simply time out. Everything
+  local — the back button, picking him up, the cube, his own behaviours —
+  is unaffected.
+- **This project's pairing engine does not do speech at all.** It is built
+  deliberately without the voice models so it starts in seconds instead of
+  pulling hundreds of megabytes you don't need to play air hockey. So while
+  *only* our server is running, cloud voice commands will not answer. If you
+  want them back, run [full wire-pod](https://github.com/kercre123/wire-pod) —
+  the same engine with speech recognition included, pointed at the same name.
+- **The official Vector app can no longer sign him in.** It can still find and
+  pair with him over Bluetooth, but the sign-in it triggers goes wherever his
+  firmware says, and his firmware now says `escapepod.local`.
+- **He stops getting firmware updates from Digital Dream Labs.** He stays on the
+  escape-pod build until you install something else yourself.
+
+### A factory reset does not undo it
+
+**Clear User Data** wipes `/data` — his Wi-Fi, faces, tokens and name. The cloud
+setting is not in `/data`; it lives in the read-only system partition that the
+firmware image owns (`/anki/data/assets/cozmo_resources/config/server_config.json`).
+So a wiped robot comes back as a *factory-fresh escape-pod robot*: the wizard
+sees he is already flashed and skips straight past that step.
+
+Neither the official app nor a reset is a way back. Only another firmware
+install is.
+
+### Going back to stock
+
+The same route in reverse — recovery mode, then install a stock image over
+Bluetooth instead of the escape-pod one.
+
+1. **Get a stock image for his hardware.** Digital Dream Labs' own firmware
+   mirror serves them: `vectorfirmware.ddlbot.ai/vicos/`. Take the **plain**
+   name, e.g. `vicos-2.0.1.6091.ota` — not the `oskr` or `d` variant.
+2. **Put it where the server serves OTAs from:** `~/.vectar/ota/`.
+3. **Put him in recovery** — on the charger, hold the back button ~15 s until
+   his face shows `anki.com/v`.
+4. **Pair and give him Wi-Fi in the wizard** (he downloads the image himself, so
+   he needs a network), then trigger the install with that filename:
+
+   ```bash
+   curl -sX POST localhost:8780/api/ble/flash_ep \
+     -H 'content-type: application/json' \
+     -d '{"ota": "vicos-2.0.1.6091.ota", "force": true}'
+   ```
+
+   `force` is required: the wizard normally refuses to flash unless the pairing
+   engine is in escape-pod mode, which is a guard on the way *in* and meaningless
+   on the way out.
+5. **Keep him on the charger until he reboots.** He then comes up as an ordinary
+   Vector again, pointed at Anki's cloud, and you set him up with the official
+   Vector app.
+
+> **Honest status: we have not run this.** The install machinery is the same one
+> proven on hardware in both directions of the setup, and the robot keeps his
+> recovery mode and his A/B slots throughout — a failed install is a retry, not
+> a brick. But the specific case of installing a stock image *over* the
+> escape-pod one is untested here, and firmware refuses installs on its own
+> build-type checks in ways that are not always obvious. Treat it as a
+> documented route, not a guarantee.
 
 ## Troubleshooting
 

@@ -31,9 +31,10 @@ WIREPOD_URL = os.getenv("WIREPOD_URL", "http://localhost:8080")
 # --- Stock-robot provisioning (escape-pod firmware) ---
 # A plain stock Vector's cloud is ddl.io; flashing the "ep" firmware over BLE
 # bakes server_config -> escapepod.local so it finds wire-pod on any Wi-Fi.
-# The .ota is NOT vendored (≈180 MB) — drop it in OTA_CACHE_DIR to serve it
-# locally/offline, otherwise the server streams it from the Internet Archive
-# (same source upstream wire-pod proxies).
+# Served from OTA_CACHE_DIR first, then OTA_REPO_DIR, then the Internet Archive
+# (the same source upstream wire-pod proxies). Drop any other image in
+# OTA_CACHE_DIR and name it in the flash request to install that one instead —
+# that is how a robot goes back to stock (docs/SETUP_ROBOT.md).
 EP_OTA_NAME = os.getenv("EP_OTA_NAME", "vicos-2.0.1.6076ep.ota")
 OTA_CACHE_DIR = Path(os.getenv(
     "OTA_CACHE_DIR", str(Path.home() / ".vectar" / "ota")))

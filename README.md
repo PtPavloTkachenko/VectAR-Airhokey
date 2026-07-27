@@ -107,7 +107,11 @@ Where each piece stands today:
 The onboarding automation splits into two independent tracks:
 
 - **Stock (consumer) Vector** — **verified end-to-end**, as above. Budget ~10
-  minutes, most of it waiting on the firmware install and one reboot.
+  minutes, most of it waiting on the firmware install and one reboot. That
+  install redirects his cloud to your Mac for good, which a factory reset does
+  **not** undo — what that costs you day to day, and how to put him back on
+  stock firmware, is in
+  [SETUP_ROBOT.md](docs/SETUP_ROBOT.md#what-the-firmware-install-changes).
 - **OSKR / dev Vector** — **verified end-to-end too**, from a factory reset. He
   needs no firmware at all: the wizard takes his own SSH key off him over
   Bluetooth (measured: 55 KB in 26 s), repoints his cloud over SSH, and one
