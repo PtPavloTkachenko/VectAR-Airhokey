@@ -49,6 +49,13 @@ a quantised export. Both exports have identical shapes —
 512×512×3 in, three heads of 64/32/16 × 18 out — so `CoffeeDetector` decodes
 either one without knowing which it got.
 
+Their **input normalisation must match too**, and that is easy to miss: the
+importer defaults a fresh model to `scale = 1.0`, while this detector was
+trained on pixels scaled to 0..1, which is what `best.onnx` carries
+(`scale = 0.0039`, i.e. 1/255). A model fed 0..255 does not fail loudly — it
+just detects nothing, or detects nonsense. Both assets now carry 0.0039 on all
+three channels; if you ever re-import the `.dlc`, check that field first.
+
 They are both shipped because neither covers both places:
 
 - The **.dlc runs on the glasses** (device) and does not load on the editor's CPU
