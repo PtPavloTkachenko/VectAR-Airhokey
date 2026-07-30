@@ -1,0 +1,81 @@
+input_float progress;
+input_float baseAlpha;
+input_vec4  baseColor;
+input_float masterAlpha;
+
+input_float coreRadius;
+input_float arrowDistance;
+input_float arrowHeight;
+input_float arrowBaseHalf;
+input_float arrowRounding;
+input_float pressDistance;
+input_float pressScale;
+input_float showCore;
+input_float mode;
+
+output_vec4 Result;
+
+#define AA 0.006
+#define SQRT2_INV 0.70710678
+
+mediump float sdSeg(mediump vec2 p, mediump vec2 a, mediump vec2 b) {
+    mediump vec2 pa = p - a;
+    mediump vec2 ba = b - a;
+    mediump float t = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
+    return length(pa - ba * t);
+}
+
+mediump float sdArrow(mediump vec2 p, mediump float hb, mediump float hh, mediump float r) {
+    p.x = abs(p.x);
+    mediump float dBase  = sdSeg(p, vec2(0.0, -hh), vec2(hb, -hh));
+    mediump float dSlant = sdSeg(p, vec2(hb, -hh),  vec2(0.0, hh));
+    mediump float d = min(dBase, dSlant);
+    mediump float slantTest = (p.x - hb) * 2.0 * hh + (p.y + hh) * hb;
+    mediump float inside = step(0.0, p.y + hh) * step(slantTest, 0.0);
+    return d * (1.0 - 2.0 * inside) - r;
+}
+
+void main() {
+    mediump vec2 uv = system.getSurfaceUVCoord0() - 0.5;
+
+    mediump float aDist = mix(arrowDistance, pressDistance, progress);
+    mediump float sc = mix(1.0, pressScale, progress);
+    mediump float h  = arrowHeight * sc;
+    mediump float hb = arrowBaseHalf * sc;
+    mediump float r  = arrowRounding * sc;
+    mediump float hh = h * 0.5;
+
+    mediump float dArrows;
+
+    // Uniform branch — all fragments take the same path (free on TBDR)
+    if (mode < 0.5) {
+        mediump float dU = sdArrow(uv - vec2(0.0, aDist), hb, hh, r);
+        mediump float dD = sdArrow(-(uv - vec2(0.0, -aDist)), hb, hh, r);
+        mediump vec2 pr = uv - vec2(aDist, 0.0);
+        mediump float dR = sdArrow(vec2(-pr.y, pr.x), hb, hh, r);
+        mediump vec2 pl = uv - vec2(-aDist, 0.0);
+        mediump float dL = sdArrow(vec2(pl.y, -pl.x), hb, hh, r);
+        dArrows = min(min(dU, dD), min(dR, dL));
+    } else {
+        mediump float flip = step(1.5, mode) * -2.0 + 1.0;
+        mediump vec2 diag = vec2(SQRT2_INV * flip, -SQRT2_INV);
+        mediump vec2 perp = vec2(diag.y, -diag.x);
+
+        mediump vec2 pA = uv - diag * aDist;
+        mediump float dA = sdArrow(vec2(dot(pA, perp), dot(pA, diag)), hb, hh, r);
+
+        mediump vec2 pB = uv + diag * aDist;
+        mediump float dB = sdArrow(vec2(dot(pB, perp), dot(pB, -diag)), hb, hh, r);
+
+        dArrows = min(dA, dB);
+    }
+
+    mediump float coreR = coreRadius * (1.0 - progress) * showCore;
+    mediump float dCore = length(uv) - coreR;
+
+    mediump float d = mix(dArrows, min(dCore, dArrows), step(0.5, showCore));
+    mediump float mask = 1.0 - smoothstep(-AA, AA, d);
+
+    mediump float alpha = baseColor.a * baseAlpha * mask * masterAlpha;
+    Result = vec4(baseColor.rgb, alpha);
+}

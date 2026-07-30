@@ -1,0 +1,118 @@
+// ── Dynamic Uniforms (from CursorAnimator via PointerCursorVisual) ──
+input_float progress;
+input_float baseAlpha;
+input_vec4  baseColor;
+input_float unifyingProgress;
+input_float unifyingAlpha;
+input_float timerFillAmount;
+input_float timerStartAngle;
+input_float timerThicknessMult;
+input_float strokeArcExtent;
+input_float strokeArcCenter;
+input_float nonInteractableProgress;
+input_float masterAlpha;
+
+// ── Design Constants (set once by PointerCursorVisual constructor) ──
+input_float strokeRadius;
+input_float coreScale;
+input_float materialCoreRadius;
+input_float materialStrokeThickness;
+input_float materialTimerRadius;
+input_float materialTimerThickness;
+input_float baseCoreScaleMultiplier;
+input_float baseStrokeScaleMultiplier;
+
+output_vec4 Result;
+
+#define PI  3.14159265358979
+#define TAU 6.28318530717959
+#define AA  0.006
+
+float aamask(float sdf) {
+    return 1.0 - smoothstep(-AA, AA, sdf);
+}
+
+// Arc of a ring with semicircular end caps.
+float sdArc(vec2 p, float dist, float center, float halfExt, float r, float ht) {
+    float c = cos(-center);
+    float s = sin(-center);
+    p = vec2(c * p.x - s * p.y, s * p.x + c * p.y);
+    p.y = abs(p.y);
+    vec2 sc = vec2(cos(halfExt), sin(halfExt));
+    float d = (p.y * sc.x > p.x * sc.y)
+        ? length(p - r * sc)
+        : abs(dist - r);
+    return d - ht;
+}
+
+void main() {
+    // Use standard UV coordinates — mesh-size-independent.
+    // Remap from [0, 1] to [-0.5, 0.5] so the SDF origin is at quad center.
+    vec2 uv = system.getSurfaceUVCoord0() - 0.5;
+
+    // ── Single sqrt for all SDF evaluations ─────────────────────────────────
+    float dist = length(uv);
+
+    // ── 1. Calculate dynamic radii based on progress ────────────────────────
+    float currentCoreRadius = materialCoreRadius * baseCoreScaleMultiplier * coreScale;
+    float ht_stroke         = (materialStrokeThickness * baseStrokeScaleMultiplier) * 0.5;
+
+    float kissingStrokeRadius = currentCoreRadius + ht_stroke;
+    float idleStrokeRadius    = strokeRadius * baseStrokeScaleMultiplier;
+
+    float currentStrokeRadius = mix(idleStrokeRadius, kissingStrokeRadius, progress);
+
+    float outerR    = currentStrokeRadius + ht_stroke;
+    float innerEdge = currentStrokeRadius - ht_stroke;
+
+    // ── 2. Core dot (grows toward stroke inner edge when non-interactable) ──
+    float effCoreR  = mix(currentCoreRadius, innerEdge, clamp(nonInteractableProgress, 0.0, 1.0));
+    float mask_core = aamask(dist - effCoreR);
+
+    // ── 3. Stroke ring or truncated arc ─────────────────────────────────────
+    // Full ring when strokeArcExtent ≈ 2π, truncated arc with rounded caps otherwise.
+    float d_stroke = (strokeArcExtent >= TAU - 0.01)
+        ? abs(dist - currentStrokeRadius) - ht_stroke
+        : sdArc(uv, dist, strokeArcCenter, strokeArcExtent * 0.5, currentStrokeRadius, ht_stroke);
+    float mask_stroke = aamask(d_stroke);
+
+    // ── 4. Composite core and stroke ────────────────────────────────────────
+    float mask_base = max(mask_core, mask_stroke);
+
+    // Swap to unified filled circle when fully pressed (one-handed) OR fully non-interactable.
+    float mask_closed = aamask(dist - outerR);
+    float isOneHanded = step(TAU - 0.01, strokeArcExtent);
+    float shouldSwap = max(step(1.0, progress) * isOneHanded, step(1.0, nonInteractableProgress));
+    mask_base = mix(mask_base, mask_closed, shouldSwap);
+
+    float alpha_base = baseAlpha * mask_base;
+
+    // ── 5. Two-handed unifying circle (skipped when inactive) ───────────────
+    float alpha_unifying = 0.0;
+    if (unifyingProgress > 0.001 || unifyingAlpha > 0.001) {
+        float unifyingR = mix(currentCoreRadius, outerR, clamp(unifyingProgress, 0.0, 1.0));
+        float mask_unifying_grow = aamask(dist - unifyingR) * step(0.001, unifyingProgress);
+        float mask_unifying_fade = mask_closed * step(0.001, unifyingAlpha);
+        float currentUnifyingAlpha = max(baseAlpha * step(0.001, unifyingProgress), unifyingAlpha);
+        alpha_unifying = currentUnifyingAlpha * max(mask_unifying_grow, mask_unifying_fade);
+    }
+
+    float alpha_cursor = baseColor.a * max(alpha_base, alpha_unifying);
+
+    // ── 6. Timer arc (skipped ~95% of frames) ───────────────────────────────
+    float alpha_timer = 0.0;
+    if (timerFillAmount > 0.001 && timerThicknessMult > 0.001) {
+        float ht_timer         = (materialTimerThickness * baseStrokeScaleMultiplier) * 0.5 * timerThicknessMult;
+        float timerHalfExt     = PI * timerFillAmount;
+        float currentTimerRadius = materialTimerRadius * baseStrokeScaleMultiplier;
+        float timerCenter      = timerStartAngle - timerHalfExt;
+        float d_timer          = sdArc(uv, dist, timerCenter, timerHalfExt, currentTimerRadius, ht_timer);
+        float mask_timer       = aamask(d_timer);
+        alpha_timer = baseColor.a * (step(0.999, timerFillAmount) * 0.4 + 0.6) * mask_timer;
+    }
+
+    // ── 7. Final composite ──────────────────────────────────────────────────
+    float finalAlpha = alpha_cursor + alpha_timer * (1.0 - alpha_cursor);
+    finalAlpha *= masterAlpha;
+    Result = vec4(baseColor.rgb, finalAlpha);
+}

@@ -21,13 +21,14 @@ sdk_config.ini
 # while the certificate beside it shipped fine.
 !server/onboarding/wire-pod/chipper/epod/ep.key
 
-# Lens Studio machine-local / regenerable
-lens/Cache/
-lens/Workspaces/
-lens/Support/
-lens/PluginsUserPreferences/
-lens/*.lock
-lens/BackUp/
+# Lens Studio machine-local / regenerable. The glob covers every lens folder,
+# so a second one (lens-523/) does not quietly start committing its caches.
+lens*/Cache/
+lens*/Workspaces/
+lens*/Support/
+lens*/PluginsUserPreferences/
+lens*/*.lock
+lens*/BackUp/
 **/.mcp.json
 .cursor/
 .vscode/

@@ -1,0 +1,419 @@
+SchemaVersion: 1
+Nodes:
+  ChildNodes:
+    Node0:
+      DependencyIndex: 0
+      LevelID: 1
+      NodeCount: 0
+      NodeType: 1
+      Ports:
+        DepthMap:
+          Variable: false
+        ExtraOutputs:
+          Variable: false
+        Group:
+          String: ""
+        PixelSize:
+          IOType: 1
+          Variable: [0.0, 0.0]
+        ScriptName:
+          String: Tweak_N1
+        SortIndex:
+          Variable: 0
+        Texture:
+          ClassType2: TEXTURE_OBJECT_2D
+          IOType: 1
+        TextureSize:
+          IOType: 1
+          Variable: [0.0, 0.0]
+        Title:
+          String: Custom Map
+        Tooltip:
+          String: ""
+      PositionX: -599
+      PositionY: 73
+      TemplateID: nodes_inputs_parameters_texture2d_object
+      TemplateVersionMinor: 1
+      Title1: Texture 2D Object Parameter
+      Title2: Custom Map
+    Node1:
+      DependencyIndex: 1
+      LevelID: 0
+      NodeCount: 0
+      NodeType: 1
+      Ports:
+        Code:
+          ClassType1: TEXT
+          String: |
+            input_texture_2d glyphAtlas;
+            input_float boundsX;
+            input_float boundsY;
+            input_float boundsZ;
+            input_float lifetime;
+            input_color4 startColor;
+            input_color4 endColor;
+            input_float particleScale;
+            input_float driftAmount;
+            input_float driftSpeed;
+            
+            output_vec3 position;
+            output_vec4 color;
+            
+            // Hoskins 1D hash — no sin(), FP16-safe even with id > 1000.
+            // Original sin-based hash overflowed FP16 (id * 127.1 = 127100 > 65504 max).
+            float hash(float n) {
+                n = fract(n * 0.1031);
+                n *= n + 33.33;
+                n *= n + n;
+                return fract(n);
+            }
+            
+            void main() {
+                float id = float(system.getInstanceID());
+                float time = system.getTimeElapsed();
+            
+                float r0 = hash(id);
+                float r1 = hash(id + 13.0);
+                float r2 = hash(id + 37.0);
+                float r3 = fract(r0 + r1);
+                float r4 = fract(r1 + r2);
+            
+                float lifeT = (time + r0 * lifetime) / lifetime;
+                float progress = fract(lifeT);
+                float cycleId = floor(lifeT);
+            
+                float px = (r1 - 0.5) * 2.0 * boundsX;
+                float py = (r2 - 0.5) * 2.0 * boundsY;
+                float pz = (r3 - 0.5) * 2.0 * boundsZ;
+            
+                // PRECISION: wrap drift-time to [0, 2π) so sin() args stay FP16-precise.
+                // Without this, at long playtime ft grows unbounded -> sin precision degrades.
+                float phase = r4 * 6.2831;
+                float spd = driftSpeed * (0.7 + r0 * 0.6);
+                float ft = mod(time * spd + phase, 6.2831);
+                px += sin(ft) * driftAmount * 0.5;
+                py += sin(ft * 1.3 + 1.0) * driftAmount;
+                pz += sin(ft * 0.7 + 2.0) * driftAmount * 0.3;
+            
+                float edge = min(progress, 1.0 - progress) * 5.0;
+                float scale = particleScale * min(edge, 1.0);
+            
+                float symbolBrightness = 2.0;
+            
+                vec3 spawnPos = vec3(px, py, pz);
+                vec3 worldCenter = (system.getMatrixWorld() * vec4(spawnPos, 1.0)).xyz;
+            
+                vec2 quadUV = system.getSurfaceUVCoord0();
+                vec2 uvOff = quadUV - 0.5;
+            
+                // Y-axis billboard: project camera forward to XZ, normalize, derive right
+                // as cross(worldUp, fwdFlat). With up=(0,1,0) and fwdFlat.y=0, the cross
+                // collapses to (fwdFlat.z, 0, -fwdFlat.x) -> 6-op cross becomes a swizzle.
+                mat4 camMat = system.getMatrixCamera();
+                vec3 fwdFlat = vec3(camMat[2].x, 0.0, camMat[2].z);
+                fwdFlat *= inversesqrt(max(dot(fwdFlat, fwdFlat), 1e-8));
+            
+                vec3 up = vec3(0.0, 1.0, 0.0);
+                vec3 right = vec3(fwdFlat.z, 0.0, -fwdFlat.x);
+            
+                position = worldCenter + (right * uvOff.x + up * uvOff.y) * scale;
+            
+                // PRECISION: wrap cycleId so hash input stays FP16-safe.
+                // Without wrap, after ~120 cycles `id + cycleId * 17` exceeds FP16 int precision (2048).
+                float cycleIdW = mod(cycleId, 16.0);
+                // Atlas cell: single hash drives both row (int part of g) and col (fract * 8).
+                float g = hash(id + cycleIdW * 11.3) * 8.0;
+                float cellY = floor(g);
+                float cellX = floor(fract(g) * 8.0);
+                vec2 atlasUV = (vec2(cellX, cellY) + quadUV) * 0.125;
+                vec4 glyph = glyphAtlas.sample(atlasUV);
+            
+                float glyphMask = glyph.r;
+            
+                #ifdef FRAGMENT
+                if (glyphMask < 0.01) {
+                    discard;
+                }
+                #endif
+            
+                vec4 tintColor = mix(startColor, endColor, progress) * symbolBrightness;
+                color = vec4(tintColor.rgb * glyphMask, tintColor.a * glyphMask);
+            }
+
+        CustomCodeNodeAsset:
+          ClassType1: REFUID
+          BaseType: Asset.CustomCodeNodeAsset
+          ScriptType: All
+          String: ""
+        Description:
+          ClassType1: TEXT
+          String: ""
+        Examples:
+          ItemIndex: 0
+          ItemList: "Custom : Input/Output/Global Types : Extra Functions : Procedural Execution : Lighting Loop : System Built-In Values/Functions"
+        ID:
+          Variable: 0
+        Locked:
+          Variable: false
+        Stage:
+          ItemIndex: 1
+          ItemList: "Vertex : Pixel"
+        Title:
+          String: Custom Code
+        UseExternalFile:
+          Variable: false
+        boundsX:
+          Variable: 35.0
+        boundsY:
+          Variable: 20.0
+        boundsZ:
+          Variable: 35.0
+        color:
+          IOType: 1
+          Variable: [0.0, 0.0, 0.0, 0.0]
+        driftAmount:
+          Variable: 1.0
+        driftSpeed:
+          Variable: 1.0
+        endColor:
+          ClassType1: COLOR
+          Variable: [1.0, 0.0, 0.016662852838635445, 1.0]
+        glyphAtlas:
+          ClassType2: TEXTURE_OBJECT_2D
+          Connection0:
+            NodeLevelID: 1
+            PortID: Texture
+        lifetime:
+          Variable: 2.0
+        ngs_Height:
+          Variable: 400
+        ngs_Version:
+          String: 0.1.0
+        particleScale:
+          Variable: 3.0
+        position:
+          IOType: 1
+          Variable: [0.0, 0.0, 0.0]
+        startColor:
+          ClassType1: COLOR
+          Variable: [0.8500038385391235, 0.0, 1.0, 1.0]
+      PositionX: -318
+      PositionY: 110
+      TemplateID: node_util_custom
+      TemplateVersionMinor: 2
+      Title1: Custom Code
+    Node2:
+      DependencyIndex: 2
+      LevelID: 6
+      NodeCount: 0
+      NodeType: 1
+      Ports:
+        Input0:
+          Connection0:
+            NodeLevelID: 0
+            PortID: color
+          Variable: [1.0, 1.0, 1.0, 1.0]
+        Input1:
+          Variable: [1.2000000476837158, 1.0, 1.0, 1.0]
+        Inputs:
+          ItemIndex: 0
+          ItemList: "2 : 3 : 4 : 5 : 6"
+        Output:
+          IOType: 1
+          Variable: [0.0, 0.0, 0.0, 0.0]
+        Type0:
+          ItemIndex: 0
+          ItemList: "auto : xyzw : rgba : xyz : rgb : xy : x"
+        Type1:
+          ItemIndex: 6
+          ItemList: "auto : xyzw : rgba : xyz : rgb : xy : x"
+      PositionX: -112
+      PositionY: -21
+      TemplateID: nodes_math_multiply
+      Title1: Multiply
+    Node3:
+      DependencyIndex: 3
+      LevelID: 2
+      NodeCount: 0
+      NodeType: 1
+      Ports:
+        Channels:
+          ItemIndex: 5
+          ItemList: "xyzw : rgba : xyz : rgb : xy : x"
+        Default:
+          Variable: [1.0, 1.0, 1.0, 1.0]
+        EnableMax:
+          Variable: false
+        EnableMin:
+          Variable: false
+        Group:
+          String: ""
+        Max:
+          Variable: 1.0
+        Min:
+          Variable: 0.0
+        Output:
+          IOType: 1
+          Variable: [0.0, 0.0, 0.0, 0.0]
+        ScriptName:
+          String: fade
+        SortIndex:
+          Variable: 0
+        Step:
+          Variable: 0.009999999776482582
+        Title:
+          String: fade
+        Tooltip:
+          String: ""
+      PositionX: -111
+      PositionY: -80
+      TemplateID: nodes_inputs_parameters_float
+      Title1: Float Parameter
+      Title2: fade
+    Node4:
+      DependencyIndex: 4
+      LevelID: 3
+      NodeCount: 0
+      NodeType: 1
+      Ports:
+        Input0:
+          Connection0:
+            NodeLevelID: 6
+            PortID: Output
+          Variable: [1.0, 1.0, 1.0, 1.0]
+        Input1:
+          Connection0:
+            NodeLevelID: 2
+            PortID: Output
+          Variable: [1.0, 1.0, 1.0, 1.0]
+        Inputs:
+          ItemIndex: 0
+          ItemList: "2 : 3 : 4 : 5 : 6"
+        Output:
+          IOType: 1
+          Variable: [0.0, 0.0, 0.0, 0.0]
+        Type0:
+          ItemIndex: 0
+          ItemList: "auto : xyzw : rgba : xyz : rgb : xy : x"
+        Type1:
+          ItemIndex: 0
+          ItemList: "auto : xyzw : rgba : xyz : rgb : xy : x"
+      PositionX: 131
+      PositionY: -42
+      TemplateID: nodes_math_multiply
+      Title1: Multiply
+    Node5:
+      DependencyIndex: 5
+      LevelID: 5
+      NodeCount: 0
+      NodeType: 1
+      Ports:
+        ApplyRotation:
+          Variable: true
+        ApplyTranslation:
+          Variable: true
+        From:
+          ItemIndex: 1
+          ItemList: "Tangent Space : Object Space : World Space : Camera Space : Screen Space ( NDC )"
+        To:
+          ItemIndex: 1
+          ItemList: "Object Space : World Space : Camera Space : Screen Space ( NDC )"
+        VectorIn:
+          Connection0:
+            NodeLevelID: 0
+            PortID: position
+          Variable: [0.0, 0.0, 0.0]
+        VectorOut:
+          IOType: 1
+          Variable: [0.0, 0.0, 0.0]
+      PositionX: -70
+      PositionY: 140
+      TemplateID: node_math_transform
+      TemplateVersionMinor: 1
+      Title1: Transform Vector
+      Title2: Object to World
+    Node6:
+      CommentSizeX: 0
+      CommentSizeY: 0
+      DependencyIndex: 6
+      LevelID: 4
+      NodeCount: 0
+      NodeType: 1
+      Ports:
+        Depth:
+          Variable: 1.0
+        DepthMode:
+          ItemIndex: 0
+          ItemList: |2-
+            		Non-Linear - Normalized [0 to 1] ) :		Linear - Normalized [-1 to 1] :		View Space - Non-Normalized [-near to -far]	
+        DontFreezeSpec:
+          Variable: false
+        EnableHighPrecisionSampling:
+          Variable: false
+        FinalColor:
+          ClassType1: COLOR
+          Connection0:
+            NodeLevelID: 3
+            PortID: Output
+          Variable: [1.0, 1.0, 1.0, 1.0]
+        FinalColor1:
+          ClassType1: COLOR
+          Variable: [1.0, 1.0, 1.0, 1.0]
+        FinalColor2:
+          ClassType1: COLOR
+          Variable: [1.0, 1.0, 1.0, 1.0]
+        FinalColor3:
+          ClassType1: COLOR
+          Variable: [1.0, 1.0, 1.0, 1.0]
+        GSplatPointSize:
+          Variable: 0.0
+        GSplatRotation:
+          Variable: [0.0, 0.0, 0.0, 1.0]
+        GSplatScale:
+          Variable: [0.0, 0.0, 0.0]
+        Motion Vector Pass:
+          ItemIndex: 0
+          ItemList: "Write Velocity and Depth : Discard Velocity but Write Depth : Discard Velocity and Depth"
+        Negative:
+          Variable: false
+        PrevWorldPosition:
+          Variable: [0.0, 0.0, 0.0]
+        RayDirection:
+          Variable: [0.0, 1.0, 0.0]
+        RayOrigin:
+          Variable: [0.0, 0.0, 0.0]
+        ShowPrevPos:
+          Variable: false
+        Targets:
+          ItemIndex: 0
+          ItemList: "1 : 2 : 3 : 4"
+        Type:
+          ItemIndex: 0
+          ItemList: "3D : Post Effect : Hair : Gaussian Splatting"
+        WorldNormal:
+          Variable: [0.0, 1.0, 0.0]
+        WorldPosition:
+          Connection0:
+            NodeLevelID: 5
+            PortID: VectorOut
+          Variable: [0.0, 0.0, 0.0]
+        WorldTangent:
+          Variable: [0.0, 0.0, 1.0]
+        WriteDepth:
+          Variable: false
+      PositionX: 220
+      PositionY: 90
+      TemplateID: nodes_main_graph
+      Title1: Shader
+      Title2: 3D
+  IsSubGraph0: true
+  IsSubGraph1: true
+  IsSubGraph2: true
+  IsSubGraph3: true
+  LevelID: 0
+  NodeType: 3
+  PositionX: 0
+  PositionY: 0
+  TemplateID: nodes_main_subgraph
+  Title1: ""
+SystemID: dev.snap.shaders

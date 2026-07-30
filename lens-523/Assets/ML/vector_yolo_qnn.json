@@ -1,0 +1,47 @@
+{
+  "graph_name": "vector_yolo",
+  "inputs": [
+    {
+      "name": "images",
+      "shape": [
+        1,
+        512,
+        512,
+        3
+      ],
+      "dtype": "float32"
+    }
+  ],
+  "outputs": [
+    {
+      "name": "output_0",
+      "shape": [
+        1,
+        64,
+        64,
+        18
+      ],
+      "dtype": "float32"
+    },
+    {
+      "name": "output_1",
+      "shape": [
+        1,
+        32,
+        32,
+        18
+      ],
+      "dtype": "float32"
+    },
+    {
+      "name": "output_2",
+      "shape": [
+        1,
+        16,
+        16,
+        18
+      ],
+      "dtype": "float32"
+    }
+  ]
+}
