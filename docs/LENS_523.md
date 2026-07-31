@@ -84,10 +84,20 @@ the log, since the detector was trained on colour.
 **`.local` names may not resolve.** The Lens dials `ws://vectar.local:8777`,
 which worked on Spectacles (2024) and works in the editor preview — on some
 Specs it silently never connects, and the Lens sits in `CONNECT_WS` with
-nothing in the log to explain it. Paste the address the server console shows
-under **Lens WS_URL** into `GameConfig.WS_URL_FALLBACK`; the Lens alternates
-between the name and that address and keeps whichever opens. Leave it empty if
-your headset resolves the name.
+nothing in the log to explain it, because from its side nothing failed.
+
+The fix takes ten seconds and no code:
+
+1. Open the server console — **http://localhost:8780**
+2. Copy the line shown as **Lens WS_URL** (it is the Mac's current address)
+3. In Lens Studio select **GameController** in the Scene Hierarchy and paste it
+   into the **Server Address** field in the Inspector
+
+Either form works — `ws://192.0.2.10:8777` or just `192.0.2.10`. Leave it blank
+if your headset resolves the name; the Lens tries the name first either way and
+keeps whichever answers. **Re-copy it whenever the Mac joins a different Wi-Fi**
+— that address changes with the network, and it is the Mac's address that
+matters, not the robot's or the glasses'.
 
 **A quantised model can be refused at load.** On device the attempt fails and
 the Lens falls back to the float ONNX, exactly what the preview runs. The

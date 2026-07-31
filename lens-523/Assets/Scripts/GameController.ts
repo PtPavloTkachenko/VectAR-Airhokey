@@ -99,6 +99,10 @@ export class GameController extends BaseScriptComponent {
   rsgToken: string = "";
 
   @input
+  @hint("Server address — fill this in if the glasses never connect. Open the server console (http://localhost:8780), copy the line shown as 'Lens WS_URL', paste it here. Either form works: ws://192.0.2.10:8777 or just 192.0.2.10. Leave blank if the name resolves. Re-copy it whenever the Mac joins a different Wi-Fi.")
+  serverAddress: string = "";
+
+  @input
   @hint("EDITOR DEBUG: skip surface detection, take the surface at world 0")
   editorSkipCalibration: boolean = false;
 
@@ -379,6 +383,17 @@ export class GameController extends BaseScriptComponent {
     }
 
     // WS link
+    // Address typed in the Inspector wins over the one compiled in. Newer
+    // Specs do not resolve `.local`, and editing a source file to paste an
+    // address is a poor way to ask for one — the console prints the exact
+    // string, this field takes it, and nothing has to be recompiled by hand.
+    if (this.serverAddress) {
+      let a = this.serverAddress.trim();
+      if (a.indexOf("://") < 0) a = "ws://" + a;      // bare address is fine
+      if (a.lastIndexOf(":") <= a.indexOf("://") + 2) a += ":" + 8777;  // no port
+      (GameConfig as any).WS_URL_FALLBACK = a;
+      log.i("server address from the Inspector: " + a);
+    }
     this.ws = new WSClient(this.internetModule);
     // In-game Gemini voice agent (through the lens RSG, no Mac key): talk to Vector,
     // he answers in his own voice. Enabled simply by pasting an RSG token into the
