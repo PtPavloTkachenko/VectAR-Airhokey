@@ -134,6 +134,26 @@ class RobotLink:
         self.last_error_kind = ""
         self.last_error_msg = ""
 
+        # A robot paired on another network cannot be reached from here, and
+        # trying costs 40 seconds of gRPC timeouts that end in a guess about a
+        # second SDK client. The addresses answer this before we spend any of
+        # it. Only a definite False blocks: "cannot tell" must still attempt,
+        # or a machine whose netmask we failed to read stops working entirely.
+        try:
+            from ... import netinfo
+            here = netinfo.lan_ip()
+            if self.ip and netinfo.same_subnet(here, self.ip) is False:
+                self.last_error_kind = "wrong_network"
+                self.last_error_msg = (
+                    f"{self.name or 'The robot'} was paired at {self.ip}, which "
+                    f"is on a different network than this Mac ({here}). Re-run "
+                    f"PAIR ROBOT and use JOIN A DIFFERENT NETWORK to bring him "
+                    f"onto this one.")
+                logger.warning(self.last_error_msg)
+                return False
+        except Exception as e:
+            logger.debug(f"network precheck: {e}")
+
         if len(self._candidate_ips) > 1:
             discovered = await asyncio.to_thread(
                 _discover_robot_ip, self._candidate_ips)
@@ -272,9 +292,33 @@ class RobotLink:
                 self.has_control = False
                 if attempt < _CONTROL_RETRIES:
                     await asyncio.sleep(_CONTROL_RETRY_DELAY)
-        logger.error(
-            "Behavior control FAILED — is another SDK client connected to this "
-            "robot? Vector allows only one; stop it and restart the server.")
+        # Which failure this is depends on whether he is reachable at all, and
+        # only one of the two answers is about another client holding him. The
+        # single guessed message sent people hunting for a second SDK session
+        # while the robot was simply on a network this Mac cannot see — a whole
+        # morning of it, once.
+        logger.error(self._control_failure_reason())
+
+    def _control_failure_reason(self) -> str:
+        ip = getattr(self, "ip", "") or ""
+        try:
+            from ... import netinfo
+            here = netinfo.lan_ip()
+            if ip and netinfo.same_subnet(here, ip) is False:
+                return (f"Behavior control FAILED — {ip} is on a different "
+                        f"network than this Mac ({here}), so nothing here can "
+                        f"reach him. Re-run PAIR ROBOT and use JOIN A "
+                        f"DIFFERENT NETWORK to bring him onto this one.")
+        except Exception:
+            pass
+        if ip and not _tcp_open(ip, tries=2):
+            return (f"Behavior control FAILED — {ip}:443 is not answering. He "
+                    f"is asleep, switched off, or his address changed since "
+                    f"pairing. Wake him with his backpack button, or re-pair "
+                    f"if he moved networks.")
+        return ("Behavior control FAILED while he WAS reachable — most likely "
+                "another SDK client holds him. Vector allows only one; stop it "
+                "and press CONNECT ROBOT again.")
 
     async def _prewarm_animation_list(self):
         """Prewarm the animation TRIGGER list (loads in <1 s; the full
