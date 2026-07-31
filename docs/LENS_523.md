@@ -13,7 +13,7 @@ the newer one moves.
 |---|---|---|
 | Lens Studio | 5.15.4 | 5.23.0 |
 | Target | Spectacles (2024) | current SPECS |
-| Detector | `best.onnx` | `best.onnx` + `vector_yolo_qnn.dlc` |
+| Detector | `best.onnx` | `best.onnx` (+ a quantised export, unused) |
 | Hardware-tested | yes | yes |
 
 Everything else — the server, the protocol, the wizard, the gameplay — is
@@ -46,10 +46,10 @@ What did change, all of it done by Lens Studio during the upgrade:
 
 ## The quantised detector
 
-`Assets/ML/vector_yolo_qnn.dlc` is the same YOLO detector as `best.onnx`,
-a quantised export. Both exports have identical shapes —
-512×512×3 in, three heads of 64/32/16 × 18 out — so `CoffeeDetector` decodes
-either one without knowing which it got.
+`Assets/ML/vector_yolo_qnn.dlc` is a quantised export of the same YOLO
+detector as `best.onnx`. Both have identical shapes — 512×512×3 in, three
+heads of 64/32/16 × 18 out — so `CoffeeDetector` decodes either one without
+knowing which it got.
 
 Their **input normalisation must match too**, and that is easy to miss: the
 importer defaults a fresh model to `scale = 1.0`, while this detector was
@@ -59,13 +59,10 @@ just detects nothing, or detects nonsense. Both assets now carry 0.0039 on all
 three channels; if you ever re-import the `.dlc`, check that field first.
 
 Both are shipped, but — measured — **the float export is what
-actually runs, in both places**. The `.dlc` was meant for the glasses, and on
-the glasses `MLComponent` hands it to the editor, which refuses it (see
-"What some headsets do differently"). Reaching the hardware needs the route, which
-this Lens does not carry.
+actually runs, in both places**: this Lens does not load the quantised one.
 
 `CoffeeMLController` still picks between them — on-device it prefers
-`modelQuantized` when one is wired, and falls back to `model` when it fails to
+`modelQuantized` when one is wired, and falls back to `model` when it does not
 load, which is what happens today. Wiring is already done in the shipped scene
 (GameController → `mlModel` = `best`, `mlModelQuantized` = `vector_yolo_qnn`).
 Unwire `mlModelQuantized` to skip the failed attempt entirely; unwire both and
@@ -92,14 +89,9 @@ under **Lens WS_URL** into `GameConfig.WS_URL_FALLBACK`; the Lens alternates
 between the name and that address and keeps whichever opens. Leave it empty if
 your headset resolves the name.
 
-**The quantised model does not load through MLComponent.** On device it lands
-on the editor, which refuses it:
-`the load is refused`. The
-`.dlc` needs the route to reach the hardware, which this Lens does not carry — so
-vision runs on the float ONNX, exactly as it does in the preview. The `.dlc`
-ships anyway: it is the same detector, and the moment a route exists it
-is one input away. This is the device-gated question ADR #104 left open, and
-the answer is no.
+**A quantised model can be refused at load.** On device the attempt fails and
+the Lens falls back to the float ONNX, exactly what the preview runs. The
+`.dlc` ships anyway — it is the same detector, and it costs nothing to keep.
 
 ## Honest status
 
@@ -111,9 +103,8 @@ differently.
 
 What is confirmed: the migration itself (packages, shaders, scene), the
 protocol, hand calibration, and the game loop against a real robot. What is
-not: the quantised model on device — it does not load through MLComponent, so
-vision uses the float export on device too, and the `.dlc` remains unproven
-hardware-side.
+not: the quantised export — it does not load here, so vision uses the float
+model on device too.
 
 ## Pause the preview before you test on the glasses
 

@@ -146,7 +146,7 @@ export class GameController extends BaseScriptComponent {
 
   @input
   @allowUndefined
-  @hint("YOLO model quantised (vector_yolo_qnn.dlc) — used on the glasses")
+  @hint("Optional quantised export of the same YOLO model (vector_yolo_qnn.dlc)")
   mlModelQuantized: MLAsset;
 
   @input
@@ -869,8 +869,8 @@ export class GameController extends BaseScriptComponent {
     const ml = visObj.createComponent(
       CoffeeMLController.getTypeName()) as CoffeeMLController;
     (ml as any).model = this.mlModel;
-    // The quantised export is what actually runs on the glasses; it stays unset in
-    // the preview, where the .dlc cannot load. CoffeeMLController picks between them.
+    // Optional second export. CoffeeMLController prefers it when wired and
+    // falls back to the float model when it does not load.
     if (this.mlModelQuantized) (ml as any).modelQuantized = this.mlModelQuantized;
     (ml as any).scoreThreshold = this.visionScoreThreshold;
     (ml as any).iouThreshold = this.visionIouThreshold;

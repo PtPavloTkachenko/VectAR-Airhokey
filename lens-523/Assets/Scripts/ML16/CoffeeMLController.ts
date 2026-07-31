@@ -23,7 +23,7 @@ export class CoffeeMLController extends BaseScriptComponent {
 
   @input
   @allowUndefined
-  @hint("Some headsets: the quantised .dlc that runs on device. Device-only — the preview falls back to 'model'.")
+  @hint("Optional quantised export. Not used by this Lens — it falls back to 'model'.")
   modelQuantized: MLAsset;
 
   @input
@@ -210,10 +210,9 @@ export class CoffeeMLController extends BaseScriptComponent {
   }
 
   private buildModel(): void {
-    // Two exports of the same detector. The .dlc is compiled for the device and
-    // does not load on the editor, so the preview keeps running the
-    // float ONNX and the glasses get the quantised one. Their input and output
-    // shapes are identical, so CoffeeDetector decodes either without knowing which.
+    // Two exports of the same detector, with identical input and output shapes,
+    // so CoffeeDetector decodes either without knowing which it got. The
+    // quantised one is preferred on device when wired; see the fallback below.
     const modelAsset = (!this.isEditor && this.modelQuantized) ? this.modelQuantized : this.model;
     if (!modelAsset) {
       print("[CoffeeML] No model asset assigned — set the 'model' input to the YOLO export.");
@@ -224,7 +223,7 @@ export class CoffeeMLController extends BaseScriptComponent {
       return;
     }
     if (this.debugLog) {
-      print("[CoffeeML] model = " + (modelAsset === this.modelQuantized ? "quantised .dlc (device)" : "float .onnx"));
+      print("[CoffeeML] model = " + (modelAsset === this.modelQuantized ? "quantised" : "float .onnx"));
     }
 
     this.mlComponent = this.getSceneObject().createComponent("MLComponent");
@@ -232,11 +231,9 @@ export class CoffeeMLController extends BaseScriptComponent {
     this.mlComponent.onLoadingFinished = this.onLoadingFinished.bind(this);
     this.mlComponent.onLoadingFailed = (error: string) => {
       print("[CoffeeML] model load failed: " + error);
-      // The quantised export is the one that can be refused: on device it is
-      // handed to the editor, which does not accept it ("the load is refused"). Reaching the hardware needs the
-      // route, which this Lens does not have. Rather than leave vision
-      // dead for the whole session, fall back to the float model — it is the
-      // same detector, and it is what the preview has been running all along.
+      // The quantised export can be refused, and on this Lens it is. Rather
+      // than leave vision dead for the whole session, fall back to the float
+      // model — same detector, and what the preview runs anyway.
       if (modelAsset === this.modelQuantized && this.model && !this.triedFloat) {
         this.triedFloat = true;
         print("[CoffeeML] falling back to the float model");
