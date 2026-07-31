@@ -102,6 +102,65 @@ class TestRobotOnThisNetwork:
         assert checks["link to the robot"].ok is None
 
 
+class TestNetworkChangeMidFlow:
+    """The morning's actual sequence: guest Wi-Fi, then a phone hotspot.
+
+    Switching networks during an onboarding is normal behaviour for someone
+    setting a robot up somewhere that isn't home. Before the watcher, it left
+    both .local names pointing at an address that no longer existed — and
+    because the names still resolved, nothing reported a fault.
+    """
+
+    def _run_watch(self, monkeypatch, addresses, ticks):
+        import asyncio
+
+        from game_bridge import mdns as mdns_mod
+
+        seq = list(addresses)
+        monkeypatch.setattr(netinfo, "lan_ip", lambda: seq[min(len(seq) - 1, _n[0])])
+        _n = [0]
+        r = Responder(addresses[0], 8777)
+        rebinds, changed = [], []
+        monkeypatch.setattr(r, "stop", lambda: None)
+        monkeypatch.setattr(r, "start", lambda: True)
+        real_rebind = r.rebind
+
+        def spy(ip):
+            rebinds.append(ip)
+            return real_rebind(ip)
+        monkeypatch.setattr(r, "rebind", spy)
+
+        async def go():
+            task = asyncio.create_task(mdns_mod.watch(
+                r, interval=0, on_change=lambda ip: changed.append(ip)))
+            for _ in range(ticks):
+                _n[0] += 1
+                await asyncio.sleep(0)
+                await asyncio.sleep(0)
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+        asyncio.run(go())
+        return rebinds, changed, r
+
+    def test_moving_to_a_hotspot_re_announces_once(self, monkeypatch):
+        rebinds, changed, r = self._run_watch(
+            monkeypatch, ["198.51.100.10", "192.0.2.10"], ticks=6)
+        assert "192.0.2.10" in rebinds
+        assert r.ip == "192.0.2.10"
+        # And exactly once: a watcher that re-announces every tick would churn
+        # the record and make the name intermittently unresolvable.
+        assert rebinds.count("192.0.2.10") == 1
+        assert changed == ["192.0.2.10"]
+
+    def test_a_steady_network_is_left_alone(self, monkeypatch):
+        rebinds, changed, _ = self._run_watch(
+            monkeypatch, ["192.0.2.10"], ticks=6)
+        assert rebinds == [] and changed == []
+
+
 class TestResponderRebind:
     def test_same_address_is_a_no_op(self):
         r = Responder("10.0.0.1", 8777)
