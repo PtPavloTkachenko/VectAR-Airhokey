@@ -19,6 +19,20 @@
     --mono: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
+  /* The always-on state strip. Deliberately quiet: it is read at a glance
+     dozens of times and must never compete with the step you are on. */
+  .healthbar { display: flex; flex-wrap: wrap; gap: 14px; margin: 10px 0 2px;
+    font-size: 11px; letter-spacing: 1px; color: var(--muted); }
+  .healthbar .hb { display: flex; align-items: center; gap: 6px;
+    cursor: default; }
+  .healthbar .dot { width: 7px; height: 7px; border-radius: 50%;
+    background: var(--muted); flex: none; }
+  .healthbar .hb-ok   .dot { background: var(--green); }
+  .healthbar .hb-warn .dot { background: var(--pink); }
+  .healthbar .hb-bad  .dot { background: var(--err); }
+  .healthbar .hb-ok   { color: var(--text); }
+  .healthbar .hb-bad  { color: var(--err); }
+  .healthbar .hbk { color: var(--muted); }
   body {
     background: var(--bg); color: var(--text);
     font-family: var(--mono); font-size: 14px; line-height: 1.55;
@@ -158,6 +172,13 @@
     <h1>VectAR AIR-HOCKEY</h1>
     <div class="sub">server console</div>
   </header>
+
+  <!-- Always-on state. The System status card only exists on the dashboard,
+       so during the wizard — precisely when something goes wrong — none of it
+       was visible, and the silence in front of you could equally be the
+       pairing engine, the network or the robot. Guessing wrong costs a whole
+       pairing cycle, so the five facts now follow you across every screen. -->
+  <div class="healthbar" id="healthBar" title="live state"></div>
 
   <div class="tabs">
     <div class="tab active" id="tab-dash" onclick="showTab('dash')">DASHBOARD</div>
@@ -834,6 +855,35 @@ async function refreshStatus() {
 }
 setInterval(refreshStatus, 1000);
 refreshStatus();
+
+/* ---------- always-on state strip ----------
+   Five facts, on every screen, at a glance. Slower than the dashboard poll on
+   purpose: this is peripheral vision, not a readout, and it must not add load
+   while the wizard is doing real work. Each item carries its fix as a tooltip
+   so the strip stays one line and still answers "so what do I do". */
+async function refreshHealth() {
+  const el = $("healthBar");
+  if (!el) return;
+  try {
+    const r = await fetch("/api/health", {cache: "no-store"});
+    const j = await r.json();
+    el.innerHTML = (j.items || []).map(i => {
+      const cls = i.state === "ok" ? "hb-ok"
+                : i.state === "warn" ? "hb-warn"
+                : i.state === "bad" ? "hb-bad" : "";
+      const tip = i.fix ? ` title="${i.fix.replace(/"/g, "&quot;")}"` : "";
+      return `<span class="hb ${cls}"${tip}><span class="dot"></span>`
+           + `<span class="hbk">${i.key}</span> ${i.text}</span>`;
+    }).join("");
+  } catch (e) {
+    // The console losing the server is itself a fact worth showing — silence
+    // here would read as "everything fine".
+    el.innerHTML = `<span class="hb hb-bad"><span class="dot"></span>`
+                 + `<span class="hbk">server</span> unreachable</span>`;
+  }
+}
+setInterval(refreshHealth, 4000);
+refreshHealth();
 
 /* ---------- live top-down field ---------- */
 // field frame: origin center, +X toward Vector's goal, +Y player's left.

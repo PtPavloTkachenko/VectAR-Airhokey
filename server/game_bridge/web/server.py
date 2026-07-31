@@ -78,6 +78,7 @@ class WebUI:
         app.add_routes([
             web.get("/", self.index),
             web.get("/api/status", self.api_status),
+            web.get("/api/health", self.api_health),
             web.get("/api/game", self.api_game),
             web.post("/api/find_robot", self.api_find_robot),
             web.post("/api/discover", self.api_discover),
@@ -1156,6 +1157,86 @@ class WebUI:
                           "him."})
         except Exception as e:
             return web.json_response({"ok": False, "error": str(e)})
+
+    async def api_health(self, _req):
+        """The five facts that answer "what is going on", on every screen.
+
+        The console had a System status card, but only on the dashboard — so
+        during the wizard, which is exactly when things go wrong, none of it
+        was visible. Someone setting a robot up then has to guess whether the
+        silence in front of them is the pairing engine, the network, or the
+        robot, and guessing wrong costs a full pairing cycle.
+
+        Deliberately cheap: it is polled every few seconds, so nothing here
+        pings, dials TLS or touches the robot. It reports what the server
+        already knows.
+        """
+        from .. import netinfo
+        b = self.bridge
+        items = []
+
+        ip = netinfo.lan_ip()
+        names = set(netinfo.resolves_to("vectar.local"))
+        if not ip:
+            items.append({"key": "network", "state": "bad", "text": "no network",
+                          "fix": "Connect this Mac to Wi-Fi."})
+        elif names and ip not in names:
+            # The stale-announcement case, which is invisible from the outside:
+            # the name resolves, so nothing errors, it just leads nowhere.
+            items.append({"key": "network", "state": "warn",
+                          "text": f"{ip} · name still points elsewhere",
+                          "fix": "Re-announcing shortly — refresh in a moment."})
+        else:
+            items.append({"key": "network", "state": "ok", "text": ip, "fix": ""})
+
+        st = await asyncio.to_thread(self._wirepod_cached)
+        items.append({
+            "key": "pairing engine",
+            "state": "ok" if st.get("ready") else ("warn" if st.get("up") else "bad"),
+            "text": ("escape-pod mode" if st.get("ready")
+                     else "running, not escape-pod" if st.get("up") else "down"),
+            "fix": "" if st.get("ready") else st.get("detail", "")})
+
+        serial, ips, name = config.read_robot_identity("")
+        robot_ip = (ips or "").split(",")[0].strip()
+        if not serial:
+            items.append({"key": "robot", "state": "warn", "text": "none paired",
+                          "fix": "Run PAIR ROBOT."})
+        elif getattr(b, "robot_alive", False):
+            items.append({"key": "robot", "state": "ok",
+                          "text": f"{name or serial} · control held", "fix": ""})
+        elif netinfo.same_subnet(ip, robot_ip) is False:
+            items.append({"key": "robot", "state": "bad",
+                          "text": f"{name or serial} on another network",
+                          "fix": f"He was paired at {robot_ip}; this Mac is on "
+                                 f"{ip}. Re-pair him onto this network."})
+        else:
+            items.append({"key": "robot", "state": "warn",
+                          "text": f"{name or serial} · not connected",
+                          "fix": getattr(b, "last_link_hint", "")
+                                 or "Press CONNECT ROBOT."})
+
+        lens = bool(getattr(getattr(b, "ws", None), "alive", False))
+        items.append({"key": "lens", "state": "ok" if lens else "idle",
+                      "text": "connected" if lens else "waiting", "fix": ""})
+        return web.json_response({"ok": True, "items": items})
+
+    _WIREPOD_CACHE: tuple[float, dict] = (0.0, {})
+
+    def _wirepod_cached(self, ttl: float = 5.0) -> dict:
+        """wirepod_status resolves a name and opens a TLS connection, which is
+        far too much to repeat on every poll of a status bar."""
+        now = time.monotonic()
+        ts, val = WebUI._WIREPOD_CACHE
+        if val and now - ts < ttl:
+            return val
+        from . import pairing as _p
+        try:
+            val = _p.wirepod_status(config.WIREPOD_URL)
+        except Exception as e:
+            val = {"up": False, "ready": False, "detail": str(e)}
+        WebUI._WIREPOD_CACHE = (now, val)
+        return val
 
     def _stale_credentials(self, serial: str, live_name: str) -> str:
         """Why the stored credentials cannot work for the robot in front of us.
