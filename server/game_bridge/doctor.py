@@ -337,6 +337,17 @@ def run(bridge=None) -> dict:
             "yes" if lens else "no lens (fine unless you're playing in the "
             "glasses)", ""))
 
+    # Don't let a downstream check argue with the cause. When the robot is
+    # demonstrably on another network, "he did not answer" is true but its
+    # advice — pat him, restart him — sends people to the wrong end of the
+    # problem, and having both on screen at once is worse than either alone.
+    if any(c.ok is False and c.name.startswith("robot on this network")
+           for c in checks):
+        for c in checks:
+            if c.name.startswith("robot reachable") and c.ok is False:
+                c.fix = ("Expected — he is on another network (see above). "
+                         "Nothing here can reach him until he joins this one.")
+
     bad = [c for c in checks if c.ok is False]
     return {
         "ok": not bad,
