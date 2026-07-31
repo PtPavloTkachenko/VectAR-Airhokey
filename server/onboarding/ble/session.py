@@ -215,10 +215,18 @@ class RtsSession:
                 f"expected CloudSessionResponse, got 0x{mtype:02x}")
         resp = m.parse_cloud_session_response(payload)
         if not resp["success"]:
+            # Report the refusal, not a theory about it. This used to assert
+            # the robot was talking to Anki's cloud, which is one possible
+            # cause among several — and on the morning it mattered it was the
+            # wrong one: the robot was fine, the pairing engine simply was not
+            # running yet, and the sentence sent the reader after firmware.
+            # Whoever catches this can see wire-pod's state and the network;
+            # down here we know only the status byte.
             raise HandshakeError(
-                f"cloud auth failed (status {resp['status']}) — a stock robot "
-                "validates the session token against Anki's cloud, which is "
-                "gone; use the vendored wire-pod token path instead.")
+                f"the robot refused the cloud session (status "
+                f"{resp['status']}) — he asked for a token and did not get "
+                f"one. Check that the pairing engine is running and that he "
+                f"can reach this Mac.")
         self.guid = resp["guid"]
         return self.guid
 
