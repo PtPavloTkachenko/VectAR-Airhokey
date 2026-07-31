@@ -100,6 +100,10 @@ class WebUI:
             web.post("/api/ble/pin", self.api_ble_pin),
             web.post("/api/ble/wifi_scan", self.api_ble_wifi_scan),
             web.post("/api/ble/wifi_connect", self.api_ble_wifi_connect),
+            # Can this Mac reach the robot at the address he just got? Asked
+            # BEFORE authorize, because the alternative is waiting a minute
+            # for a handshake that was never going to arrive.
+            web.post("/api/ble/reachable", self.api_ble_reachable),
             web.post("/api/ble/authorize", self.api_ble_authorize),
             web.post("/api/ble/disconnect", self.api_ble_disconnect),
             web.post("/api/ble/state", self.api_ble_state),
@@ -1157,6 +1161,28 @@ class WebUI:
                           "him."})
         except Exception as e:
             return web.json_response({"ok": False, "error": str(e)})
+
+    async def api_ble_reachable(self, req):
+        """Preflight for the authorize step: can we reach him at all?
+
+        The token handshake travels over the network, not over Bluetooth, so a
+        robot who is online and pairing happily can still be unreachable —
+        which is exactly what a guest Wi-Fi produces. Asking here turns a
+        60-second wait ending in "he never knocked" into a warning before the
+        button is pressed, with the fix attached.
+        """
+        body = await req.json() if req.can_read_body else {}
+        ip = (body.get("ip") or "").strip()
+        if not ip and self._ble is not None:
+            ip = getattr(self._ble, "ip", "") or ""
+        if not ip:
+            return web.json_response({"ok": True, "known": False})
+        why = await asyncio.to_thread(self._why_he_never_knocked, ip)
+        # A reachable robot produces the "worth retrying" line, which is advice
+        # for a failure that has not happened — not a warning.
+        blocking = bool(why) and "retrying" not in why
+        return web.json_response({"ok": True, "known": True, "ip": ip,
+                                  "blocking": blocking, "detail": why})
 
     def _why_he_never_knocked(self, robot_ip: str) -> str:
         """Measure the network after the robot failed to reach the engine.

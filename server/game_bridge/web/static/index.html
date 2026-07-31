@@ -392,6 +392,9 @@
         <div class="ok" id="bleDoneMsg">Vector is on Wi-Fi.</div>
         <div id="bleAuthMsg" class="hint">Last step: authorize this Mac to
           control Vector. No serial to type — we read it over Bluetooth.</div>
+        <!-- Measured before you press the button, not after a minute of
+             waiting: whether this Mac can actually reach him where he is. -->
+        <div class="error" id="bleReachWarn" style="display:none"></div>
         <div class="error" id="bleAuthErr" style="display:none"></div>
         <button onclick="bleAuthorize()" id="btnBleAuth">AUTHORIZE &amp; FINISH →</button>
         <!-- Being on *a* network is not the same as being on the right one: a
@@ -1733,7 +1736,28 @@ function bleShowPhase(phase) {
       "step-dot" + (i < phase ? " done" : i === phase ? " now" : "");
   });
 }
-function bleStep(n) { bleShowPhase(BLE_LEGACY_TO_PHASE[n] ?? 0); }
+function bleStep(n) {
+  bleShowPhase(BLE_LEGACY_TO_PHASE[n] ?? 0);
+  // Landing on the authorize screen is the last moment where a warning is
+  // still cheap. The token handshake goes over the network, not over
+  // Bluetooth, so a robot who paired perfectly can still be unreachable —
+  // and the alternative to asking now is a minute of waiting that ends in
+  // "he never knocked", with nothing said about why.
+  if (n === 3) bleCheckReach();
+}
+
+async function bleCheckReach() {
+  const box = $("bleReachWarn");
+  if (!box) return;
+  box.style.display = "none";
+  try {
+    const r = await api("/api/ble/reachable", {});
+    if (r && r.blocking && r.detail) {
+      box.textContent = r.detail;
+      box.style.display = "";
+    }
+  } catch (e) { /* a preflight that fails must never block the real step */ }
+}
 function bleStepShow(name) {
   bleShowPhase(Math.max(0, BLE_PHASES.indexOf(name)));
 }
