@@ -182,6 +182,84 @@ def _robot_reachable(ip: str) -> Check:
         "he switches off, then back on the charger.")
 
 
+def _network_checks(robot_ip: str = "") -> list[Check]:
+    """The questions an away-from-home setup gets wrong, asked out loud.
+
+    Everything here was learned the expensive way: each check corresponds to a
+    failure that took a live round of pairing to identify, and every one of
+    them reported itself as something else entirely.
+    """
+    from . import netinfo
+    out: list[Check] = []
+    ip = netinfo.lan_ip()
+    mask = netinfo._netmask_for(ip)
+    out.append(Check(
+        "this Mac's address", bool(ip),
+        f"{ip}{f' / {mask}' if mask else ''}" if ip else "no outbound address",
+        "" if ip else "No network at all — connect this Mac to Wi-Fi first."))
+    if not ip:
+        return out
+
+    # The stale-announcement trap. Both .local names bind to the address they
+    # saw at startup, so switching networks leaves them pointing at an address
+    # that no longer exists — and the robot, told to go there, simply never
+    # arrives. Nothing else in the system notices.
+    for name, what in (("vectar.local", "lens name"),
+                       ("escapepod.local", "pairing-engine name")):
+        addrs = netinfo.resolves_to(name)
+        if not addrs:
+            out.append(Check(
+                f"{what} ({name})", None, "does not resolve here",
+                "Normal if that service is not running; if it is, restart it."))
+        elif ip in addrs:
+            out.append(Check(f"{what} ({name})", True, f"-> {ip}"))
+        else:
+            out.append(Check(
+                f"{what} ({name})", False,
+                f"-> {', '.join(addrs)}, but this Mac is now {ip}",
+                "Announced before the network changed. Restart the service "
+                "that owns this name (the game server for vectar.local, "
+                "vectar-onboard for escapepod.local) so it re-announces."))
+
+    if not robot_ip:
+        return out
+
+    same = netinfo.same_subnet(ip, robot_ip)
+    if same is False:
+        out.append(Check(
+            "robot on this network", False,
+            f"robot {robot_ip}, this Mac {ip}/{mask or '?'}",
+            "Different networks — nothing can reach him from here. Either "
+            "join the Mac to his network, or re-run the wizard and use JOIN A "
+            "DIFFERENT NETWORK to move him to this one."))
+        return out
+    if same is None:
+        out.append(Check("robot on this network", None,
+                         f"cannot tell (robot {robot_ip}, mask unknown)", ""))
+
+    rtt = netinfo.rtt_ms(robot_ip)
+    if rtt is None:
+        out.append(Check(
+            "link to the robot", None, f"{robot_ip} did not answer ping",
+            "He may be asleep — that alone is not a network fault."))
+    elif rtt > netinfo.LAN_RTT_CEILING_MS:
+        # The signature of a guest/corporate SSID: it answers, but the traffic
+        # is relayed and client-to-client is usually blocked outright. The
+        # robot cannot reach the pairing engine, and the error surfaces much
+        # later as a token failure that blames the robot's firmware.
+        out.append(Check(
+            "link to the robot", False,
+            f"{rtt:.0f} ms to {robot_ip} — a LAN hop is under "
+            f"{netinfo.LAN_RTT_CEILING_MS:.0f} ms",
+            "This looks like a guest or corporate network: it relays traffic "
+            "and usually blocks devices from talking to each other, which is "
+            "exactly what pairing needs. Use a phone hotspot for both the Mac "
+            "and the robot."))
+    else:
+        out.append(Check("link to the robot", True, f"{rtt:.0f} ms to {robot_ip}"))
+    return out
+
+
 def _port_check(port: int, what: str) -> Check:
     s = socket.socket()
     s.settimeout(1.0)
@@ -198,6 +276,15 @@ def _port_check(port: int, what: str) -> Check:
 def run(bridge=None) -> dict:
     """All checks. `bridge` (when called in-process) adds live link state."""
     checks: list[Check] = []
+    # Network first, and deliberately so: when it is wrong, every check below
+    # reports a symptom of it — a robot that "won't answer", an engine that
+    # "has no certificate", a token that "failed". Reading those in that order
+    # sends you after the wrong thing, which is exactly what happened.
+    try:
+        _, _first_ip, _ = config.read_robot_identity("")
+    except Exception:
+        _first_ip = ""
+    checks += _network_checks((_first_ip or "").split(",")[0].strip())
     checks += _wirepod_checks()
     checks.append(_ota_check())
     # Every paired robot, not just the first one in the file. With a dev robot
@@ -249,6 +336,17 @@ def run(bridge=None) -> dict:
             "lens connected", None if not lens else True,
             "yes" if lens else "no lens (fine unless you're playing in the "
             "glasses)", ""))
+
+    # Don't let a downstream check argue with the cause. When the robot is
+    # demonstrably on another network, "he did not answer" is true but its
+    # advice — pat him, restart him — sends people to the wrong end of the
+    # problem, and having both on screen at once is worse than either alone.
+    if any(c.ok is False and c.name.startswith("robot on this network")
+           for c in checks):
+        for c in checks:
+            if c.name.startswith("robot reachable") and c.ok is False:
+                c.fix = ("Expected — he is on another network (see above). "
+                         "Nothing here can reach him until he joins this one.")
 
     bad = [c for c in checks if c.ok is False]
     return {

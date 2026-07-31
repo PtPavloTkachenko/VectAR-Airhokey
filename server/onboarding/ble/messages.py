@@ -422,14 +422,21 @@ def parse_status_response(payload: bytes, version: int = V5_TAG) -> dict:
     # v2 = {ssid, state, ap, ble, battery, fw, ota} — NO esn/owner/cloud.
     # v3+ inserts esn after fw, then ota, and (v5) adds owner + cloud flags.
     r = _Reader(payload)
-    _ssid_hex = r.bytes_u8()
+    ssid_hex = r.bytes_u8()
     wifi_state = r.u8()
     _access_point = r.bool()
     ble_state = r.u8()
     battery_state = r.u8()
     fw = r.bytes_u8()
+    # The robot names the network it is on, hex-encoded exactly like the scan
+    # results. Worth surfacing: "already on Wi-Fi" is not the same answer as
+    # "already on the network you meant", and only the name tells them apart.
+    try:
+        ssid = bytes.fromhex(ssid_hex.decode("ascii")).decode("utf-8", "replace")
+    except Exception:
+        ssid = ssid_hex.decode("ascii", "replace")
     out = {"wifi_state": wifi_state, "ble_state": ble_state,
-           "battery_state": battery_state,
+           "battery_state": battery_state, "ssid": ssid,
            "firmware": fw.decode("ascii", "replace"),
            "esn": "", "has_owner": False, "is_cloud_authed": False}
     if version >= 3:

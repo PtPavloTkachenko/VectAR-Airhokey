@@ -78,6 +78,7 @@ class WebUI:
         app.add_routes([
             web.get("/", self.index),
             web.get("/api/status", self.api_status),
+            web.get("/api/health", self.api_health),
             web.get("/api/game", self.api_game),
             web.post("/api/find_robot", self.api_find_robot),
             web.post("/api/discover", self.api_discover),
@@ -99,6 +100,10 @@ class WebUI:
             web.post("/api/ble/pin", self.api_ble_pin),
             web.post("/api/ble/wifi_scan", self.api_ble_wifi_scan),
             web.post("/api/ble/wifi_connect", self.api_ble_wifi_connect),
+            # Can this Mac reach the robot at the address he just got? Asked
+            # BEFORE authorize, because the alternative is waiting a minute
+            # for a handshake that was never going to arrive.
+            web.post("/api/ble/reachable", self.api_ble_reachable),
             web.post("/api/ble/authorize", self.api_ble_authorize),
             web.post("/api/ble/disconnect", self.api_ble_disconnect),
             web.post("/api/ble/state", self.api_ble_state),
@@ -129,7 +134,7 @@ class WebUI:
             web.static("/static", STATIC_DIR),
         ])
         self._flash = {"active": False, "percent": 0.0, "done": False,
-                       "error": "", "state": ""}
+                       "error": "", "state": "", "mode": "", "ota": ""}
         self.app = app
 
     async def start(self):
@@ -457,37 +462,55 @@ class WebUI:
         """Serve the OTA the robot downloads during the flash.
 
         Prefers a local cache (works offline / fast on LAN); otherwise streams
-        it from the Internet Archive, the same source upstream wire-pod uses.
+        it from the public mirrors, the first one that has it.
         """
         name = req.match_info["name"]
         if "/" in name or ".." in name or not name.endswith(".ota"):
             return web.Response(status=400, text="bad ota name")
         # Personal cache first, then what ships with the repo (Git LFS), then
-        # the Internet Archive. A fresh clone therefore flashes without
-        # downloading anything by hand, and without archive.org having to be
-        # up -- and the dev-robot repair image isn't on archive.org at all
-        # (that URL 404s), so shipping it is the only way it exists for anyone
-        # but us.
+        # the network. A fresh clone therefore flashes without downloading
+        # anything by hand, and without any mirror having to be up -- and the
+        # dev-robot repair image is on no mirror at all, so shipping it is the
+        # only way it exists for anyone but us.
         for local in (config.OTA_CACHE_DIR / name, config.OTA_REPO_DIR / name):
             if local.is_file() and local.stat().st_size > 1_000_000:
                 return web.FileResponse(local)
         import aiohttp
-        url = f"https://archive.org/download/vector-pod-firmware/{name}"
+        # No mirror carries every image: archive.org has the escape-pod one and
+        # 404s on plain production builds, the DDL mirror is the other way
+        # round. Ask each in turn and stream the first that answers, so
+        # flashing and un-flashing both work without the caller knowing which
+        # host to name.
         resp = web.StreamResponse()
         resp.content_type = "application/octet-stream"
+        tried = []
         try:
             async with aiohttp.ClientSession() as sess:
-                async with sess.get(url) as up:
-                    if up.status != 200:
-                        return web.Response(status=502,
-                                            text=f"upstream {up.status}")
-                    if up.content_length:
-                        resp.content_length = up.content_length
-                    await resp.prepare(req)
-                    async for chunk in up.content.iter_chunked(64 * 1024):
-                        await resp.write(chunk)
-            await resp.write_eof()
-            return resp
+                for tmpl in config.OTA_MIRRORS:
+                    url = tmpl.format(name=name)
+                    try:
+                        up = await sess.get(url)
+                    except Exception as e:
+                        tried.append(f"{url} -> {type(e).__name__}")
+                        continue
+                    async with up:
+                        if up.status != 200:
+                            tried.append(f"{url} -> {up.status}")
+                            continue
+                        logger.info(f"streaming {name} from {url}")
+                        if up.content_length:
+                            resp.content_length = up.content_length
+                        await resp.prepare(req)
+                        async for chunk in up.content.iter_chunked(64 * 1024):
+                            await resp.write(chunk)
+                        await resp.write_eof()
+                        return resp
+            # Once prepare() has been called the response is already on the
+            # wire, so this only reports mirrors that never got that far.
+            logger.warning(f"get_ota: no mirror has {name}: {'; '.join(tried)}")
+            return web.Response(
+                status=502,
+                text=f"no mirror has {name} — tried: {'; '.join(tried)}")
         except Exception as e:
             logger.warning(f"get_ota proxy failed: {e}")
             return web.Response(status=502, text=f"proxy failed: {e}")
@@ -547,7 +570,14 @@ class WebUI:
                                   "remembered_as": addr or esn})
 
     async def api_ble_flash_ep(self, req):
-        """Flash the escape-pod firmware over the live BLE session."""
+        """Install firmware over the live BLE session.
+
+        Two directions, one mechanism. `mode: "ep"` (the default) installs the
+        escape-pod image and is the setup step. `mode: "revert"` installs plain
+        production firmware, undoing it — see docs/SETUP_ROBOT.md, "Going back
+        to stock". They differ in which image, which guard, and how a refusal
+        is read, so the mode is explicit rather than inferred from the name.
+        """
         if not self._ble:
             return web.json_response(
                 {"ok": False, "error": "no BLE session — pair over BLE first"},
@@ -559,26 +589,36 @@ class WebUI:
             body = await req.json()
         except Exception:
             body = {}
-        # Flashing `ep` bakes `escapepod.local` into the robot permanently. If
-        # wire-pod isn't actually answering to that name with the escape-pod
-        # certificate, the robot comes back from a 180 MB flash pointed at
-        # nobody — so verify first rather than discover it two steps later.
-        pod = body.get("pod") or config.WIREPOD_URL
-        ready = await asyncio.to_thread(pairing.wirepod_status, pod)
-        if not ready["ready"] and not body.get("force"):
-            return web.json_response(
-                {"ok": False, "step": "wirepod", "wirepod": ready,
-                 "error": "The pairing engine isn't in escape-pod mode, so "
-                          f"flashing now would strand the robot. {ready['detail']}"},
-                status=409)
+        mode = "revert" if body.get("mode") == "revert" else "ep"
 
-        name = body.get("ota") or config.EP_OTA_NAME
+        if mode == "ep":
+            # Flashing `ep` bakes `escapepod.local` into the robot permanently.
+            # If wire-pod isn't actually answering to that name with the
+            # escape-pod certificate, the robot comes back from a 180 MB flash
+            # pointed at nobody — so verify first rather than discover it two
+            # steps later.
+            pod = body.get("pod") or config.WIREPOD_URL
+            ready = await asyncio.to_thread(pairing.wirepod_status, pod)
+            if not ready["ready"] and not body.get("force"):
+                return web.json_response(
+                    {"ok": False, "step": "wirepod", "wirepod": ready,
+                     "error": "The pairing engine isn't in escape-pod mode, so "
+                              f"flashing now would strand the robot. {ready['detail']}"},
+                    status=409)
+        # Reverting deliberately does NOT check that guard. It exists to stop a
+        # robot being pointed at a name nobody answers to, and the whole point
+        # here is that he stops needing that name at all — requiring the engine
+        # to be healthy before you can walk away from it is backwards.
+
+        default_name = config.STOCK_OTA_NAME if mode == "revert" \
+            else config.EP_OTA_NAME
+        name = body.get("ota") or default_name
         host = _lan_ip() or req.host.split(":")[0]
         url = f"http://{host}:{config.WEB_PORT}/api/get_ota/{name}"
 
         self._flash = {"active": True, "percent": 0.0, "current": 0,
                        "expected": 0, "done": False, "error": "",
-                       "state": "starting"}
+                       "state": "starting", "mode": mode, "ota": name}
 
         def on_progress(p):
             # Bytes as well as percent: a 180 MB install is a long stare at a
@@ -594,16 +634,19 @@ class WebUI:
                 await self._ble.ota_flash(url, progress_cb=on_progress)
                 self._flash.update(active=False, done=True, percent=100.0,
                                    state="rebooting")
-                logger.info("escape-pod firmware flashed — robot rebooting")
+                logger.info(f"{mode} firmware flashed — robot rebooting")
             except Exception as e:
-                # A 214 rejection is not a failure to work around: it is the
-                # robot telling us what he is. His build-type gate only refuses
-                # this image because he runs a dev (ankidev/OSKR) build, which
-                # his RECOVERY version string cannot say. Record it so he is
-                # never offered firmware again, and point at the path he
-                # actually needs.
                 msg = f"{type(e).__name__}: {e}"
-                if "214" in str(e):
+                gate_214 = "214" in str(e)
+                # The same rejection means opposite things in the two
+                # directions, so only the setup direction may act on it.
+                if gate_214 and mode == "ep":
+                    # Not a failure to work around: it is the robot telling us
+                    # what he is. His build-type gate only refuses this image
+                    # because he runs a dev (ankidev/OSKR) build, which his
+                    # RECOVERY version string cannot say. Record it so he is
+                    # never offered firmware again, and point at the path he
+                    # actually needs.
                     esn = getattr(self._ble, "esn", "") or ""
                     addr = getattr(getattr(self._ble, "ble", None),
                                    "address", "") or ""
@@ -618,9 +661,22 @@ class WebUI:
                         "and this wizard will set him up over SSH instead. He "
                         "is remembered now, so the firmware step won't be "
                         "offered again.")
+                elif gate_214:
+                    # Reverting: he is already known to be a stock robot, so
+                    # this says nothing about his build type and must not be
+                    # recorded as if it did. It means this particular image is
+                    # one he won't take.
+                    msg = (
+                        f"He refused this image on his own build-type gate "
+                        f"(214). That is about the image, not about him — he "
+                        f"is still the stock robot you set up. Try a different "
+                        f"production build (any plain vicos-2.0.1.*.ota from "
+                        f"vectorfirmware.ddlbot.ai/vicos/, dropped in "
+                        f"{config.OTA_CACHE_DIR}). He is unchanged and still "
+                        f"on the escape-pod firmware.")
                 self._flash.update(active=False, error=msg, state="failed",
-                                   needs_dev_path="214" in str(e))
-                logger.warning(f"ep flash failed: {e}")
+                                   needs_dev_path=gate_214 and mode == "ep")
+                logger.warning(f"{mode} flash failed: {e}")
 
         asyncio.create_task(run())
         return web.json_response({"ok": True, "url": url, "started": True})
@@ -1106,6 +1162,184 @@ class WebUI:
         except Exception as e:
             return web.json_response({"ok": False, "error": str(e)})
 
+    async def api_ble_reachable(self, req):
+        """Preflight for the authorize step: can we reach him at all?
+
+        The token handshake travels over the network, not over Bluetooth, so a
+        robot who is online and pairing happily can still be unreachable —
+        which is exactly what a guest Wi-Fi produces. Asking here turns a
+        60-second wait ending in "he never knocked" into a warning before the
+        button is pressed, with the fix attached.
+        """
+        body = await req.json() if req.can_read_body else {}
+        ip = (body.get("ip") or "").strip()
+        if not ip and self._ble is not None:
+            ip = getattr(self._ble, "ip", "") or ""
+        if not ip:
+            return web.json_response({"ok": True, "known": False})
+        why = await asyncio.to_thread(self._why_he_never_knocked, ip)
+        # A reachable robot produces the "worth retrying" line, which is advice
+        # for a failure that has not happened — not a warning.
+        blocking = bool(why) and "retrying" not in why
+        return web.json_response({"ok": True, "known": True, "ip": ip,
+                                  "blocking": blocking, "detail": why})
+
+    def _why_he_never_knocked(self, robot_ip: str) -> str:
+        """Measure the network after the robot failed to reach the engine.
+
+        "He has not completed his handshake" is true and useless on its own —
+        it names the symptom and leaves the reader to guess between a sleeping
+        robot, a wrong network, and an access point that quietly refuses to
+        let its clients talk to each other. The third one is invisible: both
+        devices are online, both have addresses on the same subnet, and
+        everything looks correct right up until nothing arrives.
+
+        So probe once, here, where it matters, and say what came back.
+        """
+        from .. import netinfo
+        if not robot_ip:
+            return ""
+        here = netinfo.lan_ip()
+        if netinfo.same_subnet(here, robot_ip) is False:
+            return (f"He is on {robot_ip} and this Mac is on {here} — "
+                    f"different networks, so he cannot reach it at all. Put "
+                    f"both on the same one (JOIN A DIFFERENT NETWORK).")
+        rtt = netinfo.rtt_ms(robot_ip, count=2)
+        from ..robot.sdk.connection import _tcp_open
+        open443 = _tcp_open(robot_ip, tries=2)
+        if rtt is None and not open443:
+            # Same subnet, addresses agree, and still nothing gets through:
+            # the signature of client isolation, which guest and corporate
+            # Wi-Fi enable by default and which pairing cannot work around.
+            return (f"He is on {robot_ip}, the same network as this Mac, yet "
+                    f"nothing reaches him — no ping, no port 443. That is a "
+                    f"Wi-Fi that blocks devices from talking to each other "
+                    f"(usual on guest and corporate networks). Pairing cannot "
+                    f"work there: use a phone hotspot for both.")
+        if rtt is not None and rtt > netinfo.LAN_RTT_CEILING_MS:
+            return (f"He answers in {rtt:.0f} ms on a local network, which "
+                    f"means the traffic is being relayed — typical of guest "
+                    f"Wi-Fi, which usually also blocks the device-to-device "
+                    f"traffic pairing needs. Try a phone hotspot for both.")
+        if open443:
+            return (f"He is reachable at {robot_ip}, so the network is fine — "
+                    f"this one is worth retrying before changing anything.")
+        return ""
+
+    async def api_health(self, _req):
+        """The five facts that answer "what is going on", on every screen.
+
+        The console had a System status card, but only on the dashboard — so
+        during the wizard, which is exactly when things go wrong, none of it
+        was visible. Someone setting a robot up then has to guess whether the
+        silence in front of them is the pairing engine, the network, or the
+        robot, and guessing wrong costs a full pairing cycle.
+
+        Deliberately cheap: it is polled every few seconds, so nothing here
+        pings, dials TLS or touches the robot. It reports what the server
+        already knows.
+        """
+        from .. import netinfo
+        b = self.bridge
+        items = []
+
+        ip = netinfo.lan_ip()
+        names = set(netinfo.resolves_to("vectar.local"))
+        if not ip:
+            items.append({"key": "network", "state": "bad", "text": "no network",
+                          "fix": "Connect this Mac to Wi-Fi."})
+        elif names and ip not in names:
+            # The stale-announcement case, which is invisible from the outside:
+            # the name resolves, so nothing errors, it just leads nowhere.
+            items.append({"key": "network", "state": "warn",
+                          "text": f"{ip} · name still points elsewhere",
+                          "fix": "Re-announcing shortly — refresh in a moment."})
+        else:
+            items.append({"key": "network", "state": "ok", "text": ip, "fix": ""})
+
+        st = await asyncio.to_thread(self._wirepod_cached)
+        items.append({
+            "key": "pairing engine",
+            "state": "ok" if st.get("ready") else ("warn" if st.get("up") else "bad"),
+            "text": ("escape-pod mode" if st.get("ready")
+                     else "running, not escape-pod" if st.get("up") else "down"),
+            "fix": "" if st.get("ready") else st.get("detail", "")})
+
+        serial, ips, name = config.read_robot_identity("")
+        robot_ip = (ips or "").split(",")[0].strip()
+        if not serial:
+            items.append({"key": "robot", "state": "warn", "text": "none paired",
+                          "fix": "Run PAIR ROBOT."})
+        elif getattr(b, "robot_alive", False):
+            items.append({"key": "robot", "state": "ok",
+                          "text": f"{name or serial} · control held", "fix": ""})
+        elif netinfo.same_subnet(ip, robot_ip) is False:
+            items.append({"key": "robot", "state": "bad",
+                          "text": f"{name or serial} on another network",
+                          "fix": f"He was paired at {robot_ip}; this Mac is on "
+                                 f"{ip}. Re-pair him onto this network."})
+        else:
+            items.append({"key": "robot", "state": "warn",
+                          "text": f"{name or serial} · not connected",
+                          "fix": getattr(b, "last_link_hint", "")
+                                 or "Press CONNECT ROBOT."})
+
+        lens = bool(getattr(getattr(b, "ws", None), "alive", False))
+        items.append({"key": "lens", "state": "ok" if lens else "idle",
+                      "text": "connected" if lens else "waiting", "fix": ""})
+        return web.json_response({"ok": True, "items": items})
+
+    _WIREPOD_CACHE: tuple[float, dict] = (0.0, {})
+
+    def _wirepod_cached(self, ttl: float = 5.0) -> dict:
+        """wirepod_status resolves a name and opens a TLS connection, which is
+        far too much to repeat on every poll of a status bar."""
+        now = time.monotonic()
+        ts, val = WebUI._WIREPOD_CACHE
+        if val and now - ts < ttl:
+            return val
+        from . import pairing as _p
+        try:
+            val = _p.wirepod_status(config.WIREPOD_URL)
+        except Exception as e:
+            val = {"up": False, "ready": False, "detail": str(e)}
+        WebUI._WIREPOD_CACHE = (now, val)
+        return val
+
+    def _stale_credentials(self, serial: str, live_name: str) -> str:
+        """Why the stored credentials cannot work for the robot in front of us.
+
+        Empty string means they look usable. Existence is not usability: a
+        robot keeps his serial through Clear User Data but gets a new name and
+        a new certificate, so a July entry for the same ESN survives a wipe
+        looking perfectly valid and reports "credentials ready" for a pairing
+        that has been dead for a week. That is exactly how an onboarding which
+        never obtained a token still ended on a success screen.
+
+        Only decidable while a BLE session is open, since `live_name` is read
+        from the robot himself.
+        """
+        if not serial or not live_name:
+            return ""
+        import configparser
+        try:
+            c = configparser.ConfigParser(strict=False)
+            c.read(config.SDK_CONFIG_PATH)
+            if not c.has_section(serial):
+                return ""    # nothing stored — a normal first pairing
+            stored_name = (c[serial].get("name") or "").strip()
+            cert = (c[serial].get("cert") or "").strip()
+            if stored_name and stored_name != live_name:
+                return (f"the stored pairing is for {stored_name}, but this "
+                        f"robot now calls himself {live_name} — his name and "
+                        f"certificate rotate on a factory reset, the serial "
+                        f"does not")
+            if cert and not Path(cert).is_file():
+                return f"his certificate is missing from disk ({cert})"
+        except Exception:
+            return ""
+        return ""
+
     def _is_provisioned(self, serial: str = "") -> bool:
         """Does sdk_config.ini hold a real guid for THIS robot?
 
@@ -1257,9 +1491,13 @@ class WebUI:
                     # An unprovisioned robot fails the mint because wire-pod has
                     # no cert for it — that's a setup problem, not a user error.
                     ready = await asyncio.to_thread(pairing.wirepod_status, pod)
+                    extra = await asyncio.to_thread(
+                        self._why_he_never_knocked,
+                        getattr(self._ble, "ip", "") if self._ble else "")
                     return web.json_response(
                         {"ok": False, "step": e.step, "needs_setup": True,
-                         "wirepod": ready, "error": e.message})
+                         "wirepod": ready,
+                         "error": e.message + (f" {extra}" if extra else "")})
                 # already provisioned -> mint optional, fall through to connect
             except Exception as e:
                 if not self._is_provisioned(esn):
@@ -1280,6 +1518,21 @@ class WebUI:
                           "that only goes over Bluetooth. Double-press his "
                           "backpack button, enter the PIN from his face, and "
                           "this finishes on its own."})
+
+        # Stored-but-unusable is its own case, and it used to pass for success:
+        # the entry exists, so every check said provisioned, and the wizard
+        # finished on "credentials ready" for a robot it never obtained a token
+        # for. Only worth asking while BLE is open — the robot's current name
+        # is what gives it away.
+        if not minted:
+            live_name = getattr(self._ble, "name", "") if self._ble else ""
+            why = self._stale_credentials(esn, live_name)
+            if why:
+                return web.json_response(
+                    {"ok": False, "step": "signin", "needs_signin": True,
+                     "error": f"Found an old pairing that cannot work — {why}. "
+                              f"Double-press his backpack button and run "
+                              f"AUTHORIZE again to issue him a fresh one."})
 
         if not self._is_provisioned(esn) and not minted:
             # Two different causes, and blaming Wi-Fi (the old message) was

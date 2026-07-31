@@ -1,0 +1,243 @@
+- !<Material/897db372-4baf-414b-a159-6b1dc578ef7a>
+  PackagePath: ""
+  PassesInfo:
+    - !<own> 67fddf91-f16b-4788-b875-d136621e0b72
+- !<PassInfo/67fddf91-f16b-4788-b875-d136621e0b72>
+  CachedProperties:
+    - Port_Depth_N004:
+        typeIdx: 1
+        value: 1.000000
+    - Port_FinalColor1_N004:
+        typeIdx: 5
+        value: {x: 1.000000, y: 1.000000, z: 1.000000, w: 1.000000}
+    - Port_FinalColor2_N004:
+        typeIdx: 5
+        value: {x: 1.000000, y: 1.000000, z: 1.000000, w: 1.000000}
+    - Port_FinalColor3_N004:
+        typeIdx: 5
+        value: {x: 1.000000, y: 1.000000, z: 1.000000, w: 1.000000}
+    - Port_FinalColor_N004:
+        typeIdx: 5
+        value: {x: 1.000000, y: 1.000000, z: 1.000000, w: 1.000000}
+    - Port_GSplatPointSize_N004:
+        typeIdx: 1
+        value: 0.000000
+    - Port_GSplatRotation_N004:
+        typeIdx: 5
+        value: {x: 0.000000, y: 0.000000, z: 0.000000, w: 1.000000}
+    - Port_GSplatScale_N004:
+        typeIdx: 4
+        value: {x: 0.000000, y: 0.000000, z: 0.000000}
+    - Port_PrevWorldPosition_N004:
+        typeIdx: 4
+        value: {x: 0.000000, y: 0.000000, z: 0.000000}
+    - Port_RayDirection_N004:
+        typeIdx: 4
+        value: {x: 0.000000, y: 1.000000, z: 0.000000}
+    - Port_RayOrigin_N004:
+        typeIdx: 4
+        value: {x: 0.000000, y: 0.000000, z: 0.000000}
+    - Port_WorldNormal_N004:
+        typeIdx: 4
+        value: {x: 0.000000, y: 1.000000, z: 0.000000}
+    - Port_WorldPosition_N004:
+        typeIdx: 4
+        value: {x: 0.000000, y: 0.000000, z: 0.000000}
+    - Port_WorldTangent_N004:
+        typeIdx: 4
+        value: {x: 0.000000, y: 0.000000, z: 1.000000}
+    - Port_arrowBaseHalf_N000:
+        typeIdx: 1
+        value: 0.000000
+    - Port_arrowDistance_N000:
+        typeIdx: 1
+        value: 0.000000
+    - Port_arrowHeight_N000:
+        typeIdx: 1
+        value: 0.000000
+    - Port_arrowRounding_N000:
+        typeIdx: 1
+        value: 0.000000
+    - Port_baseAlpha_N000:
+        typeIdx: 1
+        value: 0.000000
+    - Port_baseColor_N000:
+        typeIdx: 5
+        value: {x: 0.000000, y: 0.000000, z: 0.000000, w: 0.000000}
+    - Port_baseCoreScaleMultiplier_N000:
+        typeIdx: 1
+        value: 0.000000
+    - Port_baseStrokeScaleMultiplier_N000:
+        typeIdx: 1
+        value: 0.000000
+    - Port_coreRadius_N000:
+        typeIdx: 1
+        value: 0.000000
+    - Port_coreScale_N000:
+        typeIdx: 1
+        value: 0.000000
+    - Port_in_arrowBaseHalf_N000:
+        typeIdx: 1
+        value: 0.000000
+    - Port_in_arrowDistance_N000:
+        typeIdx: 1
+        value: 0.000000
+    - Port_in_arrowHeight_N000:
+        typeIdx: 1
+        value: 0.000000
+    - Port_in_arrowRounding_N000:
+        typeIdx: 1
+        value: 0.000000
+    - Port_in_baseAlpha_N000:
+        typeIdx: 1
+        value: 0.000000
+    - Port_in_baseColor_N000:
+        typeIdx: 5
+        value: {x: 0.000000, y: 0.000000, z: 0.000000, w: 0.000000}
+    - Port_in_coreRadius_N000:
+        typeIdx: 1
+        value: 0.000000
+    - Port_in_masterAlpha_N000:
+        typeIdx: 1
+        value: 0.000000
+    - Port_in_mode_N000:
+        typeIdx: 1
+        value: 0.000000
+    - Port_in_pressDistance_N000:
+        typeIdx: 1
+        value: 0.000000
+    - Port_in_pressScale_N000:
+        typeIdx: 1
+        value: 0.000000
+    - Port_in_progress_N000:
+        typeIdx: 1
+        value: 0.000000
+    - Port_in_showCore;_N000:
+        typeIdx: 1
+        value: 0.000000
+    - Port_in_showCore_N000:
+        typeIdx: 1
+        value: 0.000000
+    - Port_masterAlpha_N000:
+        typeIdx: 1
+        value: 0.000000
+    - Port_materialCoreRadius_N000:
+        typeIdx: 1
+        value: 0.000000
+    - Port_materialStrokeThickness_N000:
+        typeIdx: 1
+        value: 0.000000
+    - Port_materialTimerRadius_N000:
+        typeIdx: 1
+        value: 0.000000
+    - Port_materialTimerThickness_N000:
+        typeIdx: 1
+        value: 0.000000
+    - Port_mode_N000:
+        typeIdx: 1
+        value: 0.000000
+    - Port_nonInteractableProgress_N000:
+        typeIdx: 1
+        value: 0.000000
+    - Port_pressDistance_N000:
+        typeIdx: 1
+        value: 0.000000
+    - Port_pressScale_N000:
+        typeIdx: 1
+        value: 0.000000
+    - Port_progress_N000:
+        typeIdx: 1
+        value: 0.000000
+    - Port_showCore_N000:
+        typeIdx: 1
+        value: 0.000000
+    - Port_strokeArcCenter_N000:
+        typeIdx: 1
+        value: 0.000000
+    - Port_strokeArcExtent_N000:
+        typeIdx: 1
+        value: 0.000000
+    - Port_strokeRadius_N000:
+        typeIdx: 1
+        value: 0.000000
+    - Port_timerFillAmount_N000:
+        typeIdx: 1
+        value: 0.000000
+    - Port_timerStartAngle_N000:
+        typeIdx: 1
+        value: 0.000000
+    - Port_timerThicknessMult_N000:
+        typeIdx: 1
+        value: 0.000000
+    - Port_unifyingAlpha_N000:
+        typeIdx: 1
+        value: 0.000000
+    - Port_unifyingProgress_N000:
+        typeIdx: 1
+        value: 0.000000
+    - Tweak_N6:
+        typeIdx: 1
+        value: 1.000000
+    - mainColor:
+        typeIdx: 5
+        value: {x: 1.000000, y: 1.000000, z: 1.000000, w: 1.000000}
+    - shoCore6:
+        typeIdx: 1
+        value: 1.000000
+  DepthWrite: false
+  DepthTest: true
+  DepthFunction: Always
+  TwoSided: true
+  ColorMask: {x: true, y: true, z: true, w: true}
+  CullMode: Back
+  PolygonOffset: {x: 0.000000, y: 0.000000}
+  FrustumCulling: Auto
+  FrustumCullPad: 0.000000
+  InstanceCount: 1
+  Defines:
+    []
+  BlendMode: PremultipliedAlphaAuto
+  Properties:
+    PreviewEnabled:
+      typeIdx: 0
+      value: 0
+    arrowBaseHalf:
+      typeIdx: 1
+      value: 1.000000
+    arrowDistance:
+      typeIdx: 1
+      value: 1.000000
+    arrowHeight:
+      typeIdx: 1
+      value: 1.000000
+    arrowRounding:
+      typeIdx: 1
+      value: 1.000000
+    baseAlpha:
+      typeIdx: 1
+      value: 1.000000
+    baseColor:
+      typeIdx: 5
+      value: {x: 1.000000, y: 1.000000, z: 1.000000, w: 1.000000}
+    coreRadius:
+      typeIdx: 1
+      value: 1.000000
+    masterAlpha:
+      typeIdx: 1
+      value: 1.000000
+    mode:
+      typeIdx: 1
+      value: 1.000000
+    pressDistance:
+      typeIdx: 1
+      value: 1.000000
+    pressScale:
+      typeIdx: 1
+      value: 1.000000
+    progress:
+      typeIdx: 1
+      value: 1.000000
+    showCore:
+      typeIdx: 1
+      value: 1.000000
+  Pass: !<reference> 09d87945-f7bf-48e0-a054-550fa92d122a

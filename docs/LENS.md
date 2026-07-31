@@ -19,9 +19,11 @@ FieldBuilder), so the project itself is mostly scripts + a few assets.
 5. Wait for *"TypeScript compilation succeeded"*, then **Send to Spectacles**
    (pair your glasses to Lens Studio first, same Wi-Fi).
 
-⚠️ Do not open the project in a newer Lens Studio — 5.22+ silently upgrades
-the project format and it won't open in 5.15 again. Copy first if you want to
-experiment.
+⚠️ Do not open **this** project in a newer Lens Studio — 5.22+ silently upgrades
+the project format and it won't open in 5.15 again. That upgrade has already
+been done once, on a copy: [`lens-523/`](LENS_523.md) is the same Lens on Lens
+Studio 5.23 for current SPECS hardware. Use that one there and leave this one
+alone.
 
 ## Editor development without hardware
 

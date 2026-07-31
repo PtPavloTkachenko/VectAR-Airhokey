@@ -19,6 +19,20 @@
     --mono: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
+  /* The always-on state strip. Deliberately quiet: it is read at a glance
+     dozens of times and must never compete with the step you are on. */
+  .healthbar { display: flex; flex-wrap: wrap; gap: 14px; margin: 10px 0 2px;
+    font-size: 11px; letter-spacing: 1px; color: var(--muted); }
+  .healthbar .hb { display: flex; align-items: center; gap: 6px;
+    cursor: default; }
+  .healthbar .dot { width: 7px; height: 7px; border-radius: 50%;
+    background: var(--muted); flex: none; }
+  .healthbar .hb-ok   .dot { background: var(--green); }
+  .healthbar .hb-warn .dot { background: var(--pink); }
+  .healthbar .hb-bad  .dot { background: var(--err); }
+  .healthbar .hb-ok   { color: var(--text); }
+  .healthbar .hb-bad  { color: var(--err); }
+  .healthbar .hbk { color: var(--muted); }
   body {
     background: var(--bg); color: var(--text);
     font-family: var(--mono); font-size: 14px; line-height: 1.55;
@@ -81,6 +95,11 @@
   button:disabled { opacity: .35; cursor: default; }
   button.secondary { border-color: var(--line); color: var(--muted);
                      background: transparent; }
+  /* For the one action that takes the robot away from this software. */
+  button.danger { border-color: var(--err); color: var(--err);
+                  background: rgba(255,95,122,.07); }
+  button.danger:hover:not(:disabled) { background: rgba(255,95,122,.16);
+                  box-shadow: 0 0 14px rgba(255,95,122,.25); }
   .row { display: flex; gap: 12px; flex-wrap: wrap; }
   .row > div { flex: 1 1 180px; }
   .steps { display: flex; gap: 6px; margin-bottom: 18px; }
@@ -153,6 +172,13 @@
     <h1>VectAR AIR-HOCKEY</h1>
     <div class="sub">server console</div>
   </header>
+
+  <!-- Always-on state. The System status card only exists on the dashboard,
+       so during the wizard — precisely when something goes wrong — none of it
+       was visible, and the silence in front of you could equally be the
+       pairing engine, the network or the robot. Guessing wrong costs a whole
+       pairing cycle, so the five facts now follow you across every screen. -->
+  <div class="healthbar" id="healthBar" title="live state"></div>
 
   <div class="tabs">
     <div class="tab active" id="tab-dash" onclick="showTab('dash')">DASHBOARD</div>
@@ -366,8 +392,16 @@
         <div class="ok" id="bleDoneMsg">Vector is on Wi-Fi.</div>
         <div id="bleAuthMsg" class="hint">Last step: authorize this Mac to
           control Vector. No serial to type — we read it over Bluetooth.</div>
+        <!-- Measured before you press the button, not after a minute of
+             waiting: whether this Mac can actually reach him where he is. -->
+        <div class="error" id="bleReachWarn" style="display:none"></div>
         <div class="error" id="bleAuthErr" style="display:none"></div>
         <button onclick="bleAuthorize()" id="btnBleAuth">AUTHORIZE &amp; FINISH →</button>
+        <!-- Being on *a* network is not the same as being on the right one: a
+             robot that remembers a guest Wi-Fi rejoins it happily, and then
+             nothing on this Mac can reach him. The BLE session is still open
+             here, so switching costs one screen. -->
+        <button class="secondary" onclick="bleChangeWifi()">JOIN A DIFFERENT NETWORK</button>
       </div>
     </div>
 
@@ -824,6 +858,35 @@ async function refreshStatus() {
 }
 setInterval(refreshStatus, 1000);
 refreshStatus();
+
+/* ---------- always-on state strip ----------
+   Five facts, on every screen, at a glance. Slower than the dashboard poll on
+   purpose: this is peripheral vision, not a readout, and it must not add load
+   while the wizard is doing real work. Each item carries its fix as a tooltip
+   so the strip stays one line and still answers "so what do I do". */
+async function refreshHealth() {
+  const el = $("healthBar");
+  if (!el) return;
+  try {
+    const r = await fetch("/api/health", {cache: "no-store"});
+    const j = await r.json();
+    el.innerHTML = (j.items || []).map(i => {
+      const cls = i.state === "ok" ? "hb-ok"
+                : i.state === "warn" ? "hb-warn"
+                : i.state === "bad" ? "hb-bad" : "";
+      const tip = i.fix ? ` title="${i.fix.replace(/"/g, "&quot;")}"` : "";
+      return `<span class="hb ${cls}"${tip}><span class="dot"></span>`
+           + `<span class="hbk">${i.key}</span> ${i.text}</span>`;
+    }).join("");
+  } catch (e) {
+    // The console losing the server is itself a fact worth showing — silence
+    // here would read as "everything fine".
+    el.innerHTML = `<span class="hb hb-bad"><span class="dot"></span>`
+                 + `<span class="hbk">server</span> unreachable</span>`;
+  }
+}
+setInterval(refreshHealth, 4000);
+refreshHealth();
 
 /* ---------- live top-down field ---------- */
 // field frame: origin center, +X toward Vector's goal, +Y player's left.
@@ -1673,7 +1736,28 @@ function bleShowPhase(phase) {
       "step-dot" + (i < phase ? " done" : i === phase ? " now" : "");
   });
 }
-function bleStep(n) { bleShowPhase(BLE_LEGACY_TO_PHASE[n] ?? 0); }
+function bleStep(n) {
+  bleShowPhase(BLE_LEGACY_TO_PHASE[n] ?? 0);
+  // Landing on the authorize screen is the last moment where a warning is
+  // still cheap. The token handshake goes over the network, not over
+  // Bluetooth, so a robot who paired perfectly can still be unreachable —
+  // and the alternative to asking now is a minute of waiting that ends in
+  // "he never knocked", with nothing said about why.
+  if (n === 3) bleCheckReach();
+}
+
+async function bleCheckReach() {
+  const box = $("bleReachWarn");
+  if (!box) return;
+  box.style.display = "none";
+  try {
+    const r = await api("/api/ble/reachable", {});
+    if (r && r.blocking && r.detail) {
+      box.textContent = r.detail;
+      box.style.display = "";
+    }
+  } catch (e) { /* a preflight that fails must never block the real step */ }
+}
 function bleStepShow(name) {
   bleShowPhase(Math.max(0, BLE_PHASES.indexOf(name)));
 }
@@ -1855,9 +1939,14 @@ async function bleProvision() {
   wirepodReadyLine();
 
   if (st.state === "in_firmware_ep") {
+    // The only screen that knows for certain the robot carries our firmware,
+    // so it is the only honest place to offer taking it off again.
     $("provBody").innerHTML =
       `<div class="ok">Already set up for wire-pod — nothing to install.</div>`
-      + `<button onclick="bleStep(3)">CONTINUE →</button>`;
+      + `<button onclick="bleStep(3)">CONTINUE →</button>`
+      + `<div id="revertBox" style="margin-top:22px;padding-top:16px;`
+      + `border-top:1px solid var(--line)"></div>`;
+    renderRevertOffer();
   } else if (st.state === "in_recovery_prod") {
     // Recovery, and we could NOT tell what he is: in this mode he reports no
     // build marker and no ESN, so a dev robot looks exactly like a stock one.
@@ -2124,15 +2213,20 @@ function flashBarHtml(s) {
       not a failure.</div>`;
 }
 
-async function bleFlashEp() {
-  $("btnFlash").disabled = true;
+// Both directions of the install run through here: mode "ep" is the setup
+// step, mode "revert" undoes it. Same transport, same progress, so the only
+// differences are which button is disabled and what is said at the end.
+async function bleFlashEp(mode) {
+  const revert = mode === "revert";
+  const btn = revert ? "btnRevert" : "btnFlash";
+  $(btn).disabled = true;
   $("provErr").style.display = "none";
   $("flashBar").style.display = "";
   $("flashBar").innerHTML = `<span class="spin">◌</span> starting…`;
   let started;
   window._flashActive = true;      // block the auto-reload during the install
   try {
-    started = await api("/api/ble/flash_ep", {});
+    started = await api("/api/ble/flash_ep", revert ? {mode: "revert"} : {});
   } catch (e) {
     started = {ok: false, error: String(e)};
   }
@@ -2140,7 +2234,7 @@ async function bleFlashEp() {
   // escapepod.local with the escape-pod certificate — otherwise the robot
   // finishes a long install and comes back pointed at nobody.
   if (!started || !started.ok) {
-    $("btnFlash").disabled = false;
+    $(btn).disabled = false;
     $("flashBar").style.display = "none";
     $("provErr").style.display = "";
     $("provErr").textContent = (started && started.error)
@@ -2157,7 +2251,7 @@ async function bleFlashEp() {
       clearInterval(poll);
       window._flashActive = false;
       $("flashBar").style.display = "none";
-      $("btnFlash").disabled = false;
+      $(btn).disabled = false;
       $("provErr").style.display = "";
       $("provErr").textContent = s.error;
       return;
@@ -2171,18 +2265,56 @@ async function bleFlashEp() {
       // This is the reboot the dashboard banner exists for: the robot goes
       // dark for a minute and OFFLINE alone reads like something broke.
       window.rebootingUntil = Date.now() + 90000;
-      $("provBody").innerHTML +=
-        `<div class="ok">Done — the escape-pod firmware is installed.</div>`
-        + `<div class="hint">What happens now: Vector reboots (~1 minute) and `
-        + `comes up in <b>his own first-time setup</b> — a cloud icon, then a `
-        + `"get the Vector app" screen. <b>Ignore it</b>, you don't need the `
-        + `app: this wizard does the same job over Bluetooth, and the last `
-        + `step here clears that screen for you.`
-        + `<br><br>His Wi-Fi is wiped by the install, so pair again below and `
-        + `re-enter the network — then authorize.</div>`
-        + `<button onclick="bleRestart()">PAIR AGAIN →</button>`;
+      $("provBody").innerHTML += revert
+        ? `<div class="ok">Done — he is back on stock firmware.</div>`
+          + `<div class="hint">Vector reboots (~1 minute) and comes up as an `
+          + `ordinary Vector again, pointed at Anki's cloud, with his Wi-Fi `
+          + `wiped. Set him up with the <b>official Vector app</b> from here — `
+          + `this wizard has nothing left to do for him.`
+          + `<br><br>Changed your mind? Nothing is lost: run the setup again `
+          + `and he takes the escape-pod firmware exactly as he did the first `
+          + `time.</div>`
+          + `<button onclick="showTab('dash')">GO TO DASHBOARD →</button>`
+        : `<div class="ok">Done — the escape-pod firmware is installed.</div>`
+          + `<div class="hint">What happens now: Vector reboots (~1 minute) and `
+          + `comes up in <b>his own first-time setup</b> — a cloud icon, then a `
+          + `"get the Vector app" screen. <b>Ignore it</b>, you don't need the `
+          + `app: this wizard does the same job over Bluetooth, and the last `
+          + `step here clears that screen for you.`
+          + `<br><br>His Wi-Fi is wiped by the install, so pair again below and `
+          + `re-enter the network — then authorize.</div>`
+          + `<button onclick="bleRestart()">PAIR AGAIN →</button>`;
     }
   }, 2000);
+}
+
+// Undoing the setup. Deliberately two clicks and deliberately not on the happy
+// path: it is the one action here that can leave someone with a robot this
+// software can no longer help, and it has never been run on hardware.
+function revertConfirm() {
+  $("revertBox").innerHTML =
+    `<div class="hint" style="margin-bottom:10px">This installs ordinary `
+    + `production firmware over the escape-pod one. Vector goes back to Anki's `
+    + `cloud, stops answering to this Mac, and <b>can no longer play</b> until `
+    + `you set him up again. He downloads ~180 MB himself — keep him on the `
+    + `charger and don't interrupt it.`
+    + `<br><br><b>Untested.</b> The install machinery is the same one that put `
+    + `the firmware on, and he keeps recovery mode and two system slots — a `
+    + `failed install is a retry, not a brick. But installing stock over `
+    + `escape-pod is something we have documented and never run, and firmware `
+    + `refuses installs on its own build-type checks for reasons that are not `
+    + `always obvious.</div>`
+    + `<div id="flashBar" class="hint" style="display:none"></div>`
+    + `<button onclick="bleFlashEp('revert')" id="btnRevert" class="danger">`
+    + `YES — PUT HIM BACK ON STOCK →</button> `
+    + `<button onclick="renderRevertOffer()">Cancel</button>`;
+}
+
+function renderRevertOffer() {
+  $("revertBox").innerHTML =
+    `<div class="hint">Done with this robot? `
+    + `<a href="#" onclick="revertConfirm();return false">Put him back on stock `
+    + `firmware</a> — undoes the install and returns him to Anki's cloud.</div>`;
 }
 
 async function bleScan() {
@@ -2247,11 +2379,23 @@ async function blePin() {
   // way — its OTA step only runs from the Wi-Fi success callback.)
   // wifi_state 1 = already connected -> no needless reconnect, no 255 trap.
   if (st.wifi_state === 1) {
-    $("bleDoneMsg").innerHTML = "Vector is already on Wi-Fi ✓";
+    // Name the network. "Already on Wi-Fi" reads as success even when he is
+    // sitting on a guest network this Mac cannot reach — the SSID is the only
+    // thing that tells those two apart at a glance.
+    $("bleDoneMsg").innerHTML = st.ssid
+      ? `Vector is already on <b>${st.ssid}</b> ✓`
+      : "Vector is already on Wi-Fi ✓";
     if (window.needsProvisioning) { bleProvision(); return; }
     bleStep(3);
     return;
   }
+  bleStep(2);
+  bleWifiScan();
+}
+
+// Deliberately switch networks from the "he's online" screen. Nothing needs
+// forgetting first — a connect request replaces whatever he was joined to.
+function bleChangeWifi() {
   bleStep(2);
   bleWifiScan();
 }

@@ -1,0 +1,42 @@
+- !<ObjectPrefab/eba2d618-477d-4f49-a9d5-9a9a01651593>
+  PackagePath: ""
+  objects:
+    - !<own> 8f6ccbbd-4505-41cb-9faf-db8c0ae1657a
+  LazyLoading: false
+  RetainAssets: true
+- !<SceneObject/8f6ccbbd-4505-41cb-9faf-db8c0ae1657a>
+  PrefabRemaps:
+    - 8f6ccbbd-4505-41cb-9faf-db8c0ae1657a: 8f6ccbbd-4505-41cb-6050-2473f51e9a85
+    - ca6704e0-9522-4454-91dc-36e206abb135: ca6704e0-9522-4454-6e23-c91df9544eca
+  Name: Helix Emitter
+  Enabled: true
+  Layers: 1
+  LocalTransform: !<TransformEntity>
+    Position: {x: 0.000000, y: 25.000000, z: 0.000000}
+    Rotation: {x: 0.000000, y: 0.000000, z: 0.000000}
+    Scale: {x: 100.000000, y: 100.000000, z: 100.000000}
+    HasSegmentScaleCompensation: false
+  Children:
+    []
+  Components:
+    - !<own> ca6704e0-9522-4454-91dc-36e206abb135
+- !<RenderMeshVisual/ca6704e0-9522-4454-91dc-36e206abb135>
+  PrefabRemaps:
+    []
+  Name: Render Mesh Visual
+  Enabled: true
+  RenderOrder: 4
+  StretchMode: Stretch
+  VerticalAlignment: Center
+  HorizontalAlignment: Center
+  MeshShadowMode: None
+  ShadowColor: {x: 1.000000, y: 1.000000, z: 1.000000, w: 1.000000}
+  ShadowDensity: 1.000000
+  Materials:
+    - !<reference> e84f98b7-66b8-4cdd-986d-cd727ce35ae0
+  Mesh: !<reference> 75020b64-17e2-4829-9253-4a8fc6f6cc39
+  Skin: !<reference> 00000000-0000-0000-0000-000000000000
+  BlendShapesEnabled: true
+  BlendNormals: false
+  BlendShapes:
+    {}
