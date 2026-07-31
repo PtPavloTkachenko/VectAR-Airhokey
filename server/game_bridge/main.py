@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import os
 import time
 from pathlib import Path
 
@@ -836,6 +837,15 @@ class Bridge:
         blames a second SDK client for holding him.
         """
         logger.info(f"network changed — this Mac is now {new_ip}")
+        # The pairing engine publishes escapepod.local with the address it saw
+        # at ITS startup, and it is a separate process, so it cannot be
+        # re-announced from here. Restarting is the whole fix and costs a
+        # second. Only ours to restart — a copy the user started stays theirs.
+        if getattr(self, "_pairing_engine", None):
+            try:
+                await self._pairing_engine.restart()
+            except Exception as e:
+                logger.debug(f"pairing engine restart: {e}")
         try:
             from . import netinfo
             serial, ips, name = config.read_robot_identity("")
@@ -944,6 +954,19 @@ class Bridge:
                 mdns_watch(self._mdns, on_change=self._on_network_changed))
         except Exception as e:
             logger.debug(f"mdns: {e}")
+        # The pairing engine issues robot tokens. It ships with the repo and
+        # needs no arguments, yet forgetting to start it produced a pairing
+        # that got all the way to the token step and then failed with a
+        # message about Anki's cloud. Start it here instead of documenting it.
+        self._pairing_engine = None
+        if os.getenv("VECTAR_AUTO_PAIRING_ENGINE", "1") != "0":
+            try:
+                from .pairing_engine import PairingEngine
+                self._pairing_engine = PairingEngine()
+                await self._pairing_engine.start()
+            except Exception as e:
+                logger.debug(f"pairing engine: {e}")
+
         self.web = None
         if config.WEB_PORT:
             try:
@@ -977,6 +1000,8 @@ class Bridge:
                 self._mdns_watch.cancel()
             if getattr(self, "_mdns", None):
                 self._mdns.stop()   # withdraw the name with the server
+            if getattr(self, "_pairing_engine", None):
+                self._pairing_engine.stop()
             if self.web:
                 await self.web.stop()
 
