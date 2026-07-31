@@ -69,6 +69,7 @@ export class CoffeeMLController extends BaseScriptComponent {
   private viewToWorldMatrix: mat4;
   private cameraModelReady: boolean = false;
 
+  private triedFloat: boolean = false;
   private isRunning: boolean = false;
   private started: boolean = false;
   private modelReady: boolean = false;
@@ -229,7 +230,21 @@ export class CoffeeMLController extends BaseScriptComponent {
     this.mlComponent = this.getSceneObject().createComponent("MLComponent");
     this.mlComponent.model = modelAsset;
     this.mlComponent.onLoadingFinished = this.onLoadingFinished.bind(this);
-    this.mlComponent.onLoadingFailed = (error: string) => print("[CoffeeML] model load failed: " + error);
+    this.mlComponent.onLoadingFailed = (error: string) => {
+      print("[CoffeeML] model load failed: " + error);
+      // The quantised export is the one that can be refused: on device it is
+      // handed to the editor, which does not accept it ("the load is refused"). Reaching the hardware needs the
+      // route, which this Lens does not have. Rather than leave vision
+      // dead for the whole session, fall back to the float model — it is the
+      // same detector, and it is what the preview has been running all along.
+      if (modelAsset === this.modelQuantized && this.model && !this.triedFloat) {
+        this.triedFloat = true;
+        print("[CoffeeML] falling back to the float model");
+        this.modelQuantized = null as any;
+        this.mlComponent.destroy();
+        this.buildModel();
+      }
+    };
     this.mlComponent.onRunningFailed = (error: string) => print("[CoffeeML] model run failed: " + error);
 
     // Accelerator on device; leave the editor on its default (FastDnn CPU) backend.

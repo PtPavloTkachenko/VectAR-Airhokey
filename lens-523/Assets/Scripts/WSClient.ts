@@ -37,10 +37,27 @@ export class WSClient {
 
   constructor(private internetModule: InternetModule) {}
 
+  // Which address to dial. The name is preferred — it survives the Mac moving
+  // between networks — but a headset may not resolve `.local` at all, and a
+  // Lens that only knows a name it cannot resolve simply sits in CONNECT_WS
+  // forever with nothing in the log to say why. So alternate: every other
+  // attempt uses the address the user pasted, and whichever one opens is kept
+  // for the rest of the session.
+  private attempt = 0;
+  private pinnedUrl = "";
+
+  private nextUrl(): string {
+    if (this.pinnedUrl) return this.pinnedUrl;
+    const fb = (GameConfig as any).WS_URL_FALLBACK || "";
+    if (!fb) return GameConfig.WS_URL;
+    return (this.attempt++ % 2 === 0) ? GameConfig.WS_URL : fb;
+  }
+
   connect() {
-    log.i("Connecting to " + GameConfig.WS_URL);
+    const url = this.nextUrl();
+    log.i("Connecting to " + url);
     try {
-      this.socket = this.internetModule.createWebSocket(GameConfig.WS_URL);
+      this.socket = this.internetModule.createWebSocket(url);
     } catch (e) {
       log.e("createWebSocket failed: " + e);
       this.scheduleReconnect();
@@ -48,6 +65,14 @@ export class WSClient {
     }
     this.socket.onopen = () => {
       log.i("WS open");
+      // Stop alternating: this is the address that works here.
+      if (!this.pinnedUrl) {
+        this.pinnedUrl = url;
+        if (url !== GameConfig.WS_URL) {
+          log.i("using the fallback address — this headset does not resolve "
+                + GameConfig.WS_URL);
+        }
+      }
       this.connected = true;
       this.backoffS = 1.0;
       this.lastPongAt = this.timeS;

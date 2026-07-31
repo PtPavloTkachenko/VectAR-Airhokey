@@ -14,11 +14,13 @@ the newer one moves.
 | Lens Studio | 5.15.4 | 5.23.0 |
 | Target | Spectacles (2024) | current SPECS |
 | Detector | `best.onnx` | `best.onnx` + `vector_yolo_qnn.dlc` |
-| Hardware-tested | yes | **no — see below** |
+| Hardware-tested | yes | yes |
 
 Everything else — the server, the protocol, the wizard, the gameplay — is
-shared. The 5.23 Lens dials the same `ws://vectar.local:8777` and speaks the
-same protocol, so one server plays with either.
+shared, so one server plays with either. The 5.23 Lens dials the same
+`ws://vectar.local:8777`, with one caveat that costs a first-run debugging
+session if you do not know it: some headsets do not resolve `.local`, so it also
+needs a plain address (see below).
 
 ## What the migration actually changed
 
@@ -56,33 +58,62 @@ trained on pixels scaled to 0..1, which is what `best.onnx` carries
 just detects nothing, or detects nonsense. Both assets now carry 0.0039 on all
 three channels; if you ever re-import the `.dlc`, check that field first.
 
-They are both shipped because neither covers both places:
+Both are shipped, but — measured — **the float export is what
+actually runs, in both places**. The `.dlc` was meant for the glasses, and on
+the glasses `MLComponent` hands it to the editor, which refuses it (see
+"What some headsets do differently"). Reaching the hardware needs the route, which
+this Lens does not carry.
 
-- The **.dlc runs on the glasses** (device) and does not load on the editor's CPU
-  backend.
-- The **.onnx runs everywhere**, including the Preview panel, which is where
-  you develop.
+`CoffeeMLController` still picks between them — on-device it prefers
+`modelQuantized` when one is wired, and falls back to `model` when it fails to
+load, which is what happens today. Wiring is already done in the shipped scene
+(GameController → `mlModel` = `best`, `mlModelQuantized` = `vector_yolo_qnn`).
+Unwire `mlModelQuantized` to skip the failed attempt entirely; unwire both and
+the game still plays on odometry alone.
 
-`CoffeeMLController` picks between them: on-device it takes `modelQuantized`
-when one is wired, and the preview always falls back to `model`. Wiring is
-already done in the shipped scene (GameController → `mlModel` = `best`,
-`mlModelQuantized` = `vector_yolo_qnn`). Unwire `mlModelQuantized` and you are
-back to the float model everywhere; unwire both and the game still plays on
-odometry alone.
+## What some headsets do differently
+
+Three things behave differently from Spectacles (2024), all found on the first
+device run and all now handled in code. Worth knowing, because each one fails
+in a way that does not name itself.
+
+**The camera you ask for may not exist.** Asking for `Left_Color` throws out of
+`onStart`, which kills the vision controller before anything else runs — the
+Lens looks like it crashed for no reason. It now tries candidates in order and
+keeps the first the device grants; which varies by headset; the
+same one another project uses. A grayscale fallback is announced in
+the log, since the detector was trained on colour.
+
+**`.local` names may not resolve.** The Lens dials `ws://vectar.local:8777`,
+which worked on Spectacles (2024) and works in the editor preview — on some
+Specs it silently never connects, and the Lens sits in `CONNECT_WS` with
+nothing in the log to explain it. Paste the address the server console shows
+under **Lens WS_URL** into `GameConfig.WS_URL_FALLBACK`; the Lens alternates
+between the name and that address and keeps whichever opens. Leave it empty if
+your headset resolves the name.
+
+**The quantised model does not load through MLComponent.** On device it lands
+on the editor, which refuses it:
+`the load is refused`. The
+`.dlc` needs the route to reach the hardware, which this Lens does not carry — so
+vision runs on the float ONNX, exactly as it does in the preview. The `.dlc`
+ships anyway: it is the same detector, and the moment a route exists it
+is one input away. This is the device-gated question ADR #104 left open, and
+the answer is no.
 
 ## Honest status
 
-**This project has not been run on SPECS hardware.** What is verified is the
-editor side, in Lens Studio 5.23: the project upgrades, all packages pull to
-2.0.0, TypeScript compiles clean, and the Lens boots in the SPECS 27 preview
-with no runtime errors — it reaches the hand-calibration screen and arms the
-vision pipeline.
+**It runs on the glasses and it plays.** The Lens boots on the glasses,
+calibrates the surface, connects to the server and drives the robot. Getting
+there took three device-only fixes, listed above — none of them reachable in
+the editor, where the camera, the name resolution and the model all behave
+differently.
 
-What that does not prove: that the quantised model loads and infers on the
-actual hardware, that its detections land where the float model's did, or that the
-converted shaders look identical on a real display. The 5.15 Lens is the one
-with hardware behind it. Treat this as the migrated project, ready for a device
-run — not as a tested build.
+What is confirmed: the migration itself (packages, shaders, scene), the
+protocol, hand calibration, and the game loop against a real robot. What is
+not: the quantised model on device — it does not load through MLComponent, so
+vision uses the float export on device too, and the `.dlc` remains unproven
+hardware-side.
 
 ## Setup
 
