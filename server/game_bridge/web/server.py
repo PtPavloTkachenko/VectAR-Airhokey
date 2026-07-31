@@ -1158,6 +1158,48 @@ class WebUI:
         except Exception as e:
             return web.json_response({"ok": False, "error": str(e)})
 
+    def _why_he_never_knocked(self, robot_ip: str) -> str:
+        """Measure the network after the robot failed to reach the engine.
+
+        "He has not completed his handshake" is true and useless on its own —
+        it names the symptom and leaves the reader to guess between a sleeping
+        robot, a wrong network, and an access point that quietly refuses to
+        let its clients talk to each other. The third one is invisible: both
+        devices are online, both have addresses on the same subnet, and
+        everything looks correct right up until nothing arrives.
+
+        So probe once, here, where it matters, and say what came back.
+        """
+        from .. import netinfo
+        if not robot_ip:
+            return ""
+        here = netinfo.lan_ip()
+        if netinfo.same_subnet(here, robot_ip) is False:
+            return (f"He is on {robot_ip} and this Mac is on {here} — "
+                    f"different networks, so he cannot reach it at all. Put "
+                    f"both on the same one (JOIN A DIFFERENT NETWORK).")
+        rtt = netinfo.rtt_ms(robot_ip, count=2)
+        from ..robot.sdk.connection import _tcp_open
+        open443 = _tcp_open(robot_ip, tries=2)
+        if rtt is None and not open443:
+            # Same subnet, addresses agree, and still nothing gets through:
+            # the signature of client isolation, which guest and corporate
+            # Wi-Fi enable by default and which pairing cannot work around.
+            return (f"He is on {robot_ip}, the same network as this Mac, yet "
+                    f"nothing reaches him — no ping, no port 443. That is a "
+                    f"Wi-Fi that blocks devices from talking to each other "
+                    f"(usual on guest and corporate networks). Pairing cannot "
+                    f"work there: use a phone hotspot for both.")
+        if rtt is not None and rtt > netinfo.LAN_RTT_CEILING_MS:
+            return (f"He answers in {rtt:.0f} ms on a local network, which "
+                    f"means the traffic is being relayed — typical of guest "
+                    f"Wi-Fi, which usually also blocks the device-to-device "
+                    f"traffic pairing needs. Try a phone hotspot for both.")
+        if open443:
+            return (f"He is reachable at {robot_ip}, so the network is fine — "
+                    f"this one is worth retrying before changing anything.")
+        return ""
+
     async def api_health(self, _req):
         """The five facts that answer "what is going on", on every screen.
 
@@ -1423,9 +1465,13 @@ class WebUI:
                     # An unprovisioned robot fails the mint because wire-pod has
                     # no cert for it — that's a setup problem, not a user error.
                     ready = await asyncio.to_thread(pairing.wirepod_status, pod)
+                    extra = await asyncio.to_thread(
+                        self._why_he_never_knocked,
+                        getattr(self._ble, "ip", "") if self._ble else "")
                     return web.json_response(
                         {"ok": False, "step": e.step, "needs_setup": True,
-                         "wirepod": ready, "error": e.message})
+                         "wirepod": ready,
+                         "error": e.message + (f" {extra}" if extra else "")})
                 # already provisioned -> mint optional, fall through to connect
             except Exception as e:
                 if not self._is_provisioned(esn):
