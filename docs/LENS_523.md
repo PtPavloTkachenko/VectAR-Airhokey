@@ -93,6 +93,11 @@ The fix takes ten seconds and no code:
 3. In Lens Studio select **GameController** in the Scene Hierarchy and paste it
    into the **Server Address** field in the Inspector
 
+![Server Address on the GameController component](images/lens-server-address.png)
+
+*GameController's Inspector — `Server Address` sits just under `Rsg Token`.
+Empty means "use the name".*
+
 Either form works — `ws://192.0.2.10:8777` or just `192.0.2.10`. Leave it blank
 if your headset resolves the name; the Lens tries the name first either way and
 keeps whichever answers. **Re-copy it whenever the Mac joins a different Wi-Fi**
