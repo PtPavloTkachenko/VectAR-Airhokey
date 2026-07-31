@@ -115,6 +115,18 @@ not: the quantised model on device — it does not load through MLComponent, so
 vision uses the float export on device too, and the `.dlc` remains unproven
 hardware-side.
 
+## Pause the preview before you test on the glasses
+
+The server talks to **one** Lens at a time. Leave the Lens Studio preview
+running while the glasses are on, and the two take turns kicking each other
+off: the log fills with `Lens connected` / `Lens hello` every second, from two
+different addresses, and neither session lasts long enough to play. Nothing
+reports an error, because from each side it looks like a reconnect.
+
+So pause (or close) the preview panel in Lens Studio before sending to the
+glasses. In the console you can tell them apart by address — the Mac and the
+headset each show their own.
+
 ## Setup
 
 Same as [docs/LENS.md](LENS.md), with two differences: open
