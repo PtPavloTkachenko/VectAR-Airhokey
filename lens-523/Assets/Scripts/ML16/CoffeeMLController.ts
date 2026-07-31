@@ -169,16 +169,43 @@ export class CoffeeMLController extends BaseScriptComponent {
   }
 
   private setupCamera(): void {
-    this.camId = this.isEditor
-      ? CameraModule.CameraId.Default_Color
+    // Which cameras exist is a property of the hardware, not something a Lens
+    // can assume. Asking for a camera the headset does not have will
+    // throw out of onStart — which kills the whole
+    // controller before anything else runs, so the Lens looks like it crashed
+    // for no reason. Try the candidates in order of usefulness and take the
+    // first the device actually grants.
+    const M: any = CameraModule.CameraId;
+    const wanted: any[] = this.isEditor
+      ? [M.Default_Color]
       : this.useRightColorCamera
-        ? CameraModule.CameraId.Right_Color
-        : CameraModule.CameraId.Left_Color;
-    const request = CameraModule.createCameraRequest();
-    request.cameraId = this.camId;
-    if (!this.isEditor) request.imageSmallerDimension = 756;
-    this.camTexture = this.cameraModule.requestCamera(request);
-    if (this.debugLog) print("[CoffeeML] camera requested (camId=" + this.camId + ")");
+        ? [M.Right_Color, M.Left_Color, M.Left_Grayscale, M.Right_Grayscale]
+        : [M.Left_Color, M.Right_Color, M.Left_Grayscale, M.Right_Grayscale];
+
+    for (const id of wanted) {
+      if (id === undefined || id === null) continue;   // absent on this runtime
+      try {
+        const request = CameraModule.createCameraRequest();
+        request.cameraId = id;
+        if (!this.isEditor) request.imageSmallerDimension = 756;
+        this.camTexture = this.cameraModule.requestCamera(request);
+        this.camId = id;
+        if (this.debugLog || id !== wanted[0]) {
+          // Worth saying out loud when it is NOT the first choice: the
+          // detector was trained on colour, so a grayscale feed is a real
+          // difference in input, not just a different constant.
+          print("[CoffeeML] camera granted: id=" + id
+                + (id === M.Left_Grayscale || id === M.Right_Grayscale
+                   ? " (grayscale — detections may differ from the colour model)"
+                   : ""));
+        }
+        return;
+      } catch (e) {
+        print("[CoffeeML] camera id=" + id + " refused: " + e);
+      }
+    }
+    print("[CoffeeML] no camera could be opened — vision stays off, the game "
+          + "still plays on odometry alone.");
   }
 
   private buildModel(): void {
