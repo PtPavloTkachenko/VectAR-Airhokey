@@ -76,3 +76,56 @@ class Responder:
         finally:
             self._zc = None
             self._info = None
+
+    def rebind(self, ip: str) -> bool:
+        """Re-announce the name at a new address.
+
+        The published record carries the address it was built with, so a
+        network change turns it into a lie: the name still resolves, just to
+        somewhere nothing is listening. Rebinding is the only cure — zeroconf
+        gives no way to edit a record that is already out there.
+        """
+        if not ip or ip == self.ip:
+            return False
+        old = self.ip
+        self.stop()
+        self.ip = ip
+        ok = self.start()
+        logger.info(f"network moved {old} -> {ip}; {NAME}.local "
+                    + ("re-announced" if ok else "re-announce FAILED"))
+        return ok
+
+
+async def watch(responder: "Responder", interval: float = 2.0,
+                on_change=None) -> None:
+    """Keep the published name pointing at wherever this Mac actually is.
+
+    Setting a robot up away from home means changing networks mid-flow —
+    joining a phone hotspot because the guest Wi-Fi isolates its clients, for
+    instance. Every address in this system is captured once at startup, so that
+    switch left the robot being sent to an address that had ceased to exist,
+    while the failure surfaced three steps later as a token error blaming the
+    robot's firmware. Nobody was watching the single fact that had changed.
+
+    Runs until cancelled.
+    """
+    import asyncio
+
+    from . import netinfo
+    while True:
+        try:
+            now = netinfo.lan_ip()
+            if now and now != responder.ip:
+                await asyncio.to_thread(responder.rebind, now)
+                if on_change:
+                    try:
+                        r = on_change(now)
+                        if asyncio.iscoroutine(r):
+                            await r
+                    except Exception as e:
+                        logger.debug(f"mdns on_change: {e}")
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.debug(f"mdns watch: {e}")
+        await asyncio.sleep(interval)

@@ -826,6 +826,33 @@ class Bridge:
         self.pump = None
         self.commander = None
 
+    async def _on_network_changed(self, new_ip: str) -> None:
+        """The Mac moved to another network. Re-check what that invalidates.
+
+        The published name is already fixed by the watcher that calls this.
+        What it cannot fix is the robot: his address was learned when he was
+        paired, and on a new network it is either stale or unreachable. Saying
+        so here beats discovering it later as a connection that hangs and then
+        blames a second SDK client for holding him.
+        """
+        logger.info(f"network changed — this Mac is now {new_ip}")
+        try:
+            from . import netinfo
+            serial, ips, name = config.read_robot_identity("")
+            robot_ip = (ips or "").split(",")[0].strip()
+            if not robot_ip:
+                return
+            same = netinfo.same_subnet(new_ip, robot_ip)
+            if same is False:
+                self.last_link_hint = (
+                    f"{name or 'The robot'} was paired on another network "
+                    f"({robot_ip}) and cannot be reached from {new_ip}. "
+                    f"Re-run PAIR ROBOT and use JOIN A DIFFERENT NETWORK to "
+                    f"bring him here.")
+                logger.warning(self.last_link_hint)
+        except Exception as e:
+            logger.debug(f"network-change check: {e}")
+
     async def connect_robot(self) -> bool:
         """Connect + acquire control over the SDK (gRPC). NON-FATAL: returns
         False when the robot is unpaired or unreachable — the server keeps
@@ -903,11 +930,18 @@ class Bridge:
         # Publish <name>.local so a Lens can dial a NAME instead of an address
         # that DHCP will eventually change under it.
         self._mdns = None
+        self._mdns_watch = None
         try:
-            from .mdns import Responder
-            from .web.server import _lan_ip
-            self._mdns = Responder(_lan_ip(), config.WS_PORT)
+            from . import netinfo
+            from .mdns import Responder, watch as mdns_watch
+            self._mdns = Responder(netinfo.lan_ip(), config.WS_PORT)
             await asyncio.to_thread(self._mdns.start)
+            # ...and keep it honest. The address was true when we read it; a
+            # laptop being carried between networks makes it false in seconds,
+            # and a name pointing at a dead address is worse than no name — it
+            # resolves, so nothing reports an error.
+            self._mdns_watch = asyncio.create_task(
+                mdns_watch(self._mdns, on_change=self._on_network_changed))
         except Exception as e:
             logger.debug(f"mdns: {e}")
         self.web = None
@@ -939,6 +973,8 @@ class Bridge:
                 self.commander.stop()
             if self.link:
                 await self.link.disconnect()
+            if getattr(self, "_mdns_watch", None):
+                self._mdns_watch.cancel()
             if getattr(self, "_mdns", None):
                 self._mdns.stop()   # withdraw the name with the server
             if self.web:
