@@ -92,12 +92,23 @@ The server does this check for you — see below.
   `classify_robot()` (stock / dev / ep / recovery) and `ota_flash()` with
   progress + the die-214 explanation.
 - `web/server.py` — `/api/ble/state`, `/api/ble/flash_ep` (+ `/flash_status`),
-  `/api/get_ota/{name}` (serves `~/.vectar/ota/` if cached, else streams from
-  the Internet Archive), `/api/ble/provision_oskr`, `/api/wirepod_status`.
+  `/api/get_ota/{name}` (serves `~/.vectar/ota/` or the repo copy if cached,
+  else streams from the first mirror in `OTA_MIRRORS` that has it),
+  `/api/ble/provision_oskr`, `/api/wirepod_status`.
+- **Two mirrors, because neither has everything**: archive.org carries the
+  escape-pod image and 404s on plain production builds;
+  `vectorfirmware.ddlbot.ai/vicos/` is the other way round. The fallthrough is
+  what makes going back to stock possible (live-verified 2026-07-27).
 - **Readiness gate**: `/api/ble/flash_ep` refuses to start unless
   `wirepod_status()` reports escape-pod mode live (probed: name resolves +
   :443 presents `CN=escapepod.local`), so a 180 MB install can't strand the
   robot. Override with `{"force": true}`.
+- **`{"mode": "revert"}` installs stock firmware instead**, undoing the whole
+  thing (docs/SETUP_ROBOT.md "Going back to stock"). It skips the readiness
+  gate on purpose — that guard protects the way in and is backwards on the way
+  out — and it must NOT run the die-214 → `remember_build_type("dev")` branch,
+  since a refusal there is about the image, not about the robot. **Built and
+  unit-tested; never run on hardware.**
 - **Cert polling**: `authorize` polls `/session-certs/<esn>` for 60 s
   (`cert_wait`) instead of failing on the first miss — the robot's handshake
   trails the Wi-Fi step, and failing fast was the classic dead end.

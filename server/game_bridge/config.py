@@ -31,16 +31,25 @@ WIREPOD_URL = os.getenv("WIREPOD_URL", "http://localhost:8080")
 # --- Stock-robot provisioning (escape-pod firmware) ---
 # A plain stock Vector's cloud is ddl.io; flashing the "ep" firmware over BLE
 # bakes server_config -> escapepod.local so it finds wire-pod on any Wi-Fi.
-# Served from OTA_CACHE_DIR first, then OTA_REPO_DIR, then the Internet Archive
-# (the same source upstream wire-pod proxies). Drop any other image in
-# OTA_CACHE_DIR and name it in the flash request to install that one instead —
-# that is how a robot goes back to stock (docs/SETUP_ROBOT.md).
+# Served from OTA_CACHE_DIR first, then OTA_REPO_DIR, then the mirrors below.
 EP_OTA_NAME = os.getenv("EP_OTA_NAME", "vicos-2.0.1.6076ep.ota")
+# The image that undoes the above: ordinary production firmware, cloud back at
+# ddl.io. Named separately because it is a different act, not a different
+# filename (docs/SETUP_ROBOT.md, "Going back to stock").
+STOCK_OTA_NAME = os.getenv("STOCK_OTA_NAME", "vicos-2.0.1.6091.ota")
 OTA_CACHE_DIR = Path(os.getenv(
     "OTA_CACHE_DIR", str(Path.home() / ".vectar" / "ota")))
 # Shipped with the repo via Git LFS, so a fresh clone can flash a robot with
 # nothing to download by hand and no dependency on archive.org staying up.
 OTA_REPO_DIR = Path(__file__).resolve().parent.parent / "onboarding" / "ota"
+# Tried in order when an image is in neither directory. archive.org is what
+# upstream wire-pod proxies and carries the escape-pod image; it does NOT carry
+# the plain production images (that URL 404s), and Digital Dream Labs' own
+# firmware mirror does — so going back to stock needs the second entry.
+OTA_MIRRORS = (
+    "https://archive.org/download/vector-pod-firmware/{name}",
+    "https://vectorfirmware.ddlbot.ai/vicos/{name}",
+)
 
 # --- OSKR/dev-robot provisioning ---
 # Its SSH key is ours to manage: generated on first use, installed on the robot

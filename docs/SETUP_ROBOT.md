@@ -127,38 +127,30 @@ install is.
 
 ### Going back to stock
 
-The same route in reverse — recovery mode, then install a stock image over
-Bluetooth instead of the escape-pod one.
+The same route in reverse, and the wizard does it: pair with him as usual, and
+on the step that says *"Already set up for wire-pod"* take the **Put him back on
+stock firmware** link underneath. It asks once more, then installs ordinary
+production firmware over the escape-pod one — he downloads ~180 MB himself from
+this Mac, exactly as he did on the way in.
 
-1. **Get a stock image for his hardware.** Digital Dream Labs' own firmware
-   mirror serves them: `vectorfirmware.ddlbot.ai/vicos/`. Take the **plain**
-   name, e.g. `vicos-2.0.1.6091.ota` — not the `oskr` or `d` variant.
-2. **Put it where the server serves OTAs from:** `~/.vectar/ota/`.
-3. **Put him in recovery** — on the charger, hold the back button ~15 s until
-   his face shows `anki.com/v`.
-4. **Pair and give him Wi-Fi in the wizard** (he downloads the image himself, so
-   he needs a network), then trigger the install with that filename:
+- **Keep him on the charger and don't interrupt it**, same as the first install.
+- **You don't need to fetch anything.** The server pulls the stock image from
+  Digital Dream Labs' firmware mirror if it isn't already cached. To install a
+  particular build instead, drop it in `~/.vectar/ota/` and it is used from
+  there — any plain `vicos-2.0.1.*.ota`, not the `oskr` or `d` variants.
+- **Afterwards he is an ordinary Vector**, pointed at Anki's cloud, with his
+  Wi-Fi wiped. Set him up with the official Vector app from that point.
+- **Changed your mind?** Nothing is lost. Run the setup again and he takes the
+  escape-pod firmware exactly as he did the first time.
 
-   ```bash
-   curl -sX POST localhost:8780/api/ble/flash_ep \
-     -H 'content-type: application/json' \
-     -d '{"ota": "vicos-2.0.1.6091.ota", "force": true}'
-   ```
-
-   `force` is required: the wizard normally refuses to flash unless the pairing
-   engine is in escape-pod mode, which is a guard on the way *in* and meaningless
-   on the way out.
-5. **Keep him on the charger until he reboots.** He then comes up as an ordinary
-   Vector again, pointed at Anki's cloud, and you set him up with the official
-   Vector app.
-
-> **Honest status: we have not run this.** The install machinery is the same one
-> proven on hardware in both directions of the setup, and the robot keeps his
-> recovery mode and his A/B slots throughout — a failed install is a retry, not
-> a brick. But the specific case of installing a stock image *over* the
-> escape-pod one is untested here, and firmware refuses installs on its own
-> build-type checks in ways that are not always obvious. Treat it as a
-> documented route, not a guarantee.
+> **Honest status: we have not run this on a robot.** The install machinery is
+> the same one proven on hardware in both directions of the setup, and he keeps
+> his recovery mode and his two system slots throughout — a failed install is a
+> retry, not a brick. But installing a stock image *over* the escape-pod one is
+> untested here, and firmware refuses installs on its own build-type checks in
+> ways that are not always obvious. If he refuses the image, the wizard says so
+> and he is left exactly as he was — still on the escape-pod firmware, still
+> able to play.
 
 ## Troubleshooting
 
