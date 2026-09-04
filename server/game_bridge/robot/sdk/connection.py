@@ -31,6 +31,25 @@ _CERT_ROTATED_MARKERS = (
     "certificate has expired", "wrong_version_number",
 )
 
+# Substrings that mean "the robot answered and rejected our control token".
+# Distinct from the cert markers above: TLS succeeded, so nothing looks broken
+# at connect time — it is every AUTHENTICATED call afterwards that comes back
+# 401. That happens when the guid in sdk_config.ini is refreshed underneath a
+# link that is already open (a re-pair while the server runs), and it used to
+# be invisible: the robot_state stream stays alive on the credentials it was
+# opened with, so the link kept reading as healthy while every command failed.
+_AUTH_DEAD_MARKERS = (
+    "unauthenticated", "failed to authenticate", "status: 401",
+)
+
+
+def is_auth_dead(exc: BaseException) -> bool:
+    """True if `exc` is the robot rejecting our credentials rather than a
+    transport hiccup — i.e. reconnecting with what sdk_config.ini says NOW is
+    the fix, and retrying the same handle never is."""
+    msg = str(exc).lower()
+    return any(m in msg for m in _AUTH_DEAD_MARKERS + _CERT_ROTATED_MARKERS)
+
 
 def _tcp_open(ip: str, port: int = 443, timeout: float = 2.0,
               tries: int = 3) -> bool:

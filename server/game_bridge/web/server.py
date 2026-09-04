@@ -1553,7 +1553,13 @@ class WebUI:
                 {"ok": True, "minted": minted, "connected": False,
                  "note": "Credentials ready; restart the server without "
                          "--no-robot to drive the robot."})
-        ok = await b.connect_robot()
+        # force: we just minted his certificate and token, so any link open
+        # right now was built on the previous pair and is dead the moment they
+        # are replaced. Without this the link watchdog's reconnect — which can
+        # land a second or two BEFORE authorize finishes — made the link look
+        # healthy, so this returned "connected" on credentials the robot had
+        # already stopped accepting, and every command 401'd from then on.
+        ok = await b.connect_robot(force=True)
         return web.json_response(
             {"ok": True, "minted": minted, "connected": ok,
              "error": None if ok else "Minted, but couldn't reach the robot's "

@@ -742,7 +742,19 @@ class Bridge:
                 busy=busy, origin_id=int(snap.get("origin_id", 0))))
 
     async def battery_task(self):
-        """Poll battery over the SDK (~20 s) for the dashboard + lens HUD."""
+        """Poll battery over the SDK (~20 s) for the dashboard + lens HUD.
+
+        Doubles as the link's ONLY authenticated heartbeat. Everything else
+        that would notice dead credentials is blind to them: the robot_state
+        stream keeps flowing on the credentials it was opened with (so
+        `robot_linked` stays true and the link watchdog never looks), commands
+        are fire-and-forget and only log, and `ensure_control` short-circuits
+        on a cached flag without touching the network. So a re-pair under a
+        live link left the bridge driving a robot that rejected every command
+        with 401 — for minutes, silently. This poll is the one call that both
+        needs the token and reads its answer, so it is where that is caught.
+        """
+        auth_failures = 0
         while True:
             await asyncio.sleep(5.0 if self.batt_v is None else 20.0)
             if not (self.link and self.link.robot):
@@ -753,7 +765,23 @@ class Bridge:
                     asyncio.to_thread(fut.result, 10), timeout=15)
                 self.batt_v = float(getattr(b, "battery_volts", 0.0)) or None
                 self.batt_charging = bool(getattr(b, "is_charging", False))
+                auth_failures = 0
             except Exception as e:
+                from .robot.sdk.connection import is_auth_dead
+                # Two in a row, not one: a single refusal races a re-pair that
+                # is still landing, and dropping the link on that would fight
+                # the wizard instead of following it.
+                if is_auth_dead(e):
+                    auth_failures += 1
+                    if auth_failures >= 2:
+                        auth_failures = 0
+                        logger.warning(
+                            "Robot is rejecting our credentials (401) — they "
+                            "were replaced under a live link. Dropping it; the "
+                            "watchdog reconnects on the current ones.")
+                        await self.drop_link()
+                    continue
+                auth_failures = 0
                 logger.debug(f"battery poll: {e}")
 
     # Two DIFFERENT questions, and conflating them broke the link:
@@ -863,15 +891,20 @@ class Bridge:
         except Exception as e:
             logger.debug(f"network-change check: {e}")
 
-    async def connect_robot(self) -> bool:
+    async def connect_robot(self, force: bool = False) -> bool:
         """Connect + acquire control over the SDK (gRPC). NON-FATAL: returns
         False when the robot is unpaired or unreachable — the server keeps
-        running so the web UI can pair and then retry via /api/connect."""
-        async with self._connect_lock:
-            return await self._connect_robot_locked()
+        running so the web UI can pair and then retry via /api/connect.
 
-    async def _connect_robot_locked(self) -> bool:
-        if self.robot_linked:
+        `force` rebuilds the link even when one looks healthy. Pass it after
+        writing new credentials: the handle we hold was built from the OLD
+        ones and cannot pick up the new ones, however alive it looks.
+        """
+        async with self._connect_lock:
+            return await self._connect_robot_locked(force=force)
+
+    async def _connect_robot_locked(self, force: bool = False) -> bool:
+        if self.robot_linked and not force:
             return True   # already connected
         if self.link:
             # A stale link would otherwise keep its dead handle and block the
