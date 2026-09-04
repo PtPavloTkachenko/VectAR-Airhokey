@@ -58,7 +58,7 @@
       {}
   InputLines:
     - '// @input Asset.MLAsset model {"hint":"Baseline model: the float .onnx export. Runs everywhere, including the editor preview."}'
-    - "// @input Asset.MLAsset modelQuantized {\"hint\":\"Some headsets: the QNN-quantised .dlc that runs on device. Device-only — the preview falls back to 'model'.\"}"
+    - "// @input Asset.MLAsset modelQuantized {\"hint\":\"Optional quantised export. Not used by this Lens — it falls back to 'model'.\"}"
     - "// @input bool useRightColorCamera {\"hint\":\"Device camera to use on-device. OFF = Left color camera. ON = Right color camera. Editor always uses Default_Color.\"}"
     - '// @input float scoreThreshold = 0.5 {"hint":"Minimum confidence (objectness * class) to accept a detection.", "widget":"slider", "min":0, "max":1, "step":0.01}'
     - '// @input float iouThreshold = 0.45 {"hint":"IoU threshold for non-max suppression.", "widget":"slider", "min":0, "max":1, "step":0.01}'

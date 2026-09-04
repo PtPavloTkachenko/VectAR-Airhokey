@@ -1639,6 +1639,7 @@
   ScriptAsset: !<reference> 86264023-c2f8-4846-9c66-ec3db59e4053
   ScriptInputsDefault:
     rsgToken: true
+    serverAddress: true
     editorSkipCalibration: true
     visionIouThreshold: true
     visionApplySigmoid: true
@@ -1659,6 +1660,7 @@
       scoreFont: !<reference.Font> cdff68a2-df53-4293-9455-c0b2ac749713
       matRim: !<reference.Material> edcea9ba-7d41-4ba7-81fe-e978b3820a1c
       rsgToken: ""
+      serverAddress: ""
       editorSkipCalibration: false
       axleOffsetMm: !<float> 8.000000
       visionDepthOffsetMm: !<float> 8.000000
