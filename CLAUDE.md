@@ -60,7 +60,23 @@ AR air hockey: Spectacles (2024) lens (game authority) ↔ Mac Python server
    gRPC to the robot (dummy session token — wire-pod ignores it), written to
    `~/.anki_vector/sdk_config.ini`. Token mint is append-only (safe to
    re-pair). wire-pod is needed only during pairing.
-11. **No secrets in the repo** — no RSG tokens, no home IPs/serials, no
+11. **Credentials can be replaced under a live link, and nothing obvious
+   notices.** Re-pairing rewrites `sdk_config.ini`, but a handle already open
+   keeps the pair it was built with — and every signal you would check says
+   it is fine: the `robot_state` stream goes on flowing (so `robot_linked`
+   stays true and the link watchdog never looks), commands are
+   fire-and-forget and only log their failure, and `ensure_control` answers
+   from a cached flag without a round trip. The bridge drove a robot that
+   rejected every command with 401, for minutes, reading CONNECTED
+   throughout. Two guards close that and both must survive a refactor:
+   `battery_task` is the link's only authenticated heartbeat — two
+   `is_auth_dead` refusals drop the link so the watchdog rebuilds it on the
+   credentials that exist NOW — and anything that writes new credentials must
+   reconnect with `connect_robot(force=True)`, because "already connected" is
+   not the same as "connected with these". Transport failures (`UNAVAILABLE`,
+   timeouts) are deliberately not auth failures: treat them as such and a
+   Wi-Fi hiccup tears down a good link.
+12. **No secrets in the repo** — no RSG tokens, no home IPs/serials, no
    certs/guids. `GameConfig.ts` ships with an empty `RSG_GOOGLE_TOKEN`; keep it that way
    in commits. Its `WS_URL` is `ws://vectar.local:8777` — a NAME the server
    publishes over mDNS (`game_bridge/mdns.py`), not an address. Never commit
@@ -74,12 +90,20 @@ AR air hockey: Spectacles (2024) lens (game authority) ↔ Mac Python server
   robot reachability, sockets, link) and prints the fix for anything red.
   Same thing at `/api/doctor` and behind RUN DIAGNOSTICS. Use it before
   reading logs — most "the robot is broken" reports are one red line here.
+- **The pairing engine is found by PORT, not by process.** The server asks
+  `:8080` whether wire-pod is up and leaves it alone if anything answers — so
+  an unrelated service on that port means the real `vectar-onboard` never
+  starts, `escapepod.local` on `:443` never comes up, and the failure surfaces
+  a wizard and several minutes later as *"wire-pod has no certificate for
+  serial"*, which reads as a wire-pod fault. A webpack dev server from another
+  project cost a whole debugging round. When the header says *pairing engine
+  running, **not escape-pod***: `lsof -iTCP:8080 -sTCP:LISTEN`.
 - **`--reload`** restarts the bridge when its sources change. Never leave it
   on while someone is testing on hardware: each save drops the robot AND the
   lens and invalidates the field transform, which is indistinguishable from a
   broken robot. (It happened; six restarts landed inside one calibration.)
 - Server tests: `cd server && .venv/bin/python -m pytest tests -q`
-  (47 tests, no hardware). Env: Python 3.12,
+  (117 tests, no hardware). Env: Python 3.12,
   `PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python`.
 - Lens dev without hardware: server `--mock-pose` + GameController's
   *Skip Calibration* checkbox → full simulated match in LS Preview.
