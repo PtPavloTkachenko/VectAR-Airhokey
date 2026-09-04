@@ -13,14 +13,14 @@ the newer one moves.
 |---|---|---|
 | Lens Studio | 5.15.4 | 5.23.0 |
 | Target | Spectacles (2024) | current SPECS |
-| Detector | `best.onnx` | `best.onnx` (+ a quantised export, unused) |
+| Detector | `best.onnx` | `best.onnx` (+ an optional quantised export) |
 | Hardware-tested | yes | yes |
 
 Everything else — the server, the protocol, the wizard, the gameplay — is
 shared, so one server plays with either. The 5.23 Lens dials the same
 `ws://vectar.local:8777`, with one caveat that costs a first-run debugging
-session if you do not know it: some headsets do not resolve `.local`, so it also
-needs a plain address (see below).
+session if you do not know it: a headset that does not resolve `.local` needs
+a plain address as well (see below).
 
 ## What the migration actually changed
 
@@ -58,33 +58,29 @@ trained on pixels scaled to 0..1, which is what `best.onnx` carries
 just detects nothing, or detects nonsense. Both assets now carry 0.0039 on all
 three channels; if you ever re-import the `.dlc`, check that field first.
 
-Both are shipped, but — measured — **the float export is what
-actually runs, in both places**: this Lens does not load the quantised one.
+`CoffeeMLController` picks between them: on-device it prefers `modelQuantized`
+when one is wired and falls back to `model` if it does not load, so the Lens
+sees the same detections either way. Wiring is already done in the shipped
+scene (GameController → `mlModel` = `best`, `mlModelQuantized` =
+`vector_yolo_qnn`). Unwire `mlModelQuantized` to go straight to the float
+model; unwire both and the game still plays on odometry alone.
 
-`CoffeeMLController` still picks between them — on-device it prefers
-`modelQuantized` when one is wired, and falls back to `model` when it does not
-load, which is what happens today. Wiring is already done in the shipped scene
-(GameController → `mlModel` = `best`, `mlModelQuantized` = `vector_yolo_qnn`).
-Unwire `mlModelQuantized` to skip the failed attempt entirely; unwire both and
-the game still plays on odometry alone.
+## Three things that fail without naming themselves
 
-## What some headsets do differently
+All three are handled in code already. They are worth knowing because none of
+them reports what is actually wrong.
 
-Three things behave differently from Spectacles (2024), all found on the first
-device run and all now handled in code. Worth knowing, because each one fails
-in a way that does not name itself.
-
-**The camera you ask for may not exist.** Asking for `Left_Color` throws out of
-`onStart`, which kills the vision controller before anything else runs — the
-Lens looks like it crashed for no reason. It now tries candidates in order and
-keeps the first the device grants; which varies by headset; the
-same one another project uses. A grayscale fallback is announced in
-the log, since the detector was trained on colour.
+**The camera you ask for may not exist.** Which cameras a headset has is a
+property of that hardware, and asking for an absent one throws out of
+`onStart` — which kills the vision controller before anything else runs, so
+the Lens looks like it crashed for no reason. It now tries a list of
+candidates and keeps the first one granted, announcing in the log when that
+turns out to be grayscale, since the detector was trained on colour.
 
 **`.local` names may not resolve.** The Lens dials `ws://vectar.local:8777`,
-which worked on Spectacles (2024) and works in the editor preview — on some
-Specs it silently never connects, and the Lens sits in `CONNECT_WS` with
-nothing in the log to explain it, because from its side nothing failed.
+which works in the editor preview. Where the name does not resolve, the Lens
+silently never connects and sits in `CONNECT_WS` with nothing in the log to
+explain it, because from its side nothing failed.
 
 The fix takes ten seconds and no code:
 
@@ -104,22 +100,19 @@ keeps whichever answers. **Re-copy it whenever the Mac joins a different Wi-Fi**
 — that address changes with the network, and it is the Mac's address that
 matters, not the robot's or the glasses'.
 
-**A quantised model can be refused at load.** On device the attempt fails and
-the Lens falls back to the float ONNX, exactly what the preview runs. The
-`.dlc` ships anyway — it is the same detector, and it costs nothing to keep.
+**A quantised model can be refused at load.** When that happens the Lens falls
+back to the float ONNX — the same detector, and exactly what the preview runs
+— rather than leaving vision dead for the session.
 
 ## Honest status
 
-**It runs on the glasses and it plays.** The Lens boots on the glasses,
-calibrates the surface, connects to the server and drives the robot. Getting
-there took three device-only fixes, listed above — none of them reachable in
-the editor, where the camera, the name resolution and the model all behave
-differently.
+**It runs on the glasses and it plays.** The Lens boots, calibrates the
+surface, connects to the server and drives the robot. Getting there took the
+three fixes above, none of them reachable in the editor, where the camera, the
+name resolution and the model loader all behave differently from a headset.
 
 What is confirmed: the migration itself (packages, shaders, scene), the
-protocol, hand calibration, and the game loop against a real robot. What is
-not: the quantised export — it does not load here, so vision uses the float
-model on device too.
+protocol, hand calibration, and the game loop against a real robot.
 
 ## Pause the preview before you test on the glasses
 

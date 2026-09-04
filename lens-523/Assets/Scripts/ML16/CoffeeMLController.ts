@@ -23,7 +23,7 @@ export class CoffeeMLController extends BaseScriptComponent {
 
   @input
   @allowUndefined
-  @hint("Optional quantised export. Not used by this Lens — it falls back to 'model'.")
+  @hint("Optional quantised export. Falls back to 'model' if it does not load.")
   modelQuantized: MLAsset;
 
   @input
@@ -171,11 +171,10 @@ export class CoffeeMLController extends BaseScriptComponent {
 
   private setupCamera(): void {
     // Which cameras exist is a property of the hardware, not something a Lens
-    // can assume. Asking for a camera the headset does not have will
-    // throw out of onStart — which kills the whole
-    // controller before anything else runs, so the Lens looks like it crashed
-    // for no reason. Try the candidates in order of usefulness and take the
-    // first the device actually grants.
+    // can assume. Asking for one that isn't there throws out of onStart, which
+    // kills the whole controller before anything else runs — so the Lens looks
+    // like it crashed for no reason. Try the candidates in order of usefulness
+    // and take the first the device actually grants.
     const M: any = CameraModule.CameraId;
     const wanted: any[] = this.isEditor
       ? [M.Default_Color]
@@ -231,9 +230,9 @@ export class CoffeeMLController extends BaseScriptComponent {
     this.mlComponent.onLoadingFinished = this.onLoadingFinished.bind(this);
     this.mlComponent.onLoadingFailed = (error: string) => {
       print("[CoffeeML] model load failed: " + error);
-      // The quantised export can be refused, and on this Lens it is. Rather
-      // than leave vision dead for the whole session, fall back to the float
-      // model — same detector, and what the preview runs anyway.
+      // A quantised export can be refused at load. Rather than leave vision
+      // dead for the whole session, fall back to the float model — same
+      // detector, and what the preview runs anyway.
       if (modelAsset === this.modelQuantized && this.model && !this.triedFloat) {
         this.triedFloat = true;
         print("[CoffeeML] falling back to the float model");

@@ -27,7 +27,6 @@ const MUSIC = requireAsset("../GeneratedSFX/bg_music_loop.wav") as AudioTrackAss
 export type SfxName = keyof typeof TRACKS;
 
 // rapid-fire sounds get 2 components so overlapping plays don't cut off
-//
 const POOL_SIZES: { [k: string]: number } = {
   wall_zap: 2, cap_strike: 2, countdown_blip: 2,
 };

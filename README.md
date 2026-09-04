@@ -65,10 +65,9 @@ APIs*, and send it to your Spectacles — the address needs no editing: the
 server publishes itself as `vectar.local`, which is what the Lens already
 dials. Full guide: [docs/LENS.md](docs/LENS.md).
 
-On a newer Lens Studio, open `lens-523/robo-hockey-523.esproj` in Lens Studio
-5.23 instead — same game, same server, migrated project and a detector
-quantised. Not yet run on a device:
-[docs/LENS_523.md](docs/LENS_523.md).
+There is also a Lens Studio 5.23 port — open
+`lens-523/robo-hockey-523.esproj` instead. Same game, same server, migrated
+project: [docs/LENS_523.md](docs/LENS_523.md).
 
 **3 · Play**
 

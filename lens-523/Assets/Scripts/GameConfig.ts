@@ -15,8 +15,7 @@ export const GameConfig = {
   // the exact string under LENS WS_URL — and give the Mac a DHCP reservation
   // in your router, or you will be editing this line again.
   WS_URL: "ws://vectar.local:8777",
-  // Some headsets do not resolve `.local` names (Spectacles 2024 did).
-  // When the name fails, the Lens falls back to this address — paste the
+  // If the headset does not resolve `.local`, the Lens falls back to this address — paste the
   // one the server console shows under LENS WS_URL. Leave empty if your
   // headset resolves the name.
   WS_URL_FALLBACK: "",
