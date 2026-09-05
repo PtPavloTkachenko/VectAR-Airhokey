@@ -10,3 +10,10 @@ aiohttp>=3.9
 zeroconf
 requests
 pytest>=8
+# The BLE onboarding path: bleak drives the radio (onboarding/ble/transport.py)
+# and PyNaCl is the libsodium binding the RTS handshake encrypts with
+# (onboarding/ble/crypto.py). Both were missing here until someone set the
+# project up on a clean machine and CONNECT VECTOR raised ModuleNotFoundError
+# on the first press — they are not optional extras, they are pairing itself.
+bleak
+pynacl

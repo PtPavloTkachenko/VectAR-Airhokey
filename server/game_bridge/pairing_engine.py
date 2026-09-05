@@ -22,6 +22,7 @@ import asyncio
 import json
 import logging
 import os
+import signal
 import subprocess
 from pathlib import Path
 
@@ -89,6 +90,49 @@ class PairingEngine:
         self.proc: subprocess.Popen | None = None
         self.note = ""          # why it is not running, if it is not
 
+    def _stop_stale(self) -> bool:
+        """Stop an engine we did not start. True if none is left running.
+
+        Only ever called when the one already up is serving a mode nobody can
+        use. It is matched by the binary's full path, so this cannot reach a
+        wire-pod someone runs from their own checkout — only the copy in this
+        repo, which is the copy the server would have started itself.
+        """
+        try:
+            # Match the NAME, then confirm each hit really is our copy by its
+            # full command line. Searching for the path directly does not work:
+            # pgrep treats the pattern as a regex, and a checkout under a
+            # directory like "Dropbox (Personal)" then silently matches nothing.
+            out = subprocess.run(["pgrep", "-f", BINARY.name],
+                                 capture_output=True, text=True, timeout=5)
+            pids = [int(p) for p in out.stdout.split() if p.strip().isdigit()]
+        except Exception as e:
+            logger.debug(f"could not look for a stale engine: {e}")
+            return False
+        ours = []
+        for pid in pids:
+            if pid == os.getpid():
+                continue
+            try:
+                cmd = subprocess.run(["ps", "-p", str(pid), "-o", "command="],
+                                     capture_output=True, text=True,
+                                     timeout=5).stdout
+            except Exception:
+                continue
+            if str(BINARY) in cmd:
+                ours.append(pid)
+        pids = ours
+        if not pids:
+            return False        # answering on :8080, but not this binary
+        for pid in pids:
+            try:
+                os.kill(pid, signal.SIGTERM)
+                logger.info(f"stopped the stale pairing engine (pid {pid})")
+            except Exception as e:
+                logger.debug(f"could not stop pid {pid}: {e}")
+                return False
+        return True
+
     def _already_up(self) -> bool:
         from .web import pairing
         from . import config
@@ -101,17 +145,28 @@ class PairingEngine:
         """Start it unless something already answers. Never fatal."""
         changed = await asyncio.to_thread(ensure_escape_pod_config)
         if await asyncio.to_thread(self._already_up):
-            # Someone is running their own copy — leave it alone. Starting a
-            # second one would fight for :443 and :8080 and take both down.
             if changed:
-                # It read the old config at ITS start, so the mode we just set
-                # is not the mode it is serving, and nothing here can tell it.
+                # It read the config at ITS start, so it is serving the mode we
+                # just replaced — the one no stock robot can use. Leaving it is
+                # not politeness, it is a wizard that cannot work: the engine
+                # answers on :8080, so the next start says "already running" and
+                # reuses it forever. Nothing tells it to re-read, so replace it.
                 logger.warning(
-                    "escape-pod mode was off and is now set, but a pairing "
-                    "engine started before that is still running with the old "
-                    "mode — stop it (pkill -f vectar-onboard) and start again")
-            logger.info("pairing engine already running — leaving it alone")
-            return True
+                    "a pairing engine is running with escape-pod mode off — "
+                    "replacing it, since it can never serve a stock robot")
+                if await asyncio.to_thread(self._stop_stale):
+                    await asyncio.sleep(1.0)
+                else:
+                    logger.warning(
+                        "could not stop it — run `pkill -f vectar-onboard` and "
+                        "start the server again")
+                    return True
+            else:
+                # Someone is running their own copy in the right mode — leave
+                # it alone. A second one would fight for :443 and :8080 and
+                # take both down.
+                logger.info("pairing engine already running — leaving it alone")
+                return True
         if not BINARY.is_file():
             self.note = (f"the pairing engine is not built. Build it once: "
                          f"{BUILD_HINT}")

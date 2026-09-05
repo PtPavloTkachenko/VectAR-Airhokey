@@ -1445,6 +1445,9 @@ class WebUI:
                                "certificate can ever appear. " + why).strip()})
 
         cfg_serial, cfg_ips, _n = config.read_robot_identity()
+        # Set only on the BLE path, read on both — an authorize without a
+        # session never asks him anything, so there is no token to judge.
+        empty_guid = False
         if self._ble is not None:
             esn = self._ble.esn or body.get("serial") or os.getenv("VECTOR_SERIAL", "") or cfg_serial
             ip = self._ble.ip
@@ -1484,13 +1487,26 @@ class WebUI:
                     pass   # no certificate at all is the normal fresh case
 
             cloud_err = ""
+            empty_guid = False
             for attempt in range(1, 4):
                 self._set_auth("cloud", "Asking Vector to sign in to the "
                                f"pairing engine (try {attempt}/3)…")
                 try:
-                    await self._ble.cloud_auth()
-                    logger.info("robot cloud-authed against wire-pod "
-                                f"(attempt {attempt})")
+                    guid = await self._ble.cloud_auth()
+                    # A success status with an EMPTY token is not a success:
+                    # it means vic-cloud answered us without completing the
+                    # sign-in, so wire-pod was never called, nothing was
+                    # associated, and the certificate the poll below waits for
+                    # can never be written. Saying "cloud-authed" for that is
+                    # how this turns into an hour of blaming the engine — the
+                    # log said the step worked. Say what actually came back.
+                    empty_guid = not guid
+                    logger.info(
+                        "robot cloud-authed against wire-pod "
+                        f"(attempt {attempt})" if guid else
+                        f"robot answered the cloud session (attempt {attempt}) "
+                        "but handed back an EMPTY token — he did not complete "
+                        "the sign-in, so no certificate will be written")
                     cloud_err = ""
                     break
                 except Exception as e:
@@ -1552,9 +1568,21 @@ class WebUI:
                     extra = await asyncio.to_thread(
                         self._why_he_never_knocked,
                         getattr(self._ble, "ip", "") if self._ble else "")
+                    if empty_guid:
+                        # We know something the network probe cannot: he
+                        # answered the sign-in without finishing it. Blaming
+                        # the engine here sends people to check a wire-pod
+                        # that is working perfectly.
+                        extra = ("He answered the sign-in with an empty token, "
+                                 "so he never registered with the pairing "
+                                 "engine — nothing is wrong with the engine, "
+                                 "he did not complete his half. Restart him "
+                                 "(hold the backpack button ~5 s, then back on "
+                                 "the charger), let him wake fully, and run "
+                                 "the setup once more.")
                     return web.json_response(
                         {"ok": False, "step": e.step, "needs_setup": True,
-                         "wirepod": ready,
+                         "wirepod": ready, "empty_guid": empty_guid,
                          "error": e.message + (f" {extra}" if extra else "")})
                 # already provisioned -> mint optional, fall through to connect
             except Exception as e:
