@@ -72,7 +72,48 @@ def _wirepod_checks() -> list[Check]:
         "restart vectar-onboard. Every robot needs this mode: a stock one "
         "because his firmware hard-codes the name, a dev one because we point "
         "him at the same identity."))
+    out.append(_associated_check())
     return out
+
+
+def _associated_check() -> Check:
+    """Has any robot ever signed in to THIS engine? The one honest answer.
+
+    When a certificate never appears, everything turns on whether the robot
+    reached the engine at all — and the two obvious ways to ask are both
+    wrong. Watching for his connection with netstat misses it: on a run that
+    finished perfectly, polling every 0.25 s caught nothing on :443, because
+    the exchange is brief. And the engine's stdout is silent by default — its
+    `logger.Println` only reaches the terminal under DEBUG_LOGGING=true — so
+    "no token requests in the log" says nothing about whether any were made.
+    Both of those absences were read as evidence once, and cost a day.
+
+    The engine keeps its own log in memory and serves it. One line settles it,
+    written at the moment the certificate is:
+    `New bot being associated with wire-pod. ESN: …`
+    """
+    import re
+    import requests
+    try:
+        r = requests.get(config.WIREPOD_URL.rstrip("/") + "/api/get_logs",
+                         timeout=4)
+        body = r.text or ""
+    except Exception as e:
+        return Check("robots seen by the engine", None,
+                     f"could not read the engine's own log "
+                     f"({type(e).__name__})", "")
+    esns = sorted(set(re.findall(
+        r"associated with wire-pod\. ESN: ([0-9a-fA-F]+)", body)))
+    if esns:
+        return Check("robots seen by the engine", True,
+                     "signed in: " + ", ".join(esns), "")
+    return Check(
+        "robots seen by the engine", None,
+        "no robot has signed in to this engine yet",
+        "Normal before the first pairing. If a robot has just been through "
+        "the whole wizard and this is still empty, he never reached the "
+        "engine — restart him, let him wake fully, run the setup again. "
+        "See docs/STOCK_SIGNIN_TRIAGE.md.")
 
 
 def _ota_check() -> Check:

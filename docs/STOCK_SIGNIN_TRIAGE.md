@@ -26,13 +26,40 @@ So the Bluetooth message is a *request* to go and do that, not the act itself.
 If neither call happens, no amount of restarting wire-pod, re-flashing, or
 waiting will produce a certificate — there is nothing to produce it from.
 
-Two consequences worth internalising:
+The match is **by IP**. If his address changes between the sign-in and the
+jdocs call, wire-pod holds a certificate it can no longer match, and the result
+looks identical to never having signed in.
 
-- **Zero robot→Mac `:443` connections means the robot never tried.** Look there
-  first; it splits the whole problem in half.
-- The match is **by IP**. If his address changes between the sign-in and the
-  jdocs call, wire-pod holds a certificate it can no longer match, and the
-  result looks identical to never having signed in.
+## Two things that look like evidence and are not
+
+Both were measured on a run that **finished successfully**, so neither can
+tell you anything about a run that failed. Establishing this cost a day.
+
+- **"netstat shows no robot→Mac `:443` connections."** A `netstat` loop
+  sampling every 0.25 s caught **nothing** on `:443` during a completely
+  successful pairing — the exchange is too brief to be caught by polling. The
+  robot had in fact connected: the engine's own log recorded the association a
+  second later. Absence here means nothing at all.
+- **"the engine's log shows no token or jdocs requests."** The engine prints
+  to stdout only when started with `DEBUG_LOGGING=true` (`logger.Println` is a
+  no-op otherwise, keeping everything in memory for its web UI). A stdout
+  capture of a successful run contains the startup banner and nothing else.
+  The server now sets that flag when it starts the engine — but a copy someone
+  starts by hand still prints nothing.
+
+**Ask the engine instead.** It keeps its own log and serves it:
+
+```bash
+curl -s localhost:8080/api/get_logs | tail -20
+```
+
+The line that settles it is written at the moment the certificate is:
+
+```
+New bot being associated with wire-pod. ESN: 0dd1f6df, IP: 192.168.0.205
+```
+
+`RUN DIAGNOSTICS` reads this too, as **robots seen by the engine**.
 
 ## Step 1 — did he answer with an empty token?
 
@@ -59,26 +86,26 @@ first, because that line was printed for both outcomes.)
    window right after boot is easy to sleep through.
 3. Run the setup again over Bluetooth (PAIR ROBOT → SET UP THIS ROBOT).
 
-## Step 2 — is he reaching the Mac at all?
-
-Watch for his connections while the wizard runs (replace the IPs):
+## Step 2 — did he reach the engine at all?
 
 ```bash
-end=$((SECONDS+300))
-while [ $SECONDS -lt $end ]; do
-  netstat -an 2>/dev/null | grep -E "192.168.1.33" | grep -E "\.443|\.8080|\.80 " \
-    && echo "seen at $(date +%H:%M:%S)"
-  sleep 0.3
-done
+cd server && python -m game_bridge.doctor      # "robots seen by the engine"
+curl -s localhost:8080/api/get_logs | tail -20 # the same thing, raw
 ```
 
-- **Nothing on `:443`** → he never made either call. Go back to step 1; this is
-  the robot's own state, not the network's. Note that reaching the Mac's
-  connCheck on **`:80` by name** proves DNS and reachability are fine and says
-  nothing about whether he signed in — the two are separate calls.
-- **Connections appear, still no certificate** → he is talking and the write is
-  failing. Read the engine's log (start it with its output captured, not
-  discarded) and check whether his IP changed between the two calls.
+- **His ESN is listed** → he reached the engine and the certificate was
+  written. If Authorize still fails, the problem is after this point (a stale
+  certificate for an older name, or an address that changed between his two
+  calls — the match is by IP).
+- **Nothing listed after a full wizard run** → he never got there. This is the
+  robot's own state, not the network's: back to step 1, and keep him awake.
+
+Do not measure this with `netstat`, and do not read anything into an empty
+stdout log — see the section above for why both mislead.
+
+Reaching the Mac's connCheck on **`:80` by name** is a separate call from the
+sign-in: it proves DNS and reachability, and says nothing about whether he
+signed in.
 
 ## Step 3 — rule the Mac out in one line
 
@@ -97,13 +124,31 @@ Two Mac-side traps that look like robot problems, both covered in
   not kill it, and the next start reuses it),
 - the Mac's address changing since the engine started.
 
+## The reference run (what success looks like)
+
+Captured 2026-09-06 on a robot **reset to factory** and taken through the whole
+wizard, with the engine holding no certificate and no record of him — the same
+starting state as a robot that has never been set up:
+
+| | |
+|---|---|
+| Server log | `robot cloud-authed against wire-pod (attempt 1)` — a **non-empty** token |
+| Engine's own log | `New bot being associated with wire-pod. ESN: …, IP: …` |
+| `session-certs/<esn>` | written, same second |
+| `~/.anki_vector/<name>-<esn>.cert` | written, same second |
+| Doctor afterwards | robot paired, control token present, link connected |
+| netstat on `:443` | **nothing** — and it succeeded anyway |
+
+Whole thing takes about a second once the wizard reaches Authorize. If a run
+takes 60 s and ends at the 404, it did not fail slowly — it never started.
+
 ## What is genuinely unknown
 
-If the token comes back non-empty and he still never opens `:443`, this is past
-what the project has seen. Capture, in one run: the guid value, the engine log
-with output preserved, and the netstat watch above. That combination is what
-the next fix will be built from — nothing in the current code can distinguish
-the remaining cases without it.
+If the token comes back non-empty **and** the engine's log still never records
+the association, that is past what the project has seen. Capture, in one run:
+the token line from the server log, `/api/get_logs` from the engine, and the
+robot's name and IP at that moment. That combination is what the next fix will
+be built from.
 
 Background on the older, pre-escape-pod form of this wall — including a manual
 token-injection attempt that reaches a 401 — is in

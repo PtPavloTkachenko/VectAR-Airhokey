@@ -186,8 +186,14 @@ class PairingEngine:
             LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
             self._log = open(LOG_PATH, "ab", buffering=0)
             self._log.write(b"\n--- pairing engine started ---\n")
+            # DEBUG_LOGGING is what makes the engine print at all: its own
+            # logger keeps everything in memory for its web UI and reaches
+            # stdout only under this flag. Without it the file we just opened
+            # collects the startup banner and nothing else — which reads as
+            # "the robot never contacted the engine" no matter what happened.
+            env = {**os.environ, "DEBUG_LOGGING": "true"}
             self.proc = subprocess.Popen(
-                [str(BINARY)], cwd=str(CHIPPER_DIR),
+                [str(BINARY)], cwd=str(CHIPPER_DIR), env=env,
                 stdout=self._log, stderr=subprocess.STDOUT,
                 start_new_session=True)
             logger.info(f"pairing engine log: {LOG_PATH}")
