@@ -151,6 +151,7 @@ Details and the risk notes worth reading before you flash anything:
 - [ARCHITECTURE](docs/ARCHITECTURE.md) — how the three machines share one game
 - [SETUP_ROBOT](docs/SETUP_ROBOT.md) — **start here**: what the wizard does for a stock vs OSKR robot, the one-time setup each needs, and the status/risk notes
 - [PAIRING](docs/PAIRING.md) — robot setup internals: wire-pod, the cert/guid mint
+- [STOCK_SIGNIN_TRIAGE](docs/STOCK_SIGNIN_TRIAGE.md) — everything green but Authorize 404s: why only the robot can write that certificate, and how to tell which half is stuck
 - [PAIRING_86_DEEPDIVE](docs/PAIRING_86_DEEPDIVE.md) — the open token item: full reverse-engineering log, what's proven, what's next
 - [BLE_PROTOCOL_OFFICIAL](docs/BLE_PROTOCOL_OFFICIAL.md) — byte-level spec of Anki's BLE onboarding protocol, from the official setup app
 - [SERVER](docs/SERVER.md) — install, config, goalie tuning, troubleshooting

@@ -16,10 +16,24 @@ Spectacles lens ──ws://<mac>:8777──▶ Mac game server ──gRPC :443�
 - **macOS**, Python **3.12**, Go **1.2x** (only to build wire-pod once).
 - Mac + Vector + Spectacles **on the same Wi-Fi / subnet** (a phone hotspot is
   fine — just put all three on it; see *Networking* below).
+- **Firmware comes over Git LFS.** `git lfs pull` after cloning, or the two
+  `.ota` files are 134-byte pointers and the wizard has nothing to flash.
+- Native libraries for the Go build (it links opus and libsodium — without
+  them the build stops at `exec: "pkg-config"` or `Package 'opusfile' not
+  found`, which does not name what is missing):
+  ```bash
+  brew install pkgconf opus opusfile libsodium
+  ```
 - Build the pairing server (no vosk, no sudo):
   ```bash
   cd server/onboarding/wire-pod/chipper
   CGO_ENABLED=1 go build -tags inbuiltble -o vectar-onboard ./cmd/vectar-onboard
+  ```
+- Every Python dependency is on **public PyPI**. On a machine whose pip is
+  pointed at a company registry the install fails with a 401 and
+  `wirepod-vector-sdk` reads as "not found" — bypass it for this venv:
+  ```bash
+  PIP_CONFIG_FILE=/dev/null pip install --index-url https://pypi.org/simple -r requirements.txt
   ```
 
 ## 1 · Start the game server
@@ -144,6 +158,9 @@ and rewrites `sdk_config.ini`. You do **not** hand-edit the IP.
 | Wizard *"Authorize"* errors on credentials | **wire-pod not running** (fetch cert / mint guid need it) | Start `vectar-onboard` (step 2), retry authorize. |
 | Wizard *"wire-pod has no certificate for serial"* | This wire-pod didn't onboard the robot | Do the full wizard (BLE join repoints the robot's cloud at this wire-pod). |
 | Same, but the header reads *"pairing engine running, **not escape-pod**"* and the log says *"pairing engine already running — leaving it alone"* | **Something else holds `:8080`.** The server decides wire-pod is up by asking that port, so any other service answering there means the real `vectar-onboard` is never started — and it is the one that serves `:443` as `escapepod.local`. The robot then has nowhere to sign in, so its certificate never appears and the wizard 404s at Authorize. (Seen live: a webpack dev server from an unrelated project.) | `lsof -iTCP:8080 -sTCP:LISTEN` — if it isn't wire-pod, stop it and restart the server. `python -m game_bridge.doctor` names this directly. |
+| Wizard 404s at Authorize, and the log says he **answered with an EMPTY token** | He replied to the sign-in without completing it, so he never registered with the engine. The certificate is written only when HE calls the engine — nothing here can write it for him. | Restart the robot (hold the backpack button ~5 s, back on the charger), let him wake **fully** — a robot asleep on the charger never syncs — then run the setup again. Details: [STOCK_SIGNIN_TRIAGE.md](STOCK_SIGNIN_TRIAGE.md). |
+| `doctor` says `escapepod.local` does not resolve, but the engine is up and logging | **macOS 15+ Local Network privacy** can gate a terminal-spawned process from answering mDNS, so the Go engine's own record never reaches the Mac's resolver. The robot usually still resolves it — this often breaks only the Mac's self-checks. | Grant Local Network to the terminal app, or register the name through the OS daemon and leave it running: `dns-sd -P escapepod _app-proto._tcp local 8084 escapepod.local <mac-ip> txtv=0 lo=1 la=2` |
+| It worked yesterday; today the robot never checks in | **The Mac's address changed.** The engine announces the address it read at ITS start and cannot re-announce, so the robot is knocking at yesterday's address. | Restart the **engine as well as** the server (and the `dns-sd` proxy if you started one). Killing only `game_bridge.main` leaves the engine alive, and the next start reuses it. |
 | `Behavior control FAILED — another SDK client?` | A second SDK client (another server, `anki_vector` shell) holds the robot | Vector allows one client — stop the other, restart the server. |
 | Robot drives then freezes mid-rally | Pose went stale (Wi-Fi drop) — deadman stopped it (by design) | Restore Wi-Fi; the link + rally resume. Do not disable the deadman. |
 
