@@ -421,12 +421,31 @@ class WebUI:
         fleet = config.list_robots()
         prefer_active(cands, fleet[0]["serial"] if fleet else "")
 
+        async def cert_here(serial: str) -> bool:
+            """Does THIS pairing engine already hold his session certificate?
+
+            It is the whole question behind "can he be authorized without the
+            Bluetooth setup" — that short path only exists for a robot this
+            engine has onboarded before. Asking costs one request and no wait,
+            and not asking is what let the wizard offer a button that could
+            not work: press it and you spend 60 s polling for a certificate
+            nobody will ever write, ending at an error about the engine.
+            """
+            if not serial:
+                return False
+            try:
+                return bool(await asyncio.to_thread(
+                    pairing.fetch_cert, config.WIREPOD_URL, serial))
+            except Exception:
+                return False
+
         for c in cands:
             if await port_open(c["ip"]):
                 return web.json_response(
                     {"on_wifi": True, "ip": c["ip"], "gateway": True,
                      "name": c["name"], "serial": c["serial"],
-                     "identified": bool(c["name"])})
+                     "identified": bool(c["name"]),
+                     "cert_here": await cert_here(c["serial"])})
         # reachable but gateway down?
         for c in cands:
             try:
@@ -437,7 +456,8 @@ class WebUI:
                     return web.json_response(
                         {"on_wifi": True, "ip": c["ip"], "gateway": False,
                          "name": c["name"], "serial": c["serial"],
-                         "identified": bool(c["name"])})
+                         "identified": bool(c["name"]),
+                         "cert_here": await cert_here(c["serial"])})
             except Exception:
                 pass
         return web.json_response({"on_wifi": False})
@@ -1385,6 +1405,44 @@ class WebUI:
             body = {}
         pod = body.get("pod") or config.WIREPOD_URL
         self._set_auth("start", "Starting…")
+
+        # Escape-pod mode is the ONLY mode a stock robot can reach — his
+        # firmware hard-codes `escapepod.local` — and whether it is on is
+        # knowable right now, for free. Without it his sign-in has nowhere to
+        # land, so the certificate can never appear and the 60 s poll further
+        # down spends a minute to arrive at "no certificate for serial", which
+        # blames the engine for a mode nobody turned on. Settle it before we
+        # ask him to sign in, and fix it in place when we can: the config is
+        # gitignored, so on a fresh clone this is off by default and everyone
+        # meets it once.
+        pod_ready = await asyncio.to_thread(pairing.wirepod_status, pod)
+        if not pod_ready.get("ready"):
+            from .. import pairing_engine as _pe
+            self._set_auth("start", "Turning on escape-pod mode…")
+            changed = await asyncio.to_thread(_pe.ensure_escape_pod_config)
+            engine = getattr(b, "_pairing_engine", None)
+            # restart() is a no-op for an engine we did not start — someone
+            # running their own copy has to restart it themselves.
+            restarted = bool(await engine.restart()) if (changed and engine) else False
+            if changed:
+                logger.info("escape-pod mode was off — enabled it"
+                            + (" and restarted the pairing engine" if restarted
+                               else " (the running engine still needs a restart)"))
+            pod_ready = await asyncio.to_thread(pairing.wirepod_status, pod)
+            if not pod_ready.get("ready"):
+                if changed and not restarted:
+                    why = ("It is set now, but the pairing engine already "
+                           "running still serves the old mode — stop it "
+                           "(pkill -f vectar-onboard) and start the server "
+                           "again, then press this once more.")
+                else:
+                    why = pod_ready.get("detail", "")
+                return web.json_response(
+                    {"ok": False, "step": "wirepod", "needs_setup": True,
+                     "wirepod": pod_ready,
+                     "error": ("The pairing engine is not in escape-pod mode, "
+                               "so Vector has nowhere to sign in and no "
+                               "certificate can ever appear. " + why).strip()})
 
         cfg_serial, cfg_ips, _n = config.read_robot_identity()
         if self._ble is not None:

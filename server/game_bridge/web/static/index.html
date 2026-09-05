@@ -615,6 +615,13 @@ async function onboardStartInner() {
     // already online + ready — skip straight to authorize
     chooseRoute("ble"); bleStep(3);
     $("bleDoneMsg").innerHTML = `${who} is already on Wi-Fi at <b>${f.ip}</b> ✓`;
+    // Authorizing is the SHORT path, and it exists only for a robot THIS
+    // pairing engine has onboarded before — it needs a certificate the engine
+    // writes during the Bluetooth setup. Starting it for a robot with no
+    // certificate here spends 60 s polling for something nobody will ever
+    // write, then blames the engine for a step that was never possible. The
+    // server says which case this is, so offer the path that can work.
+    if (f.cert_here === false) { bleNeedsSetupFirst(); return; }
     $("bleAuthMsg").innerHTML = "Authorizing…";
     bleAuthorize();
   } else if (f.on_wifi) {
@@ -2536,6 +2543,24 @@ async function bleAuthorize() {
   if (needsSetup && msg) {
     msg.innerHTML =
       `<button onclick="bleSetupFromAuthorize()">SET UP THIS ROBOT →</button>`
+      + `<div class="hint">Put Vector on the charger and double-press his `
+      + `back button, then we'll connect over Bluetooth.</div>`;
+  }
+}
+
+// He is online, but this pairing engine has never onboarded him — so the
+// short path is not a slower option, it is an impossible one. Say that before
+// the minute, not after it, and leave only the button that can work.
+function bleNeedsSetupFirst() {
+  const auth = $("btnBleAuth");
+  if (auth) auth.style.display = "none";
+  const msg = $("bleAuthMsg");
+  if (msg) {
+    msg.innerHTML =
+      `<div class="hint">This pairing engine hasn't set him up yet, so there `
+      + `is nothing to authorize against. It takes one pass over Bluetooth — `
+      + `after that he authorizes instantly on any Wi-Fi.</div>`
+      + `<button onclick="bleSetupFromAuthorize()">SET UP THIS ROBOT →</button>`
       + `<div class="hint">Put Vector on the charger and double-press his `
       + `back button, then we'll connect over Bluetooth.</div>`;
   }
