@@ -1,12 +1,16 @@
 """Run the bundled pairing engine, so nobody has to remember to.
 
-wire-pod is what issues a robot his token. It ships in this repo, it is
-configured for escape-pod mode already, and it needs no arguments — and yet
-starting it was a manual step in a second terminal that the wizard only
-mentioned in a red box *after* letting you walk past it. Skipping it does not
-fail loudly: BLE pairing succeeds, Wi-Fi succeeds, and then the robot asks for
-his token at a door nobody is standing behind. The error surfaces one step
-later as something about Anki's cloud, which is not what went wrong.
+wire-pod is what issues a robot his token. It ships in this repo and needs no
+arguments — and yet starting it was a manual step in a second terminal that the
+wizard only mentioned in a red box *after* letting you walk past it. Skipping it
+does not fail loudly: BLE pairing succeeds, Wi-Fi succeeds, and then the robot
+asks for his token at a door nobody is standing behind. The error surfaces one
+step later as something about Anki's cloud, which is not what went wrong.
+
+Its config is NOT configured for us, either — `chipper/apiConfig.json` is in
+wire-pod's own `.gitignore`, so it never ships. A fresh clone gets whatever the
+engine writes on first run, and that default is not escape-pod mode, which is
+the one mode a stock robot can use. So we set it before every start.
 
 So the server starts it, waits until it is actually serving the escape-pod
 identity, and stops it on the way out. If the binary was never built we say
@@ -15,6 +19,7 @@ the one command that builds it, rather than leaving a dead end.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import subprocess
@@ -29,6 +34,52 @@ CHIPPER_DIR = (Path(__file__).resolve().parent.parent
 BINARY = CHIPPER_DIR / "vectar-onboard"
 BUILD_HINT = ("cd server/onboarding/wire-pod/chipper && "
               "go build -tags inbuiltble -o vectar-onboard ./cmd/vectar-onboard")
+API_CONFIG = CHIPPER_DIR / "apiConfig.json"
+
+
+def ensure_escape_pod_config() -> bool:
+    """Put the engine in escape-pod mode before it starts. True if changed.
+
+    A stock robot reaches its cloud at the fixed name `escapepod.local:443` —
+    his firmware hard-codes it — and wire-pod only answers to that name, with
+    the certificate he trusts, in escape-pod mode. In its other mode it serves
+    a self-signed IP certificate and never broadcasts the name, so the robot
+    talks to nobody and the failure lands minutes later, on a different screen,
+    as `no certificate for serial <esn> (404)` — which reads as a broken
+    pairing engine rather than a mode that was never on.
+
+    This is not hypothetical for anyone but us: the config lives in wire-pod's
+    `.gitignore`, so it never ships, and what the engine writes for itself on a
+    first run is the wrong mode. Every fresh clone hits it. We re-apply on each
+    start rather than once, because the engine rewrites this file itself.
+    """
+    try:
+        data = json.loads(API_CONFIG.read_text()) if API_CONFIG.is_file() else {}
+        if not isinstance(data, dict):
+            return False
+    except Exception as e:
+        # Corrupt or unreadable: wire-pod will rewrite it, and guessing at the
+        # contents here would throw away settings we cannot see.
+        logger.debug(f"apiConfig.json unreadable ({e}) — leaving it alone")
+        return False
+    server = data.get("server")
+    if not isinstance(server, dict):
+        server = {}
+    if server.get("epconfig") is True and str(server.get("port")) == "443":
+        return False
+    server["epconfig"] = True
+    server["port"] = "443"
+    data["server"] = server
+    try:
+        API_CONFIG.parent.mkdir(parents=True, exist_ok=True)
+        API_CONFIG.write_text(json.dumps(data, indent=2) + "\n")
+    except Exception as e:
+        logger.warning(
+            f"could not enable escape-pod mode in {API_CONFIG.name}: {e} — a "
+            f"stock robot will not find the pairing engine until it is set")
+        return False
+    logger.info("escape-pod mode enabled in apiConfig.json")
+    return True
 
 
 class PairingEngine:
@@ -48,9 +99,17 @@ class PairingEngine:
 
     async def start(self, wait_s: float = 20.0) -> bool:
         """Start it unless something already answers. Never fatal."""
+        changed = await asyncio.to_thread(ensure_escape_pod_config)
         if await asyncio.to_thread(self._already_up):
             # Someone is running their own copy — leave it alone. Starting a
             # second one would fight for :443 and :8080 and take both down.
+            if changed:
+                # It read the old config at ITS start, so the mode we just set
+                # is not the mode it is serving, and nothing here can tell it.
+                logger.warning(
+                    "escape-pod mode was off and is now set, but a pairing "
+                    "engine started before that is still running with the old "
+                    "mode — stop it (pkill -f vectar-onboard) and start again")
             logger.info("pairing engine already running — leaving it alone")
             return True
         if not BINARY.is_file():
