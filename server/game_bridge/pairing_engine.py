@@ -36,6 +36,9 @@ BINARY = CHIPPER_DIR / "vectar-onboard"
 BUILD_HINT = ("cd server/onboarding/wire-pod/chipper && "
               "go build -tags inbuiltble -o vectar-onboard ./cmd/vectar-onboard")
 API_CONFIG = CHIPPER_DIR / "apiConfig.json"
+# Outside the repo, next to the other things this Mac keeps for the robot, so
+# a log full of serials never lands in a working tree someone pushes.
+LOG_PATH = Path.home() / ".vectar" / "pairing-engine.log"
 
 
 def ensure_escape_pod_config() -> bool:
@@ -89,6 +92,7 @@ class PairingEngine:
     def __init__(self) -> None:
         self.proc: subprocess.Popen | None = None
         self.note = ""          # why it is not running, if it is not
+        self._log = None        # the engine's own output, kept open while it runs
 
     def _stop_stale(self) -> bool:
         """Stop an engine we did not start. True if none is left running.
@@ -173,10 +177,20 @@ class PairingEngine:
             logger.warning(self.note)
             return False
         try:
+            # Keep its output. The engine is the only witness to what the ROBOT
+            # does — whether he ever asked for a token, whether jdocs matched
+            # him — and discarding it left the one failure that needs it (a
+            # certificate that never appears) with nothing to read. Someone
+            # setting this up had to stop the engine and restart it by hand
+            # just to see anything.
+            LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+            self._log = open(LOG_PATH, "ab", buffering=0)
+            self._log.write(b"\n--- pairing engine started ---\n")
             self.proc = subprocess.Popen(
                 [str(BINARY)], cwd=str(CHIPPER_DIR),
-                stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT,
+                stdout=self._log, stderr=subprocess.STDOUT,
                 start_new_session=True)
+            logger.info(f"pairing engine log: {LOG_PATH}")
         except Exception as e:
             self.note = f"could not start the pairing engine: {e}"
             logger.warning(self.note)
@@ -213,6 +227,12 @@ class PairingEngine:
             logger.debug(f"pairing engine stop: {e}")
         finally:
             self.proc = None
+            if self._log is not None:
+                try:
+                    self._log.close()
+                except Exception:
+                    pass
+                self._log = None
 
     async def restart(self) -> bool:
         """After a network change: its mDNS name carries the old address.
