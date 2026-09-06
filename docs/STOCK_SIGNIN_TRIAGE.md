@@ -86,6 +86,48 @@ first, because that line was printed for both outcomes.)
    window right after boot is easy to sleep through.
 3. Run the setup again over Bluetooth (PAIR ROBOT → SET UP THIS ROBOT).
 
+## Step 1b — or did he refuse outright? (`status 1`)
+
+A different line, and a different problem:
+
+```
+cloud auth attempt 1/3 failed: the robot refused the cloud session (status 1)
+could not finish the robot's onboarding: expected SdkProxyResponse, got 0x21
+```
+
+`status 1` is a refusal, not a timeout — he was asked and said no. And `0x21`
+is `RtsResponse`, the protocol's **generic reject** (see
+[BLE_PROTOCOL_OFFICIAL.md](BLE_PROTOCOL_OFFICIAL.md)): the next request was
+turned down too. Two refusals in a row, at the application level, over a
+Bluetooth link that is otherwise working.
+
+**This is not the stock firmware's ceiling.** A stock robot — one the wizard
+classified as needing the escape-pod flash, with no SSH of its own — completed
+this same sign-in on this same code in the reference run above. So `status 1`
+is a state he is in, not a wall the code cannot pass.
+
+What produces it, in order of likelihood:
+
+1. **A half-open session from an earlier attempt.** The signature is exactly
+   this: refusals that vary between runs on the same robot, same Mac, same
+   firmware — signing in one day and flatly refusing the next. Restarting
+   services does not clear it; only a full power-off does.
+2. Something genuinely specific to that unit, which is where to look once the
+   recipe below has been followed to the letter and still fails.
+
+The recipe that clears it (from
+[PAIRING_86_DEEPDIVE.md](PAIRING_86_DEEPDIVE.md), where it was worked out the
+hard way) — the order and the counts matter:
+
+1. **Full power-off**, not a reboot: hold the backpack button ~5 s until he
+   switches off. Put him on the charger and let him boot all the way to his
+   normal face.
+2. Start the scan in the wizard **first**.
+3. Then **one** double-press, during the scan. Not two, not one beforehand —
+   every extra attempt leaves another half-open session behind, which is the
+   state you are trying to clear.
+4. Read the PIN off his face as it appears, and finish in that one session.
+
 ## Step 2 — did he reach the engine at all?
 
 ```bash
