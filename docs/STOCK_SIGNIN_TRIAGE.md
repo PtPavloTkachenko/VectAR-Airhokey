@@ -56,7 +56,7 @@ curl -s localhost:8080/api/get_logs | tail -20
 The line that settles it is written at the moment the certificate is:
 
 ```
-New bot being associated with wire-pod. ESN: 0dd1f6df, IP: 192.168.0.205
+New bot being associated with wire-pod. ESN: 00e20145, IP: 192.0.2.10
 ```
 
 `RUN DIAGNOSTICS` reads this too, as **robots seen by the engine**.
