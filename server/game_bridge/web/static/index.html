@@ -1745,6 +1745,13 @@ function bleShowPhase(phase) {
 }
 function bleStep(n) {
   bleShowPhase(BLE_LEGACY_TO_PHASE[n] ?? 0);
+  // Arriving here is a fresh attempt, so undo a previous one having hidden
+  // the button — whether it can work is decided below and on arrival, not by
+  // what happened last time.
+  if (n === 3) {
+    const auth = $("btnBleAuth");
+    if (auth) { auth.style.display = ""; auth.disabled = false; }
+  }
   // Landing on the authorize screen is the last moment where a warning is
   // still cheap. The token handshake goes over the network, not over
   // Bluetooth, so a robot who paired perfectly can still be unreachable —
@@ -2541,6 +2548,11 @@ async function bleAuthorize() {
     || /no certificate|404|not.*onboarded/i.test(res.error || "");
   if (errEl) { errEl.style.display = ""; errEl.textContent = res.error; }
   if (needsSetup && msg) {
+    // Take the button that just failed off the screen. Re-enabling it next to
+    // the fix offers the same dead end again — and it is the green one, so it
+    // is what gets pressed. Pressing it costs another 60 s and lands here.
+    const auth = $("btnBleAuth");
+    if (auth) auth.style.display = "none";
     msg.innerHTML =
       `<button onclick="bleSetupFromAuthorize()">SET UP THIS ROBOT →</button>`
       + `<div class="hint">Put Vector on the charger and double-press his `

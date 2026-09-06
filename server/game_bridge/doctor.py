@@ -94,26 +94,36 @@ def _associated_check() -> Check:
     """
     import re
     import requests
+    from .pairing_engine import CHIPPER_DIR
+
+    # On disk, so it survives a restart. The engine's log does not: it lives in
+    # memory and starts empty every time the process does, which makes "no
+    # robot has signed in" unreadable on its own — you cannot tell a robot that
+    # never arrived from an engine that was restarted after he did.
+    kept = sorted(p.name for p in (CHIPPER_DIR / "session-certs").glob("*")
+                  if p.is_file() and not p.name.startswith("."))
+
+    live = []
     try:
         r = requests.get(config.WIREPOD_URL.rstrip("/") + "/api/get_logs",
                          timeout=4)
-        body = r.text or ""
-    except Exception as e:
-        return Check("robots seen by the engine", None,
-                     f"could not read the engine's own log "
-                     f"({type(e).__name__})", "")
-    esns = sorted(set(re.findall(
-        r"associated with wire-pod\. ESN: ([0-9a-fA-F]+)", body)))
-    if esns:
-        return Check("robots seen by the engine", True,
-                     "signed in: " + ", ".join(esns), "")
+        live = sorted(set(re.findall(
+            r"associated with wire-pod\. ESN: ([0-9a-fA-F]+)", r.text or "")))
+    except Exception:
+        pass    # the certificates on disk answer the question well enough
+
+    if kept or live:
+        detail = "certificates held for: " + ", ".join(kept or live)
+        if live:
+            detail += f" (signed in since this engine started: {', '.join(live)})"
+        return Check("robots seen by the engine", True, detail, "")
     return Check(
         "robots seen by the engine", None,
-        "no robot has signed in to this engine yet",
-        "Normal before the first pairing. If a robot has just been through "
-        "the whole wizard and this is still empty, he never reached the "
-        "engine — restart him, let him wake fully, run the setup again. "
-        "See docs/STOCK_SIGNIN_TRIAGE.md.")
+        "no robot has ever completed a sign-in here",
+        "Normal before the first pairing. If a robot has just been through the "
+        "whole wizard and this is still empty, he never reached the engine — "
+        "restart him, let him wake FULLY (one asleep on the charger never "
+        "syncs), and run the setup again. See docs/STOCK_SIGNIN_TRIAGE.md.")
 
 
 def _ota_check() -> Check:
