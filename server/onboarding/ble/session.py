@@ -419,14 +419,27 @@ class RtsSession:
                 # production escape-pod image at all, and recovery mode does NOT
                 # relax this. Stock robots are non-ankidev, so the ep image is
                 # fine for them.
-                extra = (" His OS build type doesn't match the image: an "
-                         "OSKR/dev (ankidev) robot can only install ankidev "
-                         "builds, and the escape-pod image is a production "
-                         "build. Recovery mode does not change this."
-                         if last["status"] == 214 else
-                         " If he isn't in recovery mode, try that: on the "
-                         "charger, hold the backpack button ~15 s until his "
-                         "face shows anki.com/v.")
+                if last["status"] == 214:
+                    extra = (" His OS build type doesn't match the image: an "
+                             "OSKR/dev (ankidev) robot can only install ankidev "
+                             "builds, and the escape-pod image is a production "
+                             "build. Recovery mode does not change this.")
+                elif 200 <= last["status"] < 210:
+                    # The 20x codes come from the fetch, not the image: he
+                    # could not get the file. Bluetooth carries only the URL —
+                    # the 180 MB travel over Wi-Fi, from this Mac, and in
+                    # recovery he has whatever network THAT session was given,
+                    # which is usually none.
+                    extra = (" That is a download failure, not a rejection of "
+                             "the image: he could not fetch it. He downloads it "
+                             "himself over Wi-Fi from this Mac, so check that "
+                             "he has a network in THIS session — recovery does "
+                             "not inherit the one he had before — and that the "
+                             "server log shows him asking for /api/get_ota/.")
+                else:
+                    extra = (" If he isn't in recovery mode, try that: on the "
+                             "charger, hold the backpack button ~15 s until his "
+                             "face shows anki.com/v.")
                 raise HandshakeError(
                     f"OTA rejected by the robot (status {last['status']}).{extra}")
             if last["done"]:

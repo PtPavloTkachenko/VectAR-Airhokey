@@ -630,6 +630,35 @@ class WebUI:
         # here is that he stops needing that name at all — requiring the engine
         # to be healthy before you can walk away from it is backwards.
 
+        # He downloads the image HIMSELF, over Wi-Fi, from this Mac — Bluetooth
+        # only carries the URL. So a robot with no network cannot install
+        # anything, and the refusal comes back as a bare status code with
+        # nothing about the network in it. Recovery is where this bites: it is
+        # a separate minimal system that does not inherit his Wi-Fi, and a
+        # factory reset has cleared it besides, so "he was online yesterday"
+        # tells you nothing about the session you are in.
+        # Only a robot who ANSWERS that he has no address is blocked. Failing
+        # to ask is not evidence of anything, and turning "we could not tell"
+        # into a refusal would stop installs that would have worked.
+        asked = False
+        robot_ip = ""
+        try:
+            robot_ip = await self._ble.wifi_ip()
+            asked = True
+        except Exception as e:
+            logger.debug(f"could not read the robot's address: {e}")
+            robot_ip = getattr(self._ble, "ip", "") or ""
+        if asked and not robot_ip and not body.get("force"):
+            return web.json_response(
+                {"ok": False, "step": "wifi", "needs_wifi": True,
+                 "error": "He has no Wi-Fi in this session, and he downloads "
+                          "the firmware himself — there is nothing for him to "
+                          "download from. Join him to a network first (the "
+                          "Wi-Fi step), then install. In recovery this is "
+                          "always needed: it does not inherit the network he "
+                          "had before."},
+                status=409)
+
         default_name = config.STOCK_OTA_NAME if mode == "revert" \
             else config.EP_OTA_NAME
         name = body.get("ota") or default_name
