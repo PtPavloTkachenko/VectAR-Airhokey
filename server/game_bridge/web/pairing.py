@@ -216,8 +216,16 @@ def validate_cert_name(cert: bytes, robot_name: str) -> None:
             return
 
 
-def mint_guid(cert: bytes, ip: str, name: str) -> bytes:
-    """gRPC UserAuthentication against the robot -> fresh SDK guid (bytes)."""
+def mint_guid(cert: bytes, ip: str, name: str,
+              session_id: bytes = b"2vMhFgktH3Jrbemm2WHkfGN") -> bytes:
+    """gRPC UserAuthentication against the robot -> fresh SDK guid (bytes).
+
+    `session_id` is the account session the robot checks the request against.
+    wire-pod ignores its contents, so the default is the dummy the SDK's own
+    tool sends. The official path passes a real one — and that is the only
+    difference between minting against our engine and against DDL's cloud.
+    The call, the robot and the resulting guid are identical.
+    """
     import grpc
     from anki_vector import messaging
 
@@ -237,9 +245,7 @@ def mint_guid(cert: bytes, ip: str, name: str) -> bytes:
     try:
         interface = messaging.client.ExternalInterfaceStub(channel)
         request = messaging.protocol.UserAuthenticationRequest(
-            # wire-pod ignores the session token contents — this dummy value
-            # is what the SDK's own configure tool sends.
-            user_session_id=b"2vMhFgktH3Jrbemm2WHkfGN",
+            user_session_id=session_id,
             client_name=socket.gethostname().encode("utf-8"))
         # The deadline is not optional. The gateway hands this call to
         # vic-cloud, and vic-cloud dies of its own accord on these robots (it

@@ -89,6 +89,7 @@ class WebUI:
             web.post("/api/robots/select", self.api_robots_select),
             web.post("/api/robots/forget", self.api_robots_forget),
             web.post("/api/pair", self.api_pair),
+            web.post("/api/official/pair", self.api_official_pair),
             web.post("/api/test", self.api_test),
             web.post("/api/connect", self.api_connect),
             # Give the robot back to himself (he can't free-roam while an SDK
@@ -1021,6 +1022,50 @@ class WebUI:
                 logger.exception("pairing failed unexpectedly")
                 return web.json_response(
                     {"ok": False, "step": "cert",
+                     "error": f"Unexpected error: {type(e).__name__}: {e}"})
+
+    async def api_official_pair(self, req):
+        """Credentials from DDL's cloud instead of from our pairing engine.
+
+        For a robot set up their way: no firmware, no engine, nothing on this
+        network to keep running. What lands on disk afterwards is the same
+        `sdk_config.ini` the wire-pod path writes, so everything downstream —
+        connecting, the game, the dashboard — cannot tell the two apart.
+        """
+        from . import official
+        body = await req.json()
+        if self._pair_lock.locked():
+            return web.json_response(
+                {"ok": False, "step": "account",
+                 "error": "A pairing attempt is already running."}, status=409)
+        cfg_serial, cfg_ips, cfg_name = config.read_robot_identity()
+        serial = (body.get("serial") or cfg_serial or "").strip()
+        name = (body.get("name") or cfg_name or "").strip()
+        ip = (body.get("ip") or (cfg_ips.split(",")[0] if cfg_ips else "")).strip()
+        if not (serial and name and ip):
+            # Their web tool knows all three and this does not, so say which
+            # is missing rather than failing three steps later on an empty
+            # string. FIND ROBOT fills in the name and address.
+            missing = [n for n, v in (("serial", serial), ("name", name),
+                                      ("address", ip)) if not v]
+            return web.json_response(
+                {"ok": False, "step": "account",
+                 "error": "Still need his " + ", ".join(missing) +
+                          ". Press FIND ROBOT, or read the serial off his "
+                          "underside (ESN)."})
+        async with self._pair_lock:
+            try:
+                result = await asyncio.to_thread(
+                    official.pair, body.get("email", ""),
+                    body.get("password", ""), serial, name, ip)
+                return web.json_response({"ok": True, **result})
+            except pairing.PairingError as e:
+                return web.json_response(
+                    {"ok": False, "step": e.step, "error": e.message})
+            except Exception as e:
+                logger.exception("official pairing failed unexpectedly")
+                return web.json_response(
+                    {"ok": False, "step": "account",
                      "error": f"Unexpected error: {type(e).__name__}: {e}"})
 
     async def api_test(self, req):
