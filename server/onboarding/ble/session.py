@@ -436,6 +436,18 @@ class RtsSession:
                              "he has a network in THIS session — recovery does "
                              "not inherit the one he had before — and that the "
                              "server log shows him asking for /api/get_ota/.")
+                elif 210 <= last["status"] < 220:
+                    # Seen live as 216 on a healthy robot running normal
+                    # firmware: the running system refuses to be replaced from
+                    # under itself. Recovery exists for exactly this, and it is
+                    # a refusal of the SITUATION, not of the image — the same
+                    # image installs from recovery a minute later.
+                    extra = (" He refused it from the system he is running: "
+                             "firmware installs from RECOVERY, not from normal "
+                             "operation. On the charger, hold the backpack "
+                             "button ~15 s — he switches off at about 6 s, keep "
+                             "holding — until his face shows anki.com/v (or "
+                             "ddl.io/v on a DDL build), then install again.")
                 else:
                     extra = (" If he isn't in recovery mode, try that: on the "
                              "charger, hold the backpack button ~15 s until his "

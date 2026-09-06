@@ -1987,7 +1987,20 @@ async function bleProvision() {
       + `leave recovery first.</span></div>`
       // Both are real choices and we genuinely cannot tell them apart, so
       // neither gets to look like the quiet secondary option.
-      + `<button onclick="markDevRobot()">DEV / OSKR — NO FIRMWARE →</button>`;
+      + `<button onclick="markDevRobot()">DEV / OSKR — NO FIRMWARE →</button>`
+      // Recovery is also where you end up when the escape-pod image is the
+      // thing that went wrong — a robot that installs it and then faults has
+      // no other way back, because every other route needs the system that
+      // just broke. Ordinary production firmware is a working robot without
+      // this project, which beats a robot that only reaches recovery.
+      + `<div class="vec-step" style="margin-top:16px"><span class="numdot">C`
+      + `</span><span><b>Neither is working</b> — he installed the escape-pod `
+      + `firmware and still faults, or you just want him back the way he was `
+      + `sold. This puts <b>ordinary production firmware</b> on him: a normal `
+      + `Vector, no pairing engine, no SDK. Reversible — the escape-pod image `
+      + `installs again afterwards.</span></div>`
+      + `<button class="secondary" onclick="bleFlashEp('revert')" id="btnRevertRec">`
+      + `OFFICIAL FIRMWARE — BACK TO STOCK →</button>`;
   } else if (st.state === "in_recovery_dev") {
     // A dev robot in RECOVERY can't be set up at all: recovery is a minimal OS
     // with no /data/ssh and none of his services, so the SSH path has nothing
@@ -2232,8 +2245,13 @@ function flashBarHtml(s) {
 // differences are which button is disabled and what is said at the end.
 async function bleFlashEp(mode) {
   const revert = mode === "revert";
-  const btn = revert ? "btnRevert" : "btnFlash";
-  $(btn).disabled = true;
+  // Reverting is offered from two screens — the one for a robot that is set
+  // up, and recovery, which is where you end up when the escape-pod image is
+  // what broke. Same call, different button, so find whichever is on screen
+  // rather than assuming; the id it used to assume does not exist in recovery.
+  const btn = [revert ? "btnRevert" : "btnFlash", "btnRevertRec"]
+    .find(id => $(id));
+  if (btn) $(btn).disabled = true;
   $("provErr").style.display = "none";
   $("flashBar").style.display = "";
   $("flashBar").innerHTML = `<span class="spin">◌</span> starting…`;
