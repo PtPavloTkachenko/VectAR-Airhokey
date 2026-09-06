@@ -127,8 +127,14 @@ Two Mac-side traps that look like robot problems, both covered in
 ## The reference run (what success looks like)
 
 Captured 2026-09-06 on a robot **reset to factory** and taken through the whole
-wizard, with the engine holding no certificate and no record of him — the same
-starting state as a robot that has never been set up:
+wizard — including the escape-pod firmware flash, so this is the stock path
+end to end — with the engine holding no certificate and no record of him:
+
+```
+01:30:23  ep firmware flashed — robot rebooting
+01:32:39  robot cloud-authed against wire-pod (attempt 1)
+01:32:39  New bot being associated with wire-pod. ESN: …   (engine's own log)
+```
 
 | | |
 |---|---|
@@ -137,10 +143,11 @@ starting state as a robot that has never been set up:
 | `session-certs/<esn>` | written, same second |
 | `~/.anki_vector/<name>-<esn>.cert` | written, same second |
 | Doctor afterwards | robot paired, control token present, link connected |
-| netstat on `:443` | **nothing** — and it succeeded anyway |
+| netstat on `:443` | **nothing**, across 45 min at 4 samples/second — and it succeeded anyway |
 
-Whole thing takes about a second once the wizard reaches Authorize. If a run
-takes 60 s and ends at the 404, it did not fail slowly — it never started.
+Two minutes from firmware flash to a working link, and the sign-in itself is
+one second of it. A run that takes 60 s and ends at the 404 did not fail
+slowly — it never started.
 
 ## What is genuinely unknown
 
