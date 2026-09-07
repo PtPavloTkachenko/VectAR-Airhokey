@@ -9,6 +9,40 @@ That message names the symptom and points at the wrong component. **The engine
 is almost never the problem.** This page is the mechanism and the decision
 tree; work it in order and stop at the first branch that answers.
 
+## ⚡ RESOLVED 2026-09-07 — read this first
+
+This page below is the triage that was needed while the cause was unknown. The
+cause is now known, reproduced on a live robot, and handled in code. **If you
+are on a build after `529b5dd`, none of the branches below should fire.**
+
+Three faults, and every one of them needs the robot to have been associated
+**once before** — which is why a long-lived checkout never hit them and a
+fresh clone hit them every time.
+
+| # | Fault | Why it is permanent | Fix |
+|---|-------|--------------------|-----|
+| 1 | **No certificate.** Only `AssociatePrimaryUser` carries one, and a robot makes exactly one primary association, ever. Everything after is `AssociateSecondaryClient`, which carries nothing. | wire-pod's fallback fetches from `session-certs.token.global.anki-services.com` — a host that no longer resolves. So `/session-certs/<esn>` is 404 **forever**. | The certificate is **self-signed** and he presents it on `:443` to anyone who connects, so no cloud is involved: read it off him and hand it to the engine. `pairing.fetch_cert_from_robot()` + `store_cert()`. |
+| 2 | **Key rejected (401) right after a "successful" pairing.** The engine registers a key's hash in the robot's `vic.AppTokens` jdoc only while that jdoc does not yet exist. | After the first one, every `UserAuthentication` returns a fresh key registered nowhere. The robot 401s it for good — while the engine's own key, the registered one, still works. | Minting a key and having him honour it are two different things: **ask him**. One `BatteryState` call (needs no behavior control), then write the key that actually answers. `pairing.guid_works()`. |
+| 3 | **The engine forgets every robot.** wire-pod creates `jdocs/` and `session-certs/` only in its *packaged* branch (`vars.Init`, `if Packaged`). From a source tree the paths stay relative and nothing makes them. | Every write fails silently, so state dies on each restart — and the engine restarts on **every Wi-Fi change**. Losing `botSdkInfo.json` is why it takes its "act as if this is a new robot" path on a robot it onboarded minutes ago. | Create both before each start: `pairing_engine.ensure_engine_dirs()`. They hold session certificates and SDK keys, so they are gitignored. |
+
+**Why "Clear User Data" always seemed to fix it.** It does not fix anything —
+it restores the only state in which the flow ever worked. Wiping the robot
+empties his token store, so his next association is a PRIMARY one again: the
+certificate is handed over and the minted key is registered. The moment a robot
+arrives already associated — set up through the official app or web setup, as
+most robots are — that escape hatch is gone and all three faults fire at once.
+
+**How it was reproduced.** The robot was put through the official Digital Dream
+Labs web setup (which pushed `2.0.1.6096`), then `6076ep` was flashed over it.
+`OTA complete` and `robot cloud-authed against wire-pod` both succeeded, and
+the run still died at the certificate — landing in exactly the state reported
+from a fresh corporate Mac. Verified fixed end-to-end from a simulated fresh
+machine: certificate deleted from both the Mac and the engine, `pair()` read
+his own, chose the engine's key over the freshly minted one, and read his
+battery back over the SDK.
+
+---
+
 ## The mechanism (why nothing on the Mac can fix it)
 
 The certificate is not written by the Bluetooth step. It arrives because the
