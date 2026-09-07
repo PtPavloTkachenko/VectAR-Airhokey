@@ -82,18 +82,28 @@ def session_token(email: str, password: str) -> str:
     return token
 
 
-def fetch_cert(serial: str) -> bytes:
-    """The robot's certificate, by serial. Their endpoint asks for no auth.
+def fetch_cert(serial: str, token: str = "") -> bytes:
+    """The robot's certificate, by serial.
 
-    A 404 here is the useful answer, not an error to retry: it means this
-    robot has never been set up through DDL, so there is nothing to fetch.
+    DDL's own tool asks for this without any authentication, and that is how
+    this was written. Measured against the live service afterwards, a robot
+    freshly set up through their phone app still came back 404 unauthenticated
+    — so the session is sent when we have one, and their tool is treated as
+    describing an older shape of the API rather than the current one.
+
+    A 404 *with* a session is the useful answer, not an error to retry: it
+    means this robot is not registered to that account.
     """
     import requests
     serial = (serial or "").strip().lower()
     if not serial:
         raise pairing.PairingError(STEP_CERT, "No serial to ask about.")
+    headers = dict(_APP_HEADERS)
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
     try:
-        r = requests.get(DEVICE_CERT_URL.format(serial=serial), timeout=20)
+        r = requests.get(DEVICE_CERT_URL.format(serial=serial),
+                         headers=headers, timeout=20)
     except Exception as e:
         raise pairing.PairingError(
             STEP_CERT,
@@ -101,9 +111,10 @@ def fetch_cert(serial: str) -> bytes:
     if r.status_code == 404:
         raise pairing.PairingError(
             STEP_CERT,
-            f"DDL holds no certificate for '{serial}'. He has not been set up "
-            "through their web tool yet — do that first at "
-            "vector-setup.ddl.io, then come back here.")
+            f"DDL holds no certificate for '{serial}' on this account. Either "
+            "he was set up under a different one, or the setup did not finish "
+            "associating him — his own log says so plainly when it does not: "
+            "`no_account_authentication` on vic.AppTokens.")
     if r.status_code != 200:
         raise pairing.PairingError(
             STEP_CERT,
@@ -118,7 +129,7 @@ def pair(email: str, password: str, serial: str, name: str, ip: str) -> dict:
     game server picks up without knowing which route wrote them.
     """
     token = session_token(email, password)
-    cert = fetch_cert(serial)
+    cert = fetch_cert(serial, token)
     pairing.validate_cert_name(cert, name)
     cert_file = pairing.save_cert(cert, name, serial)
     guid = pairing.mint_guid(cert, ip, name, session_id=token.encode("utf-8"))
