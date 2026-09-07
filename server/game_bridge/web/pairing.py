@@ -1,18 +1,18 @@
-"""Pairing core: obtain the robot's TLS cert + mint an SDK auth guid.
+"""Turning a certificate into SDK credentials on this Mac.
 
-The flow (same one `anki_vector.configure` runs interactively, re-implemented
-exception-based for the web wizard):
+What the SDK needs is a certificate that identifies the robot and a guid it
+will accept. The certificate comes from his cloud — see `official.py` — and
+the guid comes from the robot himself:
 
-  1. GET  http://<wire-pod>/session-certs/<serial>   -> robot TLS cert (PEM)
-  2. cert CN must equal the robot name (Vector-XXXX)
-  3. gRPC UserAuthentication to the ROBOT at <ip>:443 (channel pinned to the
-     cert). wire-pod's token server answers through the robot and returns a
-     fresh guid; its hash is APPENDED to the robot's vic.AppTokens jdoc, so
-     re-pairing never invalidates existing clients.
-  4. Write ~/.anki_vector/<name>-<serial>.cert + sdk_config.ini [serial].
+  1. the certificate's CN must be his name (Vector-XXXX)
+  2. gRPC UserAuthentication to the ROBOT at <ip>:443, on a channel pinned to
+     that certificate, carrying the account session. He answers with a fresh
+     guid, and its hash is APPENDED to his token store — so pairing again
+     never invalidates a client that already works.
+  3. write ~/.anki_vector/<name>-<serial>.cert + sdk_config.ini [serial]
 
-wire-pod must be RUNNING during pairing (steps 1+3). Gameplay afterwards is
-pod-free: vic-gateway validates the guid locally.
+Step 2 talks to the robot over Wi-Fi, not to the internet. Nothing here has to
+keep running afterwards: the robot validates the guid himself.
 
 All functions are synchronous (call via asyncio.to_thread). Failures raise
 PairingError(step=...) so the UI can point at the exact stage.
@@ -60,139 +60,6 @@ def standardize_name(robot_name: str) -> str:
     return robot_name[:7] + robot_name[7:].upper()
 
 
-def wirepod_status(pod: str = "") -> dict:
-    """Is the pairing engine actually usable by a STOCK (escape-pod) robot?
-
-    A robot running the `ep` firmware reaches its cloud at the fixed name
-    `escapepod.local:443` and only trusts the well-known Digital Dream Labs
-    escape-pod certificate (CN=escapepod.local). wire-pod serves that identity
-    ONLY in escape-pod mode (`apiConfig.json` -> `server.epconfig: true`); in
-    the other mode it serves a self-signed IP certificate and never broadcasts
-    the mDNS name, so a freshly flashed stock robot silently talks to nobody
-    and pairing dies later at "cert does not exist".
-
-    Probing the live behaviour (name resolves + which cert :443 presents) is
-    what actually matters, so we check that rather than reading the config.
-
-    Returns {up, mdns, ep_cert, ready, ip, detail} — never raises.
-    """
-    import socket
-    import ssl
-
-    out = {"up": False, "mdns": False, "ep_cert": False, "ready": False,
-           "ip": "", "detail": ""}
-
-    import requests
-    base = (pod or "").strip().rstrip("/") or "http://localhost:8080"
-    if "://" not in base:
-        base = "http://" + base
-    try:
-        requests.get(base, timeout=4)
-        out["up"] = True
-    except Exception as e:
-        out["detail"] = (f"wire-pod is not answering at {base} "
-                         f"({type(e).__name__}). Start `vectar-onboard`.")
-        return out
-
-    try:
-        out["ip"] = socket.gethostbyname("escapepod.local")
-        out["mdns"] = True
-    except Exception:
-        out["detail"] = ("wire-pod is running but `escapepod.local` does not "
-                         "resolve — it is not in escape-pod mode, so a stock "
-                         "robot can never find it. Set `server.epconfig: true` "
-                         "in chipper/apiConfig.json and restart vectar-onboard.")
-        return out
-
-    # Which certificate does :443 present? The ep firmware pins this.
-    try:
-        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
-        with socket.create_connection((out["ip"], 443), timeout=5) as raw:
-            with ctx.wrap_socket(raw, server_hostname="escapepod.local") as tls:
-                der = tls.getpeercert(binary_form=True)
-        from cryptography import x509
-        parsed = x509.load_der_x509_certificate(der)
-        cn = ""
-        for field in parsed.subject:
-            if "commonName" in str(field.oid):
-                cn = field.value
-        out["ep_cert"] = (cn == "escapepod.local")
-        if not out["ep_cert"]:
-            out["detail"] = (
-                f"escapepod.local:443 presents a certificate for '{cn}', not "
-                "'escapepod.local'. A stock robot will refuse it. Restart "
-                "vectar-onboard in escape-pod mode.")
-            return out
-    except Exception as e:
-        out["detail"] = (f"Nothing is serving TLS on escapepod.local:443 "
-                         f"({type(e).__name__}) — wire-pod is not in "
-                         "escape-pod mode or its port 443 failed to bind.")
-        return out
-
-    out["ready"] = True
-    out["detail"] = f"Escape-pod mode live on {out['ip']} (mDNS + ep cert)."
-    return out
-
-
-def fetch_cert(pod: str, serial: str, wait: float = 0.0,
-               on_wait=None) -> bytes:
-    """Download the robot's TLS cert from wire-pod's session-certs store.
-
-    `wait` (seconds) polls instead of failing on the first miss: the cert only
-    appears once the ROBOT has completed its own handshake against wire-pod,
-    which lags the wizard's Wi-Fi step by a few seconds to a minute on a fresh
-    stock unit. Failing fast here was the classic "cert does not exist" dead
-    end even though the robot was on its way.
-    """
-    import requests
-
-    pod = pod.strip().rstrip("/")
-    if "://" not in pod:
-        pod = "http://" + pod
-    url = f"{pod}/session-certs/{serial}"
-    started = time.monotonic()
-    deadline = started + max(0.0, wait)
-    last_status = None
-    while True:
-        if callable(on_wait):
-            try:
-                on_wait(time.monotonic() - started)
-            except Exception:
-                pass
-        try:
-            r = requests.get(url, timeout=8)
-        except Exception as e:
-            raise PairingError(
-                STEP_CERT,
-                f"Can't reach wire-pod at {pod} ({type(e).__name__}). Is wire-pod "
-                "running on this network? Check the address (default "
-                "escapepod.local:8080 — try the machine's IP if .local fails).")
-        if r.status_code == 200 and b"BEGIN CERTIFICATE" in r.content:
-            return r.content
-        last_status = r.status_code
-        if time.monotonic() >= deadline:
-            break
-        time.sleep(2.0)
-
-    if last_status == 200:
-        raise PairingError(
-            STEP_CERT, f"Response from {url} is not a PEM certificate.")
-    waited = (f" (waited {wait:.0f}s for the robot's handshake)"
-              if wait else "")
-    # Diagnosing WHY is the caller's job (it adds wirepod_status to the reply)
-    # so this stays a pure HTTP function with no side probes.
-    raise PairingError(
-        STEP_CERT,
-        f"wire-pod has no certificate for serial '{serial}' (HTTP "
-        f"{last_status}){waited}. The robot has not completed its handshake "
-        "against THIS wire-pod.")
-
-
-class StaleCertError(PairingError):
-    """The engine's stored certificate predates the robot's factory reset."""
-
 
 def validate_cert_name(cert: bytes, robot_name: str) -> None:
     from cryptography import x509
@@ -207,12 +74,11 @@ def validate_cert_name(cert: bytes, robot_name: str) -> None:
                 # changes, so the engine's per-serial store keeps handing back
                 # the certificate minted under his OLD name. He has to be asked
                 # to sign in again, which replaces it.
-                raise StaleCertError(
+                raise PairingError(
                     STEP_CERT,
-                    f"The pairing engine still holds {field.value}'s "
-                    f"certificate for this serial, but he is now "
-                    f"{robot_name} — it was minted before his factory reset. "
-                    "He has to sign in once more so it gets replaced.")
+                    f"The certificate is {field.value}'s, but this robot is "
+                    f"now {robot_name} — it predates his factory reset. Set "
+                    "him up once more so his cloud issues a current one.")
             return
 
 
@@ -265,9 +131,9 @@ def mint_guid(cert: bytes, ip: str, name: str,
                 "fault reports.")
         raise PairingError(
             STEP_AUTH,
-            f"The robot refused the authentication call ({code}). Usually this "
-            "means the robot can't reach ITS token server — is wire-pod "
-            "running, and did THIS wire-pod onboard the robot?")
+            f"The robot refused the authentication call ({code}). That is "
+            "usually an account he was not set up with — the certificate and "
+            "the session have to belong to the same one.")
     finally:
         # Hand the robot's one client slot back. vic-gateway serves a single
         # client, so a channel left open here means the very next connection --
@@ -282,58 +148,12 @@ def mint_guid(cert: bytes, ip: str, name: str,
     if response.code != messaging.protocol.UserAuthenticationResponse.AUTHORIZED:
         raise PairingError(
             STEP_AUTH,
-            "Authentication not authorized by the robot. The robot's trusted "
-            "server is not this wire-pod — re-run wire-pod onboarding, then "
-            "pair again.")
+            "The robot did not authorize the request. He was set up under a "
+            "different account than the one signed in here — use the account "
+            "his web setup was done with.")
     return response.client_token_guid
 
 
-def forget_cert(serial: str) -> bool:
-    """Drop the engine's stored certificate for this serial. True if removed.
-
-    His serial is fused and survives a factory reset; his NAME and certificate
-    do not. So the engine's per-serial store keeps serving the certificate from
-    before the reset, pairing rejects it as belonging to someone else, and no
-    amount of signing in replaces it -- the engine writes a new one only when
-    there is nothing there. Removing it first is what makes a re-onboarded
-    robot work, and it costs nothing when he is genuinely new.
-
-    Local engine only; a remote one keeps its own files and is left alone.
-    """
-    from .. import config as gconfig
-    path = (gconfig.OTA_REPO_DIR.parent / "wire-pod" / "chipper" /
-            "session-certs" / serial.strip().lower())
-    try:
-        if path.is_file():
-            path.unlink()
-            logger.info(f"dropped the engine's stale certificate for {serial}")
-            return True
-    except Exception as e:
-        logger.debug(f"could not drop the stored certificate: {e}")
-    return False
-
-
-def pod_guid(pod: str, serial: str) -> bytes:
-    """The guid the pairing engine issued for this robot, or b''.
-
-    The robot does not always hand his guid back over the network call — on a
-    dev robot he answers with an empty one — but the engine minted it and knows
-    it, and its hash is already in the robot's token store. So asking the engine
-    is not a workaround; it is asking whoever actually issued the thing.
-    """
-    import requests
-
-    pod = (pod or "").strip().rstrip("/")
-    if "://" not in pod:
-        pod = "http://" + pod
-    try:
-        r = requests.get(f"{pod}/api-sdk/get_sdk_info", timeout=8)
-        for robot in (r.json() or {}).get("robots") or []:
-            if str(robot.get("esn", "")).lower() == serial.lower():
-                return (robot.get("guid") or "").encode("utf-8")
-    except Exception as e:
-        logger.debug(f"could not read the engine's sdk info: {e}")
-    return b""
 
 
 def save_cert(cert: bytes, name: str, serial: str) -> str:
@@ -396,58 +216,6 @@ def _cert_common_name(cert: bytes) -> str:
             return field.value
     return ""
 
-
-def pair(pod: str, serial: str, name: str, ip: str,
-         cert_wait: float = 0.0, on_wait=None) -> dict:
-    """Full pairing: cert -> validate -> mint -> persist. Returns a summary.
-
-    `name` may be empty — it's then taken from the certificate's CommonName
-    (the robot name), so the on-Wi-Fi shortcut doesn't need a name typed.
-    `cert_wait` polls wire-pod for the robot's session cert instead of failing
-    on the first miss (see fetch_cert) — a fresh stock robot needs a moment
-    after joining Wi-Fi before its handshake lands.
-    """
-    serial = serial.strip().lower()
-    if not serial:
-        raise PairingError(STEP_CERT, "Robot serial is required "
-                           "(printed on the bottom of the robot, e.g. 00e20145).")
-    if not ip.strip():
-        raise PairingError(STEP_TLS, "Robot IP is required.")
-    ip = ip.strip()
-
-    cert = fetch_cert(pod, serial, wait=cert_wait, on_wait=on_wait)
-    if name.strip():
-        name = standardize_name(name)
-        validate_cert_name(cert, name)
-    else:
-        name = _cert_common_name(cert) or f"Vector-{serial[-4:].upper()}"
-    guid = mint_guid(cert, ip, name)
-    if not guid:
-        # A dev robot answers the authentication call with an EMPTY guid — the
-        # call succeeds, so this used to be written out and reported as a
-        # successful pairing. Every later connection then failed with a bare
-        # 401 and nothing pointed back here. The engine issued a real guid for
-        # him, so use that; if even it has none, say so instead of persisting
-        # a credential that cannot work.
-        guid = pod_guid(pod, serial)
-        if guid:
-            logger.info(f"{serial}: robot returned no guid; used the engine's")
-    if not guid:
-        raise PairingError(
-            STEP_AUTH,
-            "The robot accepted the authentication call but issued no key, and "
-            "the pairing engine has none for him either. He has not been "
-            "associated with this engine yet — connect over Bluetooth once so "
-            "he can sign in.")
-    try:
-        cert_file = save_cert(cert, name, serial)
-        write_config(serial, cert_file, ip, name, guid)
-    except PairingError:
-        raise
-    except Exception as e:
-        raise PairingError(STEP_WRITE, f"Could not write SDK config: {e}")
-    logger.info(f"Paired {name} ({serial}) at {ip} — sdk_config.ini updated")
-    return {"serial": serial, "name": name, "ip": ip, "cert_file": cert_file}
 
 
 def test_connection(serial: str = "") -> dict:

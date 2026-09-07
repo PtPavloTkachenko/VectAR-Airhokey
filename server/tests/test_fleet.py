@@ -226,8 +226,9 @@ def test_switching_never_reaches_for_onboarding(two_robots, monkeypatch):
 
         def _boom(*a, **k):
             raise AssertionError("selecting a paired robot re-ran onboarding")
-        monkeypatch.setattr(pairing, "pair", _boom)
         monkeypatch.setattr(pairing, "mint_guid", _boom, raising=False)
+        from game_bridge.web import official
+        monkeypatch.setattr(official, "pair", _boom, raising=False)
 
         bridge, client = _client()
         await client.start_server()

@@ -304,167 +304,40 @@
   </div>
 
   <!-- ============ PAIRING WIZARD ============ -->
+  <!-- ============ PAIR — sign in, no firmware ============ -->
   <div id="view-pair" style="display:none">
-    <!-- route chooser (rendered by chooseRoute from live status) -->
-    <div class="card" id="routeCard"></div>
+    <div class="card">
+      <h2>Connect a robot</h2>
+      <div class="hint">Two halves, and the first one does not happen here:
+        set the robot up in
+        <a href="https://vector-setup.ddl.io/" target="_blank" rel="noopener">
+        Digital Dream Labs' web tool</a> — Chrome or Edge, it pairs over
+        Bluetooth — joining him to <b>this</b> Wi-Fi and signing in. Then sign
+        in below with the same account, and this Mac takes the credentials it
+        needs. Nothing is flashed and nothing keeps running afterwards.</div>
 
-    <!-- ============ BLE onboarding (stock robot) ============ -->
-    <div class="card" id="bleCard" style="display:none">
-      <div class="steps">
-        <div class="step-dot" id="bdot0"></div>
-        <div class="step-dot" id="bdot1"></div>
-        <div class="step-dot" id="bdot2"></div>
-        <div class="step-dot" id="bdot3"></div>
-        <div class="step-dot" id="bdot4"></div>
-      </div>
+      <div class="vec-step"><span class="numdot">1</span><span>Set him up at
+        <span class="key">vector-setup.ddl.io</span> — same Wi-Fi as this Mac,
+        and remember which account you used.</span></div>
+      <div class="vec-step"><span class="numdot">2</span><span>Press
+        <b>FIND ROBOT</b> so this knows his name and address.</span></div>
+      <div class="vec-step"><span class="numdot">3</span><span>Sign in with
+        that account.</span></div>
 
-      <!-- b0: find over BLE -->
-      <div class="bstep" id="bstep0">
-        <h2>1 · Find Vector over Bluetooth</h2>
-        <div class="vec-steps">
-          <div class="vec-step">
-            <img src="/static/images/onboarding_icon_plugincharger_med.svg" alt="">
-            <span><span class="key">Place Vector on his charger.</span></span>
-          </div>
-          <div class="vec-step">
-            <img src="/static/images/onboarding_icon_pressbackpack_med.svg" alt="">
-            <span><span class="key">Double-press the button on his back</span>
-              until his face shows a setup screen, then scan. Nothing found?
-              Double-press again and rescan — the window is short.</span>
-          </div>
-        </div>
-        <button onclick="bleScan()" id="btnBleScan">SCAN BLUETOOTH</button>
-        <span id="bleScanSpin"></span>
-        <div id="bleList"></div>
-        <button class="secondary" onclick="chooseRoute(null)">← BACK</button>
-      </div>
+      <button class="secondary" onclick="officialFind()" id="btnFind">
+        FIND ROBOT →</button>
+      <div id="findMsg" class="hint"></div>
 
-      <!-- b1: pair / PIN -->
-      <div class="bstep" id="bstep1" style="display:none">
-        <h2>2 · Pair</h2>
-        <div id="blePairMsg" class="hint">Connecting… once connected, Vector's
-          face replaces <code>######</code> with a 6-digit PIN.</div>
-        <label>Enter the 6-digit PIN from Vector's face</label>
-        <input id="blePin" placeholder="000000" inputmode="numeric" maxlength="6">
-        <div class="error" id="blePinErr" style="display:none"></div>
-        <button onclick="blePin()" id="btnBlePin" disabled>CONFIRM PIN</button>
-        <button class="secondary" onclick="bleRestart()">← START OVER</button>
-        <div class="hint" style="margin-top:14px">
-          <b>No PIN on his face?</b> He sometimes accepts the Bluetooth
-          connection without ever entering pairing mode, and then no PIN
-          appears — waiting doesn't help. Restart him: hold the backpack button
-          ~5 s until he switches off, put him back on the charger, wait for his
-          eyes, then double-press the backpack and press START OVER here.
-        </div>
-      </div>
-
-      <!-- bP: provisioning — make the robot's cloud point at wire-pod.
-           A stock robot talks to ddl.io and can never reach wire-pod; the
-           escape-pod firmware fixes that permanently. OSKR robots use SSH
-           instead (no flash). Detected from the robot's firmware string. -->
-      <div class="bstep" id="bstepProv" style="display:none">
-        <h2>Set up Vector's connection</h2>
-        <div id="provDetect" class="hint"><span class="spin">◌</span>
-          checking what this Vector needs…</div>
-        <div id="provBody"></div>
-        <div class="error" id="provErr" style="display:none"></div>
-        <button class="secondary" onclick="bleRestart()">← START OVER</button>
-      </div>
-
-      <!-- b2: wifi -->
-      <div class="bstep" id="bstep2" style="display:none">
-        <h2>3 · Connect Vector to Wi-Fi</h2>
-        <div id="bleWifiList" class="hint">Scanning the networks Vector can
-          see…</div>
-        <label>Password</label>
-        <input id="bleWifiPw" type="password" placeholder="Wi-Fi password">
-        <input type="hidden" id="bleWifiSsid"><input type="hidden" id="bleWifiAuth">
-        <div class="error" id="bleWifiErr" style="display:none"></div>
-        <div class="ok" id="bleWifiOk" style="display:none"></div>
-        <button onclick="bleWifiConnect()" id="btnBleWifi" disabled>CONNECT</button>
-        <button class="secondary" onclick="bleWifiScan()">RESCAN NETWORKS</button>
-        <button class="secondary" onclick="bleRestart()">← START OVER</button>
-      </div>
-
-      <!-- b3: done -> authorize (automatic) -->
-      <div class="bstep" id="bstep3" style="display:none">
-        <h2>4 · Vector is online</h2>
-        <div class="ok" id="bleDoneMsg">Vector is on Wi-Fi.</div>
-        <div id="bleAuthMsg" class="hint">Last step: authorize this Mac to
-          control Vector. No serial to type — we read it over Bluetooth.</div>
-        <!-- Measured before you press the button, not after a minute of
-             waiting: whether this Mac can actually reach him where he is. -->
-        <div class="error" id="bleReachWarn" style="display:none"></div>
-        <div class="error" id="bleAuthErr" style="display:none"></div>
-        <button onclick="bleAuthorize()" id="btnBleAuth">AUTHORIZE &amp; FINISH →</button>
-        <!-- Being on *a* network is not the same as being on the right one: a
-             robot that remembers a guest Wi-Fi rejoins it happily, and then
-             nothing on this Mac can reach him. The BLE session is still open
-             here, so switching costs one screen. -->
-        <button class="secondary" onclick="bleChangeWifi()">JOIN A DIFFERENT NETWORK</button>
-      </div>
+      <input id="ddlEmail" type="email" placeholder="account email"
+             autocomplete="username" />
+      <input id="ddlPass" type="password" placeholder="password"
+             autocomplete="current-password" />
+      <div class="hint">The password goes to their sign-in service and is
+        stored nowhere; what comes back is a session, not the password.</div>
+      <div class="error" id="officialErr" style="display:none"></div>
+      <button onclick="officialPair()" id="btnOfficial">SIGN IN & PAIR →</button>
+      <div id="officialMsg" class="hint"></div>
     </div>
-
-    <!-- ============ OSKR archive upload (dev robots) ============
-         The reliable OSKR path: the owner downloads his logs with the OFFICIAL
-         Vector setup web app (Chrome's BLE sustains the full transfer), then
-         drops the archive here. We detect his SSH key inside it and provision
-         over SSH — no BLE from us. -->
-    <div class="card" id="archiveCard" style="display:none">
-      <h2>Set up an OSKR / dev Vector</h2>
-      <div class="hint">Dev robots grant access with their own SSH key, which
-        lives inside their logs. Get his logs from Anki's official setup app,
-        then drop the file here — we find the key and set him up for you.</div>
-
-      <div class="vec-steps" style="margin-top:14px">
-        <div class="vec-step"><span class="numdot">1</span><span>
-          Put Vector on his charger and <span class="key">double-press the back
-          button</span> until his face shows a setup screen.</span></div>
-        <div class="vec-step"><span class="numdot">2</span><span>
-          Open <a href="https://vector-web-setup.anki.bot/#" target="_blank"
-          rel="noopener">vector-web-setup.anki.bot</a> in <span class="key">Chrome</span>
-          and connect to Vector (it pairs over Bluetooth).</span></div>
-        <div class="vec-step"><span class="numdot">3</span><span>
-          Choose <span class="key">Save Logs</span> (a
-          <code>vector-logs-….tar.bz2</code> downloads).</span></div>
-        <div class="vec-step"><span class="numdot">4</span><span>
-          Come back here and drop that file below.</span></div>
-      </div>
-
-      <label id="dropZone" for="archiveFile"
-        style="display:block;margin-top:14px;padding:22px;border:2px dashed #3a3f4b;
-               border-radius:12px;text-align:center;cursor:pointer">
-        <div id="dropText">Drop the <code>.tar.bz2</code> here, or click to choose</div>
-        <input id="archiveFile" type="file"
-               accept=".bz2,.gz,.tar,.tgz,application/x-tar,application/gzip"
-               style="display:none">
-      </label>
-
-      <details style="margin-top:12px">
-        <summary class="hint" style="cursor:pointer">mDNS blocked? Enter his IP
-          (optional)</summary>
-        <input id="archiveIp" placeholder="192.168.1.42 (leave empty to auto-find)"
-               style="margin-top:8px">
-      </details>
-
-      <div id="archiveBar" class="hint" style="display:none"></div>
-      <div class="error" id="archiveErr" style="display:none"></div>
-      <button onclick="archiveProvision()" id="btnArchive" disabled>
-        SET UP FROM ARCHIVE →</button>
-
-      <details style="margin-top:14px">
-        <summary class="hint" style="cursor:pointer">Already extracted the key?
-          Paste it instead</summary>
-        <textarea id="archiveKeyBox" rows="5"
-          placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
-          style="width:100%;margin-top:8px;font-family:inherit;font-size:12px"></textarea>
-        <button class="secondary" onclick="archiveProvision(true)">USE PASTED KEY →</button>
-      </details>
-
-      <button class="secondary" onclick="chooseRoute(null)"
-        style="margin-top:6px">← BACK TO SETUP OPTIONS</button>
-    </div>
-
   </div>
 
   <div class="footer">VectAR Air-Hockey · open-source · lens WS :8777 · this console :8780</div>
@@ -479,7 +352,6 @@ function showTab(t) {
   $("view-pair").style.display = t === "pair" ? "" : "none";
   $("tab-dash").classList.toggle("active", t === "dash");
   $("tab-pair").classList.toggle("active", t === "pair");
-  if (t === "pair") chooseRoute(null);
 }
 
 function chooseRoute(route) {
@@ -2602,6 +2474,58 @@ async function bleSetupFromAuthorize() {
   bleStep(0);
   $("bleList").innerHTML = "";
   bleScan();
+}
+// ---- pairing through the account, no firmware ------------------------------
+
+// Filling the form in for you is not a nicety: the serial is on his
+// underside, and asking someone to read it off a robot they have already
+// connected to is how a two-field form becomes a five-minute job.
+async function officialFind() {
+  const btn = $("btnFind"), msg = $("findMsg");
+  btn.disabled = true;
+  msg.innerHTML = '<span class="spin">◌</span> looking for him on this network…';
+  let f = {};
+  try { f = await api("/api/find_robot", {}); } catch (e) { f = {}; }
+  btn.disabled = false;
+  if (f && f.on_wifi) {
+    window._robot = {serial: f.serial || "", name: f.name || "", ip: f.ip || ""};
+    msg.innerHTML = `Found <b>${f.name || "a Vector"}</b> at <b>${f.ip}</b>` +
+      (f.serial ? ` (${f.serial})` : " — but he did not say who he is; " +
+       "his serial is the ESN printed on his underside");
+  } else {
+    msg.innerHTML = "No Vector answering on this network. He has to be set up " +
+      "and on the same Wi-Fi as this Mac first.";
+  }
+}
+
+async function officialPair() {
+  const btn = $("btnOfficial"), msg = $("officialMsg"), err = $("officialErr");
+  err.style.display = "none";
+  const email = $("ddlEmail").value.trim(), password = $("ddlPass").value;
+  if (!email || !password) {
+    err.style.display = ""; err.textContent = "Both fields, please.";
+    return;
+  }
+  btn.disabled = true;
+  msg.innerHTML = '<span class="spin">◌</span> signing in, then asking him for a token…';
+  let r = {};
+  try {
+    r = await api("/api/official/pair", Object.assign(
+      {email, password}, window._robot || {}));
+  } catch (e) {
+    r = {ok: false, error: String(e)};
+  }
+  btn.disabled = false;
+  $("ddlPass").value = "";      // do not leave it sitting in the page
+  if (r && r.ok) {
+    msg.innerHTML = `Paired <b>${r.name}</b> ✓ — connecting…`;
+    try { await api("/api/connect", {}); } catch (e) {}
+    showTab("dash");
+    return;
+  }
+  msg.innerHTML = "";
+  err.style.display = "";
+  err.textContent = (r && r.error) || "Pairing failed.";
 }
 </script>
 </body>

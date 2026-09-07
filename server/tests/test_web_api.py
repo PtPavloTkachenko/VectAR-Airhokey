@@ -87,16 +87,19 @@ def test_status_unpaired(client_factory):
     asyncio.run(go())
 
 
-def test_pair_validation_error(client_factory):
+def test_official_pair_says_what_is_missing(client_factory):
     async def go():
         bridge, client = client_factory()
         await client.start_server()
         try:
-            r = await client.post("/api/pair", json={
-                "pod": "localhost:1", "serial": "", "name": "x", "ip": ""})
+            r = await client.post("/api/official/pair", json={
+                "email": "a@b.c", "password": "x",
+                "serial": "", "name": "", "ip": ""})
             data = await r.json()
             assert data["ok"] is False
-            assert data["step"] == "cert"
+            assert data["step"] == "account"
+            # It has to say WHICH of the three it is still missing, or the
+            # operator is left guessing at an empty form.
             assert "serial" in data["error"].lower()
         finally:
             await client.close()

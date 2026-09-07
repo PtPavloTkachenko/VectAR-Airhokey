@@ -1,12 +1,12 @@
 """Doctor — one pass over the whole chain, with the fix for anything red.
 
-Every failure we hit while getting a stock robot онboarded was diagnosable
-from a fixed list of facts, but each time it cost a round of manual probing:
-is wire-pod in escape-pod mode? does escapepod.local resolve? does :443 serve
-the DDL cert? is the OTA cached? does the robot answer at all (and does he
-answer on the SECOND try, since his Wi-Fi radio sleeps)? do we hold a cert and
-a token for him? So: ask all of it at once, and print what to DO about each
-answer rather than what is wrong.
+Every failure we hit setting a robot up was diagnosable from a fixed list of
+facts, but each time it cost a round of manual probing: does this Mac have an
+address, and is the robot on the same network? does he answer at all — and
+does he answer on the SECOND try, since his Wi-Fi radio sleeps? do we hold a
+certificate and a token for him, and do they still match his name? So: ask all
+of it at once, and print what to DO about each answer rather than what is
+wrong.
 
     python -m game_bridge.doctor          # from server/
     curl -s localhost:8780/api/doctor     # same, as JSON
@@ -36,116 +36,6 @@ class Check:
         return {"name": self.name, "ok": self.ok,
                 "detail": self.detail, "fix": self.fix}
 
-
-def _wirepod_checks() -> list[Check]:
-    from .web import pairing
-    out = []
-
-    # Escape-pod mode needs a certificate AND its key. Only the certificate is
-    # obvious when it's missing; without the key the engine simply fails to
-    # bind :443 and every downstream check blames the mode instead.
-    from onboarding import oskr_provision as prov
-    ep_key = prov.EP_CERT.with_suffix(".key")
-    have_pair = prov.EP_CERT.is_file() and ep_key.is_file()
-    out.append(Check(
-        "escape-pod certificate", have_pair,
-        f"{prov.EP_CERT.parent}" if have_pair else
-        f"missing {'certificate' if not prov.EP_CERT.is_file() else 'key'} in "
-        f"{prov.EP_CERT.parent}",
-        "" if have_pair else
-        "Both ep.crt and ep.key must be present — the engine cannot serve the "
-        "escape-pod identity without them, and every robot needs it."))
-
-    st = pairing.wirepod_status(config.WIREPOD_URL)
-    out.append(Check(
-        "pairing engine running", st["up"],
-        f"wire-pod at {config.WIREPOD_URL}" if st["up"] else st["detail"],
-        "" if st["up"] else
-        "cd server/onboarding/wire-pod/chipper && ./vectar-onboard"))
-    if not st["up"]:
-        return out
-    out.append(Check(
-        "escape-pod mode", st["ready"],
-        st["detail"],
-        "" if st["ready"] else
-        "Set server.epconfig=true (port 443) in chipper/apiConfig.json and "
-        "restart vectar-onboard. Every robot needs this mode: a stock one "
-        "because his firmware hard-codes the name, a dev one because we point "
-        "him at the same identity."))
-    out.append(_associated_check())
-    return out
-
-
-def _associated_check() -> Check:
-    """Has any robot ever signed in to THIS engine? The one honest answer.
-
-    When a certificate never appears, everything turns on whether the robot
-    reached the engine at all — and the two obvious ways to ask are both
-    wrong. Watching for his connection with netstat misses it: on a run that
-    finished perfectly, polling every 0.25 s caught nothing on :443, because
-    the exchange is brief. And the engine's stdout is silent by default — its
-    `logger.Println` only reaches the terminal under DEBUG_LOGGING=true — so
-    "no token requests in the log" says nothing about whether any were made.
-    Both of those absences were read as evidence once, and cost a day.
-
-    The engine keeps its own log in memory and serves it. One line settles it,
-    written at the moment the certificate is:
-    `New bot being associated with wire-pod. ESN: …`
-    """
-    import re
-    import requests
-    from .pairing_engine import CHIPPER_DIR
-
-    # On disk, so it survives a restart. The engine's log does not: it lives in
-    # memory and starts empty every time the process does, which makes "no
-    # robot has signed in" unreadable on its own — you cannot tell a robot that
-    # never arrived from an engine that was restarted after he did.
-    kept = sorted(p.name for p in (CHIPPER_DIR / "session-certs").glob("*")
-                  if p.is_file() and not p.name.startswith("."))
-
-    live = []
-    try:
-        r = requests.get(config.WIREPOD_URL.rstrip("/") + "/api/get_logs",
-                         timeout=4)
-        live = sorted(set(re.findall(
-            r"associated with wire-pod\. ESN: ([0-9a-fA-F]+)", r.text or "")))
-    except Exception:
-        pass    # the certificates on disk answer the question well enough
-
-    if kept or live:
-        detail = "certificates held for: " + ", ".join(kept or live)
-        if live:
-            detail += f" (signed in since this engine started: {', '.join(live)})"
-        return Check("robots seen by the engine", True, detail, "")
-    return Check(
-        "robots seen by the engine", None,
-        "no robot has ever completed a sign-in here",
-        "Normal before the first pairing. If a robot has just been through the "
-        "whole wizard and this is still empty, he never reached the engine — "
-        "restart him, let him wake FULLY (one asleep on the charger never "
-        "syncs), and run the setup again. See docs/STOCK_SIGNIN_TRIAGE.md.")
-
-
-def _ota_check() -> Check:
-    for p in (Path(config.OTA_CACHE_DIR) / config.EP_OTA_NAME,
-              Path(config.OTA_REPO_DIR) / config.EP_OTA_NAME):
-        if not p.is_file():
-            continue
-        mb = p.stat().st_size / 1048576
-        if p.stat().st_size < 1_000_000:
-            # A Git LFS pointer, not the image. Serving it would hand the robot
-            # 130 bytes of text and fail somewhere far away from the cause.
-            return Check(
-                "firmware image", False,
-                f"{p} is a Git LFS pointer, not the image ({p.stat().st_size} B)",
-                "Fetch it: git lfs install && git lfs pull")
-        return Check("firmware image", True, f"{p} ({mb:.0f} MB)")
-    return Check(
-        "firmware image", None,
-        "not on disk — it will be streamed from the Internet Archive",
-        "Works, but slower and only while archive.org is up. For a local copy: "
-        "git lfs pull, or drop the .ota into "
-        f"{config.OTA_CACHE_DIR}/")
 
 
 def _paired_serials() -> list[str]:
@@ -251,12 +141,11 @@ def _network_checks(robot_ip: str = "") -> list[Check]:
     if not ip:
         return out
 
-    # The stale-announcement trap. Both .local names bind to the address they
-    # saw at startup, so switching networks leaves them pointing at an address
-    # that no longer exists — and the robot, told to go there, simply never
-    # arrives. Nothing else in the system notices.
-    for name, what in (("vectar.local", "lens name"),
-                       ("escapepod.local", "pairing-engine name")):
+    # The stale-announcement trap. The name binds to the address it saw at
+    # startup, so switching networks leaves it pointing at an address that no
+    # longer exists — and the Lens, told to go there, simply never arrives.
+    # Nothing else in the system notices.
+    for name, what in (("vectar.local", "lens name"),):
         addrs = netinfo.resolves_to(name)
         if not addrs:
             out.append(Check(
@@ -336,8 +225,6 @@ def run(bridge=None) -> dict:
     except Exception:
         _first_ip = ""
     checks += _network_checks((_first_ip or "").split(",")[0].strip())
-    checks += _wirepod_checks()
-    checks.append(_ota_check())
     # Every paired robot, not just the first one in the file. With a dev robot
     # set up alongside a stock one, reporting only the first meant the doctor
     # could say "1 problem" about a robot that is switched off on purpose while

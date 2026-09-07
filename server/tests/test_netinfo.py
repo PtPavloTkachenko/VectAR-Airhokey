@@ -43,13 +43,12 @@ class TestStaleAnnouncement:
     def test_name_pointing_at_the_previous_network_fails(self, monkeypatch):
         checks = self._checks(
             monkeypatch, "198.51.100.10",
-            {"vectar.local": ["192.0.2.10"], "escapepod.local": ["198.51.100.10"]})
+            {"vectar.local": ["192.0.2.10"]})
         lens = checks["lens name (vectar.local)"]
         assert lens.ok is False
         # The message has to carry both addresses: the whole point is that the
         # name resolves, so "it doesn't work" is not a usable description.
         assert "192.0.2.10" in lens.detail and "198.51.100.10" in lens.detail
-        assert checks["pairing-engine name (escapepod.local)"].ok is True
 
     def test_name_at_the_current_address_passes(self, monkeypatch):
         checks = self._checks(
