@@ -36,12 +36,25 @@ practice field (you against a simulated goalie, for testing without the robot):
 
 ```bash
 git lfs install && git lfs pull      # the robot firmware images (~355 MB)
+
+# the pairing engine — a binary, so it is not in the repo; build it once
+brew install pkgconf opus opusfile libsodium
+cd server/onboarding/wire-pod/chipper
+CGO_ENABLED=1 go build -tags inbuiltble -o vectar-onboard ./cmd/vectar-onboard
+cd ../../../..
+
 cd server
 python3.12 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 export PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
 python -m game_bridge.main
 ```
+
+> The build takes about 20 s and needs **Go 1.2x**. It is a compiled artifact,
+> so it cannot ship in the repo, and the server cannot onboard a robot without
+> it — that is the one step you cannot skip. It links opus and libsodium, and
+> without the `brew` line above it stops at `exec: "pkg-config"` or
+> `Package 'opusfile' not found`, neither of which names what is missing.
 
 > The firmware images ship with the repo through **Git LFS**, so a stock robot
 > can be flashed over your own LAN with nothing to download by hand. Skipping
