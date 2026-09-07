@@ -2193,6 +2193,20 @@ async function bleProvisionOskr(tryLogs) {
 // that the ROBOT pulls over Wi-Fi. A bare "installing… 2.7%" line reads as a
 // stall, so give it a real progress bar with megabytes, rate and an estimate.
 window._flashHist = [];
+// Two images go through this same bar in opposite directions, and a bare
+// "installing firmware" left you watching a 3-minute progress bar with no way
+// to tell which way you were going -- or, after a mistaken click, that you
+// were undoing the setup you had just done.
+function flashWhat(s) {
+  // This bar is reused by the dev-robot log download, which installs nothing —
+  // naming a firmware there would be a lie, so only claim one when there is a
+  // real image in flight.
+  if (!s.ota) return s.state || "working";
+  if (s.mode === "revert")
+    return `installing OFFICIAL firmware — back to stock · ${s.ota}`;
+  return `installing ESCAPE-POD firmware — points him at this Mac · ${s.ota}`;
+}
+
 function flashBarHtml(s) {
   const pct = Math.max(0, Math.min(100, s.percent || 0));
   const now = Date.now() / 1000;
@@ -2224,7 +2238,7 @@ function flashBarHtml(s) {
       <span style="font-size:26px;font-weight:700;color:var(--green);
                    text-shadow:0 0 12px rgba(89,255,128,.45)">
         ${pct.toFixed(1)}%</span>
-      <span style="color:var(--muted);font-size:12px">installing firmware</span>
+      <span style="color:var(--muted);font-size:12px">${flashWhat(s)}</span>
     </div>
     <div style="height:12px;border:1px solid var(--green-dim);border-radius:7px;
                 background:#0a0e13;overflow:hidden;position:relative">

@@ -492,8 +492,16 @@ class WebUI:
         # anything by hand, and without any mirror having to be up -- and the
         # dev-robot repair image is on no mirror at all, so shipping it is the
         # only way it exists for anyone but us.
+        # WHO asked, and whether anyone did, is the one fact that separates
+        # "he refused the image" from "he never came for it" -- and serving a
+        # cached file said nothing at all, so a flash that died waiting for
+        # him looked identical to one he never started. Record it too: the
+        # flash reports it back when nothing arrives.
+        peer = (req.remote or "?")
+        self._ota_fetch = {"name": name, "peer": peer, "at": time.time()}
         for local in (config.OTA_CACHE_DIR / name, config.OTA_REPO_DIR / name):
             if local.is_file() and local.stat().st_size > 1_000_000:
+                logger.info(f"{peer} is downloading {name} from {local.parent}")
                 return web.FileResponse(local)
         import aiohttp
         # No mirror carries every image: archive.org has the escape-pod one and
@@ -707,6 +715,7 @@ class WebUI:
         host = _lan_ip() or req.host.split(":")[0]
         url = f"http://{host}:{config.WEB_PORT}/api/get_ota/{name}"
 
+        started = time.time()
         self._flash = {"active": True, "percent": 0.0, "current": 0,
                        "expected": 0, "done": False, "error": "",
                        "state": "starting", "mode": mode, "ota": name}
@@ -729,6 +738,28 @@ class WebUI:
             except Exception as e:
                 msg = f"{type(e).__name__}: {e}"
                 gate_214 = "214" in str(e)
+                if "before any progress" in str(e):
+                    # He never sent a single progress frame. Either he never
+                    # fetched the image -- no network in recovery, or he cannot
+                    # route to this Mac -- or he did and died silently. The
+                    # server knows which, and saying so turns a blank timeout
+                    # into an answer.
+                    got = getattr(self, "_ota_fetch", None)
+                    if got and got.get("at", 0) >= started:
+                        msg += (f" He DID download {got['name']} from this Mac "
+                                f"({got['peer']}) and then went quiet — that is "
+                                "the robot, not the network: power-cycle him "
+                                "back into recovery and install again.")
+                    else:
+                        msg += (" He never asked this Mac for the image. "
+                                "Bluetooth carries only the URL; the firmware "
+                                "travels over Wi-Fi. So he has no network in "
+                                "THIS session (recovery does not inherit the "
+                                "one he had before), or he cannot reach this "
+                                f"Mac at {host} — a guest or corporate network "
+                                "that isolates clients does exactly this. Join "
+                                "him to the same Wi-Fi as this Mac, or use a "
+                                "phone hotspot, and install again.")
                 # The same rejection means opposite things in the two
                 # directions, so only the setup direction may act on it.
                 if gate_214 and mode == "ep":

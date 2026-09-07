@@ -408,3 +408,26 @@ def test_get_ota_still_serves_when_the_cache_cannot_be_written(
         finally:
             await client.close()
     asyncio.run(go())
+
+
+def test_get_ota_records_who_asked(ui_factory, tmp_path, monkeypatch):
+    """Whether the robot ever came for the image is what separates 'he
+    refused it' from 'he never started' — a cached file used to say nothing."""
+    monkeypatch.setattr(config, "OTA_CACHE_DIR", tmp_path)
+    monkeypatch.setattr(config, "OTA_REPO_DIR", tmp_path)
+    (tmp_path / "vicos-test.ota").write_bytes(b"x" * 2_000_000)
+    seen = {}
+
+    async def go():
+        ui, client = ui_factory()
+        await client.start_server()
+        try:
+            r = await client.get("/api/get_ota/vicos-test.ota")
+            assert r.status == 200
+        finally:
+            seen.update(getattr(ui, "_ota_fetch", {}) or {})
+            await client.close()
+    asyncio.run(go())
+    assert seen.get("name") == "vicos-test.ota"
+    assert seen.get("peer")
+    assert seen.get("at", 0) > 0

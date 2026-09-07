@@ -397,7 +397,13 @@ class RtsSession:
                                 "rebooting into the new firmware", last["percent"])
                     last["done"] = True
                     return last
-                raise HandshakeError(f"OTA failed before any progress: {e}")
+                # str(TimeoutError()) is the empty string, so the plain
+                # {e} reported "failed before any progress:" and stopped
+                # -- the most common failure here named nothing at all.
+                why = str(e) or type(e).__name__
+                raise HandshakeError(
+                    f"OTA failed before any progress ({why}): he never sent "
+                    "a single progress frame after being handed the URL.")
             if mtype != m.OTA_UPDATE_RESPONSE:
                 continue
             last = m.parse_ota_update_response(payload)
