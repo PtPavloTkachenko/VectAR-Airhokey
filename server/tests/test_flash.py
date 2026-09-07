@@ -309,3 +309,102 @@ def test_get_ota_reports_when_no_mirror_has_it(ui_factory, tmp_path,
         finally:
             await client.close()
     asyncio.run(go())
+
+
+# --- the proxy keeps what it downloads -------------------------------------
+# Retries are normal (219 from a running system, 209 with no network in
+# recovery), and each one used to re-download the whole 180 MB image.
+
+class _MirrorResp:
+    def __init__(self, status, body=b"", length=None):
+        self.status = status
+        self.content_length = len(body) if length is None else length
+        self.content = self
+        self._body = body
+
+    async def iter_chunked(self, n):
+        for i in range(0, len(self._body), n):
+            yield self._body[i:i + n]
+
+    def __aiter__(self):
+        return self
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *a):
+        return False
+
+
+def _one_mirror(monkeypatch, tmp_path, resp):
+    monkeypatch.setattr(config, "OTA_CACHE_DIR", tmp_path / "cache")
+    monkeypatch.setattr(config, "OTA_REPO_DIR", tmp_path / "repo")
+    monkeypatch.setattr(config, "OTA_MIRRORS", ("https://m/{name}",))
+
+    class _Sess:
+        async def get(self, url):
+            return resp
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+    import aiohttp
+    monkeypatch.setattr(aiohttp, "ClientSession", lambda *a, **k: _Sess())
+
+
+def test_get_ota_caches_what_it_streamed(ui_factory, tmp_path, monkeypatch):
+    body = b"firmware-bytes" * 100
+    _one_mirror(monkeypatch, tmp_path, _MirrorResp(200, body))
+
+    async def go():
+        ui, client = ui_factory()
+        await client.start_server()
+        try:
+            r = await client.get("/api/get_ota/vicos-x.ota")
+            assert r.status == 200
+            assert await r.read() == body
+        finally:
+            await client.close()
+    asyncio.run(go())
+    cached = tmp_path / "cache" / "vicos-x.ota"
+    assert cached.read_bytes() == body
+    assert not (tmp_path / "cache" / "vicos-x.ota.part").exists()
+
+
+def test_get_ota_does_not_cache_a_truncated_download(ui_factory, tmp_path,
+                                                     monkeypatch):
+    """A short file left in the cache would be served as firmware next time."""
+    _one_mirror(monkeypatch, tmp_path,
+                _MirrorResp(200, b"half", length=999999))
+
+    async def go():
+        ui, client = ui_factory()
+        await client.start_server()
+        try:
+            await client.get("/api/get_ota/vicos-x.ota")
+        finally:
+            await client.close()
+    asyncio.run(go())
+    assert not (tmp_path / "cache" / "vicos-x.ota").exists()
+    assert not (tmp_path / "cache" / "vicos-x.ota.part").exists()
+
+
+def test_get_ota_still_serves_when_the_cache_cannot_be_written(
+        ui_factory, tmp_path, monkeypatch):
+    """A failed cache must never cost the flash."""
+    body = b"payload"
+    _one_mirror(monkeypatch, tmp_path, _MirrorResp(200, body))
+    (tmp_path / "cache").write_text("this is a file, not a directory")
+
+    async def go():
+        ui, client = ui_factory()
+        await client.start_server()
+        try:
+            r = await client.get("/api/get_ota/vicos-x.ota")
+            assert r.status == 200
+            assert await r.read() == body
+        finally:
+            await client.close()
+    asyncio.run(go())

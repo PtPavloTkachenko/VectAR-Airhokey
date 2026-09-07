@@ -521,9 +521,51 @@ class WebUI:
                         if up.content_length:
                             resp.content_length = up.content_length
                         await resp.prepare(req)
-                        async for chunk in up.content.iter_chunked(64 * 1024):
-                            await resp.write(chunk)
-                        await resp.write_eof()
+                        # Keep a copy on the way past. Without it every retry
+                        # re-downloads the whole image, and retries are normal:
+                        # the robot refuses an install from a running system
+                        # (219) and again if he has no network in recovery
+                        # (209), so a first attempt that ends in advice costs
+                        # another 180 MB of somebody's tethered phone. Written
+                        # beside the stream, not instead of it, so a failed
+                        # cache never costs the flash.
+                        part = config.OTA_CACHE_DIR / (name + ".part")
+                        cache = None
+                        try:
+                            config.OTA_CACHE_DIR.mkdir(parents=True,
+                                                       exist_ok=True)
+                            cache = open(part, "wb")
+                        except Exception as e:
+                            logger.debug(f"not caching {name}: {e}")
+                        try:
+                            async for chunk in up.content.iter_chunked(
+                                    64 * 1024):
+                                await resp.write(chunk)
+                                if cache:
+                                    cache.write(chunk)
+                            await resp.write_eof()
+                        except Exception:
+                            # The robot hung up mid-image: a partial file must
+                            # never be left where the next run reads it as the
+                            # firmware.
+                            if cache:
+                                cache.close()
+                                cache = None
+                                part.unlink(missing_ok=True)
+                            raise
+                        finally:
+                            if cache:
+                                cache.close()
+                        if cache is not None and part.is_file():
+                            done = part.stat().st_size
+                            if (up.content_length and
+                                    done != up.content_length):
+                                part.unlink(missing_ok=True)
+                            else:
+                                part.replace(config.OTA_CACHE_DIR / name)
+                                logger.info(
+                                    f"cached {name} ({done // 1_000_000} MB) — "
+                                    "later installs serve it from disk")
                         return resp
             # Once prepare() has been called the response is already on the
             # wire, so this only reports mirrors that never got that far.
