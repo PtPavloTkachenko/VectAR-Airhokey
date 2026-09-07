@@ -44,5 +44,13 @@ lens*/BackUp/
 *.p12
 *.pfx
 
+# The pairing engine's per-robot state: the robots' session certificates and
+# the SDK keys it issued them. Machine-local secrets, and the cert files have
+# no extension for *.cert above to catch. The directories must EXIST for the
+# engine to write anything (it only creates them when packaged) — the server
+# makes them on start, so ignoring them costs nothing.
+server/onboarding/wire-pod/chipper/jdocs/
+server/onboarding/wire-pod/chipper/session-certs/
+
 # built pairing server (build locally: go build -tags inbuiltble)
 server/onboarding/wire-pod/chipper/vectar-onboard

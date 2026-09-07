@@ -36,9 +36,43 @@ BINARY = CHIPPER_DIR / "vectar-onboard"
 BUILD_HINT = ("cd server/onboarding/wire-pod/chipper && "
               "go build -tags inbuiltble -o vectar-onboard ./cmd/vectar-onboard")
 API_CONFIG = CHIPPER_DIR / "apiConfig.json"
+# The engine keeps everything it knows about a robot here, by RELATIVE
+# path from its working directory. It creates neither.
+JDOCS_DIR = CHIPPER_DIR / "jdocs"
+SESSION_CERTS_DIR = CHIPPER_DIR / "session-certs"
 # Outside the repo, next to the other things this Mac keeps for the robot, so
 # a log full of serials never lands in a working tree someone pushes.
 LOG_PATH = Path.home() / ".vectar" / "pairing-engine.log"
+
+
+def ensure_engine_dirs() -> bool:
+    """Create the directories the engine writes its robot state into.
+
+    wire-pod only makes these for itself when it is running as a PACKAGED app
+    (`vars.Init`, the `if Packaged` branch). Run from a source tree, as we do,
+    the paths stay relative and nothing creates them — so every write of
+    `jdocs/jdocs.json`, `jdocs/botSdkInfo.json` and `session-certs/<esn>` fails
+    silently and the engine forgets every robot the moment it restarts. It
+    restarts on each Wi-Fi change.
+
+    That is not cosmetic. Losing `botSdkInfo.json` means the engine can no
+    longer map an address back to a serial, so it takes its "act as if this is
+    a new robot" path on a robot it has already onboarded; losing the jdocs
+    means the SDK key it issued, the only one the robot honours, is gone. Both
+    surface much later as a bare 401 with nothing pointing back here. Our
+    long-lived checkout happened to have the directories from an older run,
+    which is exactly why this never bit us and always bit a fresh clone.
+    """
+    made = False
+    for d in (JDOCS_DIR, SESSION_CERTS_DIR):
+        if not d.is_dir():
+            try:
+                d.mkdir(parents=True, exist_ok=True)
+                logger.info(f"created the engine's {d.name}/ directory")
+                made = True
+            except Exception as e:
+                logger.warning(f"could not create {d}: {e}")
+    return made
 
 
 def ensure_escape_pod_config() -> bool:
@@ -147,6 +181,7 @@ class PairingEngine:
 
     async def start(self, wait_s: float = 20.0) -> bool:
         """Start it unless something already answers. Never fatal."""
+        await asyncio.to_thread(ensure_engine_dirs)
         changed = await asyncio.to_thread(ensure_escape_pod_config)
         if await asyncio.to_thread(self._already_up):
             if changed:

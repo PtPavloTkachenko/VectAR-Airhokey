@@ -190,6 +190,81 @@ def fetch_cert(pod: str, serial: str, wait: float = 0.0,
         "against THIS wire-pod.")
 
 
+def _engine_cert_path(serial: str):
+    """Where this pairing engine keeps a robot's session certificate."""
+    from .. import config as gconfig
+    return (gconfig.OTA_REPO_DIR.parent / "wire-pod" / "chipper" /
+            "session-certs" / serial.strip().lower())
+
+
+def fetch_cert_from_robot(ip: str, timeout: float = 10.0) -> bytes:
+    """The robot's own TLS certificate, taken straight off his gateway.
+
+    The engine only ever receives a certificate during a PRIMARY association
+    (`AssociatePrimaryUser` carries it). Every association after the first is a
+    SECONDARY one, which carries nothing -- so a robot who has been set up once
+    before, by anyone, against any cloud, can never hand his certificate to
+    this engine again. wire-pod's own fallback for that is a GET against
+    `session-certs.token.global.anki-services.com`, a host that no longer
+    resolves, which is why the wizard ends at a permanent 404 that reads as
+    "wire-pod is broken".
+
+    Nothing about it needs a cloud. The certificate is self-signed by the robot
+    (subject == issuer == his name), he presents it on :443 to anyone who
+    connects, and self-signed means the leaf IS the CA the SDK has to trust. So
+    ask him for it directly.
+    """
+    import ssl
+
+    ip = (ip or "").strip()
+    if not ip:
+        raise PairingError(STEP_CERT, "Robot IP is required to read his "
+                                      "certificate.")
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    # vic-gateway is a gRPC server: it negotiates h2. Offering it avoids an
+    # ALPN-mismatch abort on the few builds that insist.
+    try:
+        ctx.set_alpn_protocols(["h2", "http/1.1"])
+    except NotImplementedError:
+        pass
+    try:
+        with socket.create_connection((ip, 443), timeout=timeout) as raw:
+            with ctx.wrap_socket(raw, server_hostname=None) as tls:
+                der = tls.getpeercert(binary_form=True)
+    except Exception as e:
+        raise PairingError(
+            STEP_CERT,
+            f"Could not read the robot's certificate from {ip}:443 "
+            f"({type(e).__name__}). He has to be ON, awake and on this "
+            "Wi-Fi for that -- put him on the charger and try again.")
+    if not der:
+        raise PairingError(
+            STEP_CERT,
+            f"{ip}:443 completed a handshake but presented no certificate.")
+    return ssl.DER_cert_to_PEM_cert(der).encode("ascii")
+
+
+def store_cert(serial: str, cert: bytes) -> bool:
+    """Give the engine the certificate it could not get for itself.
+
+    Written where wire-pod's own primary-association path writes it, so the
+    engine serves it on /session-certs/<esn> from here on and every later run
+    -- including `cert_here`, the doctor and a plain re-pair -- takes the
+    normal path instead of this fallback.
+    """
+    path = _engine_cert_path(serial)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(cert)
+        logger.info(f"stored {serial}'s certificate for the pairing engine")
+        return True
+    except Exception as e:
+        logger.debug(f"could not store the certificate for the engine: {e}")
+        return False
+
+
 class StaleCertError(PairingError):
     """The engine's stored certificate predates the robot's factory reset."""
 
@@ -280,6 +355,48 @@ def mint_guid(cert: bytes, ip: str, name: str) -> bytes:
             "server is not this wire-pod — re-run wire-pod onboarding, then "
             "pair again.")
     return response.client_token_guid
+
+
+def guid_works(cert: bytes, ip: str, name: str, guid: bytes,
+               timeout: float = 12.0) -> bool:
+    """Does the robot actually ACCEPT this key? One cheap authenticated call.
+
+    Minting a key and having the robot honour it are two different things. The
+    engine registers a key's hash in the robot's `vic.AppTokens` jdoc on the
+    FIRST association only -- after that the doc exists, so it takes the
+    already-known path and writes nothing. Every later `UserAuthentication`
+    therefore hands back a brand-new key that was registered nowhere, and every
+    SDK call made with it comes back 401 forever. The key the robot really
+    holds is the one the ENGINE issued and still knows.
+
+    Which of the two is live is not worth deducing from the robot's history --
+    ask him. `BatteryState` needs no behavior control, so this cannot disturb
+    whatever he is doing.
+    """
+    import grpc
+    from anki_vector import messaging
+
+    if not guid:
+        return False
+    creds = grpc.ssl_channel_credentials(root_certificates=cert)
+    channel = grpc.secure_channel(
+        f"{ip}:443", creds, options=(("grpc.ssl_target_name_override", name),))
+    try:
+        grpc.channel_ready_future(channel).result(timeout=timeout)
+        stub = messaging.client.ExternalInterfaceStub(channel)
+        stub.BatteryState(messaging.protocol.BatteryStateRequest(),
+                          metadata=(("authorization",
+                                     "Bearer " + guid.decode("utf-8")),),
+                          timeout=timeout)
+        return True
+    except Exception as e:
+        logger.debug(f"key rejected by {name}: {type(e).__name__}")
+        return False
+    finally:
+        try:
+            channel.close()
+        except Exception:
+            pass
 
 
 def forget_cert(serial: str) -> bool:
@@ -409,30 +526,68 @@ def pair(pod: str, serial: str, name: str, ip: str,
         raise PairingError(STEP_TLS, "Robot IP is required.")
     ip = ip.strip()
 
-    cert = fetch_cert(pod, serial, wait=cert_wait, on_wait=on_wait)
+    try:
+        cert = fetch_cert(pod, serial, wait=cert_wait, on_wait=on_wait)
+    except PairingError as pod_err:
+        if pod_err.step != STEP_CERT:
+            raise
+        # The engine has no certificate and never will for this robot (see
+        # fetch_cert_from_robot). Take it from the robot himself and hand it
+        # to the engine, so this is a one-time detour rather than a mode.
+        logger.info(f"{serial}: engine has no certificate; reading his own")
+        cert = fetch_cert_from_robot(ip)
+        store_cert(serial, cert)
     if name.strip():
         name = standardize_name(name)
-        validate_cert_name(cert, name)
+        try:
+            validate_cert_name(cert, name)
+        except StaleCertError:
+            # The engine is holding a certificate minted under his OLD name.
+            # It can only be replaced by a primary association, and he will
+            # never make another one -- so replace it here instead of telling
+            # the user to "sign in once more" forever.
+            logger.info(f"{serial}: engine holds a pre-rename certificate; "
+                        "replacing it with his own")
+            cert = fetch_cert_from_robot(ip)
+            store_cert(serial, cert)
+            validate_cert_name(cert, name)
     else:
         name = _cert_common_name(cert) or f"Vector-{serial[-4:].upper()}"
-    guid = mint_guid(cert, ip, name)
-    if not guid:
-        # A dev robot answers the authentication call with an EMPTY guid — the
-        # call succeeds, so this used to be written out and reported as a
-        # successful pairing. Every later connection then failed with a bare
-        # 401 and nothing pointed back here. The engine issued a real guid for
-        # him, so use that; if even it has none, say so instead of persisting
-        # a credential that cannot work.
-        guid = pod_guid(pod, serial)
-        if guid:
-            logger.info(f"{serial}: robot returned no guid; used the engine's")
-    if not guid:
+    # Two places can hold a key for him, and only ONE of them is live (see
+    # guid_works). A dev robot also answers the authentication call with an
+    # EMPTY guid while reporting success. So gather every candidate and let the
+    # robot pick: writing an unverified key is what produced "paired
+    # successfully" followed by a bare 401 on every later connection, with
+    # nothing pointing back here.
+    minted = mint_guid(cert, ip, name)
+    candidates = []
+    for source, cand in (("the robot", minted),
+                         ("the engine", pod_guid(pod, serial))):
+        if cand and cand not in [c for _, c in candidates]:
+            candidates.append((source, cand))
+    if not candidates:
         raise PairingError(
             STEP_AUTH,
             "The robot accepted the authentication call but issued no key, and "
             "the pairing engine has none for him either. He has not been "
             "associated with this engine yet — connect over Bluetooth once so "
             "he can sign in.")
+
+    guid = b""
+    for source, cand in candidates:
+        if guid_works(cert, ip, name, cand):
+            guid = cand
+            logger.info(f"{serial}: using the key from {source}")
+            break
+        logger.info(f"{serial}: the key from {source} is not accepted by him")
+    if not guid:
+        raise PairingError(
+            STEP_AUTH,
+            f"{name} issued a key but then refused it (401), and the pairing "
+            "engine's key for him is refused too. That is his gateway still "
+            "running on the keys it loaded at boot: restart him — hold the "
+            "backpack button ~5 s until he switches off, put him back on the "
+            "charger — and run this again.")
     try:
         cert_file = save_cert(cert, name, serial)
         write_config(serial, cert_file, ip, name, guid)
